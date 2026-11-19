@@ -66,6 +66,7 @@ from typing import (
     Tuple,
 )
 
+from . import prompts
 from .ghhost import PUBLIC_API_BASE, api_base_for
 from .sessions import DEFAULT_GITHUB_HOST, is_github_host, is_github_name
 
@@ -555,11 +556,7 @@ def _download_tail(url: str, lines: int, timeout: float) -> List[str]:
             if _LOG_READ_CAP >= mib
             else f"{_LOG_READ_CAP} bytes"
         )
-        picked.insert(
-            0,
-            f"[the-loop: this log is longer than {size}; these are the last "
-            "lines before that point]",
-        )
+        picked.insert(0, prompts.render("ghapi/log-truncated", inline=True, size=size))
     return picked
 
 

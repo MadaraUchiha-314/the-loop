@@ -1,0 +1,1 @@
+Stop changing code for this check. Post one comment on the pull request with `the-loop comment`: the check, what you tried, and what you need from a person. Then wait for a reply. the-loop will deliver no further failures of this check until it passes.

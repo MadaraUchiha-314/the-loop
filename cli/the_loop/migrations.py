@@ -54,6 +54,7 @@ import copy
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional, Set, Tuple
 
+from . import strings
 from .modelchoice import declared_harnesses
 
 __all__ = [
@@ -241,10 +242,10 @@ class MigrationReport:
 
     def render(self) -> str:
         if not self.changed:
-            return "config is already current; nothing to migrate"
-        lines = ["migrated the CLI config:"]
+            return strings.t("migrations.report.current")
+        lines = [strings.t("migrations.report.heading")]
         lines += [f"  · {m}" for m in self.moves]
-        lines += [f"  note: {n}" for n in self.notes]
+        lines += [strings.t("migrations.report.note", note=n) for n in self.notes]
         return "\n".join(lines)
 
 
@@ -484,15 +485,17 @@ def _promote_routing(data: Dict[str, Any], report: MigrationReport) -> None:
     old = receiver.pop(_ROUTING_KEY) or {}
     report.changed = True
     report.moves.append(
-        f"{'.'.join(_ROUTING_SITE)}.{_ROUTING_KEY} → {_ROUTING_KEY} (top level; it "
-        "governs the poller too)"
+        strings.t(
+            "migrations.move.routing-promoted",
+            site=".".join(_ROUTING_SITE),
+            key=_ROUTING_KEY,
+        )
     )
 
     current = data.setdefault(_ROUTING_KEY, {})
     if not isinstance(current, dict):  # a scalar under `routing`: refuse to guess
         report.notes.append(
-            f"the existing top-level `routing` is {current!r}, not a block; the "
-            "promoted one is kept and yours is dropped — re-declare it by hand"
+            strings.t("migrations.note.routing-not-a-block", current=current)
         )
         current = {}
         data[_ROUTING_KEY] = current
@@ -500,8 +503,12 @@ def _promote_routing(data: Dict[str, Any], report: MigrationReport) -> None:
         if key in current:
             if current[key] != value:
                 report.notes.append(
-                    f"`routing.{key}` was declared in both places; kept the "
-                    f"top-level {current[key]!r} and dropped {value!r}"
+                    strings.t(
+                        "migrations.note.routing-declared-twice",
+                        key=key,
+                        kept=current[key],
+                        dropped=value,
+                    )
                 )
             continue
         current[key] = value
@@ -559,26 +566,22 @@ def migrate_cli_config(config: Mapping[str, Any]) -> MigrationReport:
         github.setdefault("transport", "auto")
         if len(distinct) > 1:
             report.notes.append(
-                "the removed keys disagreed ("
-                + ", ".join(repr(b) for b in distinct)
-                + f"); kept {distinct[0]!r} — one transport is declared once now, "
-                "so please confirm this is the one you want"
+                strings.t(
+                    "migrations.note.gh-binaries-disagree",
+                    binaries=", ".join(repr(b) for b in distinct),
+                    kept=distinct[0],
+                )
             )
 
     polling = _dig(data, _STATE_FILE_SITE)
     if polling is not None and _STATE_FILE_KEY in polling:
         old = str(polling.pop(_STATE_FILE_KEY))
         report.moves.append(
-            f"polling.{_STATE_FILE_KEY} ({old!r}) removed — the ledger is now "
-            f"`<state.root>/portable/<work item>.json`"
+            strings.t("migrations.move.state-file", key=_STATE_FILE_KEY, old=old)
         )
         report.changed = True
         if old and not old.startswith(str((data.get("state") or {}).get("root", ""))):
-            report.notes.append(
-                f"the old ledger at {old!r} is still READ once per work item, so "
-                "no watched thread is re-baselined; delete it once `the-loop "
-                "events` looks right on the new layout"
-            )
+            report.notes.append(strings.t("migrations.note.old-ledger", old=old))
 
     _promote_routing(data, report)
 
@@ -587,16 +590,13 @@ def migrate_cli_config(config: Mapping[str, Any]) -> MigrationReport:
         integrations.pop(_SLACK_KEY)
         report.changed = True
         report.moves.append(
-            f"integrations.{_SLACK_KEY} removed — Slack converged on "
-            f"`{_SLACK_REPLACEMENT}` (issue-245)"
+            strings.t(
+                "migrations.move.slack-webhook",
+                key=_SLACK_KEY,
+                replacement=_SLACK_REPLACEMENT,
+            )
         )
-        report.notes.append(
-            "the incoming-webhook transport is gone and its URL cannot become "
-            "a bot token: to keep Slack notifications, configure "
-            "`channels.slack` (botTokenEnv, channel, and the notification "
-            "event names under `events`) — the bot also carries replies back "
-            "into the session"
-        )
+        report.notes.append(strings.t("migrations.note.slack-webhook"))
         if not integrations:
             data.pop("integrations", None)
 
@@ -609,18 +609,18 @@ def migrate_cli_config(config: Mapping[str, Any]) -> MigrationReport:
         declared_something = _was_filled_in(key, data.pop(key)) or declared_something
         report.changed = True
         report.moves.append(
-            f"{key} removed — nothing read it (issue-304); Slack is declared once "
-            f"under `{_UNREAD_REPLACEMENT}`"
+            strings.t(
+                "migrations.move.unread-key", key=key, replacement=_UNREAD_REPLACEMENT
+            )
         )
     if declared_something:
         # Only when the operator had actually filled something in. Telling somebody
         # whose `collaborators: []` was the shipped default to go and set a Slack bot up
         # is noise, and a report that is mostly noise stops being read.
         report.notes.append(
-            "what you had declared there was never delivered on. To be notified, set "
-            f"`{_UNREAD_REPLACEMENT}`'s `botTokenEnv` and `channel` and subscribe its "
-            "`events` list to the event names you want — one channel for the daemon, "
-            "not one list per person; per-person routing is not built"
+            strings.t(
+                "migrations.note.unread-declared", replacement=_UNREAD_REPLACEMENT
+            )
         )
 
     _migrate_slack_channel(data, report)
@@ -684,7 +684,7 @@ def _migrate_harness_args(data: Dict[str, Any], report: MigrationReport) -> None
     legacy = routing["harnessArgs"]
     if not isinstance(legacy, dict):
         routing.pop("harnessArgs")
-        report.notes.append("routing.harnessArgs was not a mapping; dropped it")
+        report.notes.append(strings.t("migrations.note.harness-args-not-a-mapping"))
         report.changed = True
         return
     entries = data.get("harnesses")
@@ -698,9 +698,7 @@ def _migrate_harness_args(data: Dict[str, Any], report: MigrationReport) -> None
         if index is None:
             kept[name] = args
             report.notes.append(
-                f"routing.harnessArgs.{name} left in place: {name!r} is not declared in "
-                "harnesses[], and declaring it would offer it at phase-selection; "
-                f"declare it there with these args to finish the move"
+                strings.t("migrations.note.harness-args-undeclared", name=name)
             )
             continue
         entry = entries[index]
@@ -712,7 +710,7 @@ def _migrate_harness_args(data: Dict[str, Any], report: MigrationReport) -> None
             report.moves.append(f"routing.harnessArgs.{name} → harnesses[{name}].args")
         else:
             report.notes.append(
-                f"harnesses[{name}].args already declared; kept it instead of deprecated routing.harnessArgs.{name}"
+                strings.t("migrations.note.harness-args-kept", name=name)
             )
     if legacy and len(kept) == len(legacy):
         return  # nothing declared to move onto: the file is unchanged
@@ -744,21 +742,18 @@ def _retire_github_cli(data: Dict[str, Any], report: MigrationReport) -> None:
     report.changed = True
     for key, value in removed.items():
         report.moves.append(
-            f"integrations.github.{key} ({value!r}) removed — the `gh` transport was "
-            "retired (issue-442); the daemon reaches GitHub through PyGithub with the "
-            f"token `{_GITHUB_REPLACEMENT}` names"
+            strings.t(
+                "migrations.move.github-cli",
+                key=key,
+                value=value,
+                replacement=_GITHUB_REPLACEMENT,
+            )
         )
     api_block = github.get("api")
     api: Dict[str, Any] = api_block if isinstance(api_block, dict) else {}
     if str(removed.get("transport", "")) == "cli" or not api.get("tokenEnv"):
         report.notes.append(
-            "the daemon holds a GitHub token of its own now: export GH_TOKEN (or "
-            "GITHUB_TOKEN, or a variable you name under "
-            f"`{_GITHUB_REPLACEMENT}`) — an `env.file` can carry it — with Issues: "
-            "read and write, Pull requests: read and Metadata: read on every "
-            "repository this instance works with. Until it is set, comments, "
-            "reactions, announcements and the poller's reads report the missing "
-            "token and do nothing else"
+            strings.t("migrations.note.github-token", replacement=_GITHUB_REPLACEMENT)
         )
     if not github:
         integrations = data.get("integrations")
@@ -791,10 +786,12 @@ def _migrate_jira_stub(data: Dict[str, Any], report: MigrationReport) -> None:
         if key in jira:
             value = jira.pop(key)
             report.moves.append(
-                f"integrations.jira.{key} ({value!r}) removed — CLI transports were "
-                "retired (issue-442); the daemon reaches Jira through the pycontribs "
-                f"`jira` SDK with the credentials `{_JIRA_REPLACEMENT}` names "
-                "(decision-142)"
+                strings.t(
+                    "migrations.move.jira-cli",
+                    key=key,
+                    value=value,
+                    replacement=_JIRA_REPLACEMENT,
+                )
             )
     api_block = jira.get("api")
     api: Dict[str, Any] = api_block if isinstance(api_block, dict) else {}
@@ -803,9 +800,7 @@ def _migrate_jira_stub(data: Dict[str, Any], report: MigrationReport) -> None:
         api["tokenEnv"] = [token] if token.strip() else []
         if not api["tokenEnv"]:
             api.pop("tokenEnv")
-        report.moves.append(
-            f"integrations.jira.api.tokenEnv ({token!r}) → a list of variable names"
-        )
+        report.moves.append(strings.t("migrations.move.jira-token-list", token=token))
     if "baseUrl" in api:
         base = str(api.pop("baseUrl") or "").strip()
         host = base.split("://", 1)[-1].split("/", 1)[0].strip().lower()
@@ -813,31 +808,17 @@ def _migrate_jira_stub(data: Dict[str, Any], report: MigrationReport) -> None:
             jira["site"] = host
             jira.setdefault("deployment", "cloud")
             report.moves.append(
-                f"integrations.jira.api.baseUrl ({base!r}) → integrations.jira.site "
-                f"({host!r}), deployment 'cloud'"
+                strings.t("migrations.move.jira-base-url-site", base=base, host=host)
             )
         else:
             report.moves.append(
-                f"integrations.jira.api.baseUrl ({base!r}) removed — "
-                "integrations.jira.site names the site"
+                strings.t("migrations.move.jira-base-url-removed", base=base)
             )
     if isinstance(api_block, dict) and not api:
         jira.pop("api", None)
     if jira and ("site" not in jira or "projects" not in jira):
-        report.moves.append(
-            f"integrations.jira removed ({jira!r}) — what the stub migrates to has "
-            "no `site` or no `projects`, so it cannot be a working 0.12 block, and "
-            "left in place it would fail the schema and refuse every config write. "
-            "The stub was inert (nothing read it before 0.12), so nothing that ran "
-            "is lost. To work Jira tickets, re-add it with /the-loop:init-cli"
-        )
-        report.notes.append(
-            "Jira is off until the block is re-added (/the-loop:init-cli): it needs "
-            "`integrations.jira.site`, `deployment`, `api.tokenEnv`, "
-            "`integrations.jira.api.emailEnv` (Cloud only) and "
-            "`integrations.jira.projects` (each project key, with the `repository` "
-            "its tickets' code lives in) — the stub never held the last two"
-        )
+        report.moves.append(strings.t("migrations.move.jira-removed", jira=jira))
+        report.notes.append(strings.t("migrations.note.jira-off"))
         jira.clear()
     if not jira:
         integrations = data.get("integrations")
@@ -846,14 +827,7 @@ def _migrate_jira_stub(data: Dict[str, Any], report: MigrationReport) -> None:
             if not integrations:
                 data.pop("integrations", None)
         return
-    report.notes.append(
-        "the Jira block needs two things the stub never held: "
-        "`integrations.jira.api.emailEnv` (the variable holding the Jira account's "
-        "email — Cloud only) and `integrations.jira.projects` (each project key, with "
-        "the `repository` its tickets' code lives in). Check `deployment` too: "
-        "`cloud-scoped` (with `cloudId`) for a scoped token, `data-center` for a "
-        "personal access token"
-    )
+    report.notes.append(strings.t("migrations.note.jira-needs"))
 
 
 def _migrate_auto_execute_labels(data: Dict[str, Any], report: MigrationReport) -> None:
@@ -875,20 +849,30 @@ def _migrate_auto_execute_labels(data: Dict[str, Any], report: MigrationReport) 
         wrapped = [str(old)] if old not in (None, "") else []
         if _LABEL_REPLACEMENT in routing:
             report.notes.append(
-                f"`routing.{_LABEL_REPLACEMENT}` was already declared; kept it and "
-                f"dropped `routing.{_LABEL_KEY}` ({old!r})"
+                strings.t(
+                    "migrations.note.labels-kept",
+                    replacement=_LABEL_REPLACEMENT,
+                    key=_LABEL_KEY,
+                    old=old,
+                )
             )
         else:
             routing[_LABEL_REPLACEMENT] = wrapped
             if not wrapped:
                 report.notes.append(
-                    f"`routing.{_LABEL_KEY}` was empty, so `routing.{_LABEL_REPLACEMENT}` "
-                    "is `[]` — declare at least one label (the schema requires it), or "
-                    "set `spawnOnUnmatched: never` if arming nothing was the intent"
+                    strings.t(
+                        "migrations.note.labels-empty",
+                        key=_LABEL_KEY,
+                        replacement=_LABEL_REPLACEMENT,
+                    )
                 )
         report.moves.append(
-            f"routing.{_LABEL_KEY} → routing.{_LABEL_REPLACEMENT} ({wrapped!r}; a "
-            "LIST now, every entry required — issue-381)"
+            strings.t(
+                "migrations.move.labels",
+                key=_LABEL_KEY,
+                replacement=_LABEL_REPLACEMENT,
+                wrapped=wrapped,
+            )
         )
     for source in _github_sources(data):
         if _SOURCE_LABEL_KEY not in source:
@@ -898,8 +882,12 @@ def _migrate_auto_execute_labels(data: Dict[str, Any], report: MigrationReport) 
         wrapped = [str(old)] if old not in (None, "") else []
         if _SOURCE_LABEL_REPLACEMENT in source:
             report.notes.append(
-                f"a github source already declared `{_SOURCE_LABEL_REPLACEMENT}`; kept "
-                f"it and dropped its `{_SOURCE_LABEL_KEY}` ({old!r})"
+                strings.t(
+                    "migrations.note.source-labels-kept",
+                    replacement=_SOURCE_LABEL_REPLACEMENT,
+                    key=_SOURCE_LABEL_KEY,
+                    old=old,
+                )
             )
         elif wrapped:
             source[_SOURCE_LABEL_REPLACEMENT] = wrapped
@@ -908,8 +896,10 @@ def _migrate_auto_execute_labels(data: Dict[str, Any], report: MigrationReport) 
             + (
                 ""
                 if wrapped
-                else "; it was empty, and absent already means reuse "
-                f"`routing.{_LABEL_REPLACEMENT}`"
+                else strings.t(
+                    "migrations.move.source-labels-empty",
+                    replacement=_LABEL_REPLACEMENT,
+                )
             )
             + ")"
         )
@@ -928,16 +918,15 @@ def _retire_repo_hooks(data: Dict[str, Any], report: MigrationReport) -> None:
     value = graph.pop(_REPO_HOOKS_KEY)
     report.changed = True
     report.moves.append(
-        f"{'.'.join(_REPO_HOOKS_SITE)}.{_REPO_HOOKS_KEY} ({value!r}) removed — the CLI "
-        "reads no repository's harness config any more (issue-352), so there is "
-        "nothing of a repository's to refuse"
+        strings.t(
+            "migrations.move.repo-hooks",
+            site=".".join(_REPO_HOOKS_SITE),
+            key=_REPO_HOOKS_KEY,
+            value=value,
+        )
     )
     report.notes.append(
-        "graph hooks and critics are declared in THIS file now: hooks under "
-        f"`{_REPO_HOOKS_REPLACEMENT}` (modules + attach, the shape the harness "
-        "config's `graph.hooks` had), critics under the top-level `critics[]` (the "
-        "shape `reviews.critics[]` had). Copy the entries you want across from the "
-        "repositories you operate; what you do not copy does not run"
+        strings.t("migrations.note.repo-hooks", replacement=_REPO_HOOKS_REPLACEMENT)
     )
 
 
@@ -959,14 +948,16 @@ def _migrate_slack_channel(data: Dict[str, Any], report: MigrationReport) -> Non
         report.changed = True
         if "subscribe" in slack:
             report.notes.append(
-                "`channels.slack.subscribe` was already declared; kept it and "
-                f"dropped `channels.slack.events` ({events!r})"
+                strings.t("migrations.note.slack-subscribe-kept", events=events)
             )
         else:
             slack["subscribe"] = events
         report.moves.append(
-            f"channels.slack.{_SLACK_EVENTS_KEY} → {_SLACK_EVENTS_REPLACEMENT} "
-            "(a channel subscribes AND publishes now, issue-309)"
+            strings.t(
+                "migrations.move.slack-events",
+                key=_SLACK_EVENTS_KEY,
+                replacement=_SLACK_EVENTS_REPLACEMENT,
+            )
         )
     if _SLACK_USERS_KEY in slack:
         members = slack.pop(_SLACK_USERS_KEY) or []
@@ -974,17 +965,22 @@ def _migrate_slack_channel(data: Dict[str, Any], report: MigrationReport) -> Non
         routing = data.setdefault("routing", {})
         if not isinstance(routing, dict):
             report.notes.append(
-                f"the existing top-level `routing` is {routing!r}, not a block; "
-                "the Slack member ids were dropped — re-declare them by hand under "
-                f"`{_SLACK_USERS_REPLACEMENT}`"
+                strings.t(
+                    "migrations.note.slack-users-routing-not-a-block",
+                    routing=routing,
+                    replacement=_SLACK_USERS_REPLACEMENT,
+                )
             )
             members = []
         else:
             users = routing.setdefault("authorizedUsers", [])
             if not isinstance(users, list):
                 report.notes.append(
-                    f"`{_SLACK_USERS_REPLACEMENT}` is {users!r}, not a list; the "
-                    "Slack member ids were dropped — re-declare them by hand"
+                    strings.t(
+                        "migrations.note.slack-users-not-a-list",
+                        replacement=_SLACK_USERS_REPLACEMENT,
+                        users=users,
+                    )
                 )
                 members = []
             else:
@@ -999,17 +995,15 @@ def _migrate_slack_channel(data: Dict[str, Any], report: MigrationReport) -> Non
                         users.append({"slack": member_s})
                         already.add(member_s)
         report.moves.append(
-            f"channels.slack.{_SLACK_USERS_KEY} → {_SLACK_USERS_REPLACEMENT} "
-            f"({len(members) if isinstance(members, list) else 0} Slack member "
-            "id(s), one `{slack: …}` entry each — identity is declared once, "
-            "issue-309)"
+            strings.t(
+                "migrations.move.slack-users",
+                key=_SLACK_USERS_KEY,
+                replacement=_SLACK_USERS_REPLACEMENT,
+                count=len(members) if isinstance(members, list) else 0,
+            )
         )
         if isinstance(members, list) and members:
-            report.notes.append(
-                "each Slack member id is now its own entry; fold it into that "
-                "person's GitHub entry (`- github: <login>` + `  slack: <U…>`) so "
-                "the ledger can record their approvals under their login"
-            )
+            report.notes.append(strings.t("migrations.note.slack-users-fold"))
 
 
 def _socket_beside_gateway(config: Mapping[str, Any]) -> bool:
@@ -1043,10 +1037,7 @@ def _migrate_gateway_read_mode(data: Dict[str, Any], report: MigrationReport) ->
     assert slack is not None  # _socket_beside_gateway found it
     slack["read"]["mode"] = "gateway"
     report.changed = True
-    report.moves.append(
-        "channels.slack.read.mode socket → gateway (a gateway consumer opens no "
-        "Socket Mode connection, issue-503)"
-    )
+    report.moves.append(strings.t("migrations.move.gateway-read-mode"))
 
 
 def _promote_repositories(data: Dict[str, Any], report: MigrationReport) -> None:
@@ -1073,8 +1064,11 @@ def _promote_repositories(data: Dict[str, Any], report: MigrationReport) -> None
     existing = data.get(_REPOS_REPLACEMENT)
     if existing is not None and not isinstance(existing, list):
         report.notes.append(
-            f"the existing top-level `{_REPOS_REPLACEMENT}` is {existing!r}, not a "
-            "list; it was replaced by the promoted one — re-declare it by hand"
+            strings.t(
+                "migrations.note.repositories-not-a-list",
+                replacement=_REPOS_REPLACEMENT,
+                existing=existing,
+            )
         )
         existing = None
     moved: List[str] = []
@@ -1101,8 +1095,11 @@ def _promote_repositories(data: Dict[str, Any], report: MigrationReport) -> None
         if lists:
             report.changed = True
             report.moves.append(
-                f"{_REPOS_SITE} removed (it was empty) — repositories are declared "
-                f"at the top level now (`{_REPOS_REPLACEMENT}`, issue-348)"
+                strings.t(
+                    "migrations.move.repositories-empty",
+                    site=_REPOS_SITE,
+                    replacement=_REPOS_REPLACEMENT,
+                )
             )
         return
 
@@ -1111,21 +1108,29 @@ def _promote_repositories(data: Dict[str, Any], report: MigrationReport) -> None
 
     data[_REPOS_REPLACEMENT] = moved
     report.changed = True
-    report.moves.append(
-        f"{_REPOS_SITE} → {_REPOS_REPLACEMENT} (top level; EVERY ingress reads it, "
-        f"the gh-webhook receiver included) — {len(moved)} repositor"
-        f"{'y' if len(moved) == 1 else 'ies'}"
-    )
+    if len(moved) == 1:
+        promoted = strings.t(
+            "migrations.move.repositories-one",
+            site=_REPOS_SITE,
+            replacement=_REPOS_REPLACEMENT,
+            count=len(moved),
+        )
+    else:
+        promoted = strings.t(
+            "migrations.move.repositories-many",
+            site=_REPOS_SITE,
+            replacement=_REPOS_REPLACEMENT,
+            count=len(moved),
+        )
+    report.moves.append(promoted)
     if kickoff_repo:
         report.notes.append(
-            f"`{'.'.join(_KICKOFF_SITE)}.{_KICKOFF_KEY}` ({kickoff_repo!r}) was added "
-            "to "
-            f"`{_REPOS_REPLACEMENT}` and left where it is: it is still that channel's "
-            "default target, but it now POINTS AT a declared repository rather than "
-            "declaring one"
+            strings.t(
+                "migrations.note.kickoff-repo",
+                site=".".join(_KICKOFF_SITE),
+                key=_KICKOFF_KEY,
+                repo=kickoff_repo,
+                replacement=_REPOS_REPLACEMENT,
+            )
         )
-    report.notes.append(
-        "your gh-webhook receiver is now bounded by this list too — a delivery for a "
-        "repository outside it is dropped (`undeclared-repository`). If you were relying "
-        "on it accepting a repository you never listed, add that repository here"
-    )
+    report.notes.append(strings.t("migrations.note.webhook-bounded"))

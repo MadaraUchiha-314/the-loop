@@ -21,6 +21,7 @@ import { useMemo, useState } from "react";
 import { ApiError } from "../api/client.ts";
 import { diff, getIn, isRecord, sectionsOf, setIn, type ConfigField, type ConfigGroup } from "../api/configModel.ts";
 import type { ConfigDocument, ConfigSaveResult, JsonSchema, RestartSchedule } from "../api/types.ts";
+import { t } from "../i18n.ts";
 import { useApi } from "../state/ApiContext.tsx";
 import { useAsync } from "../state/useAsync.ts";
 import { Card, ControlButton, FieldLabel, INPUT_CLASS, Kicker, Report } from "./primitives.tsx";
@@ -74,15 +75,15 @@ export function ConfigSection({ instance = "" }: { instance?: string | undefined
     [api, instance, nonce],
   );
 
-  if (loaded.loading) return <p className="py-2 text-xs text-muted-foreground">Reading the CLI config…</p>;
+  if (loaded.loading) return <p className="py-2 text-xs text-muted-foreground">{t("ui.config.loading")}</p>;
   if (loaded.error || !loaded.data) {
     const advice = loaded.error instanceof ApiError ? loaded.error.advice : String(loaded.error);
     return (
       <Card>
-        <Kicker>CLI config</Kicker>
+        <Kicker>{t("ui.config.kicker")}</Kicker>
         <Report tone="fail" role="alert">{advice}</Report>
         <div>
-          <ControlButton onClick={() => setNonce((value) => value + 1)}>Retry</ControlButton>
+          <ControlButton onClick={() => setNonce((value) => value + 1)}>{t("ui.config.retry")}</ControlButton>
         </div>
       </Card>
     );
@@ -148,24 +149,25 @@ export function ConfigEditor({ document, schema, onSave, onSaved, onRestart, ins
   return (
     <>
       <Card>
-        <Kicker>{instance ? `Configuration — ${instance}` : "CLI config"}</Kicker>
+        <Kicker>{instance ? t("ui.config.kicker-instance", { instance }) : t("ui.config.kicker")}</Kicker>
         <p className="text-xs leading-relaxed text-muted-foreground">
           {instance ? (
             <>
-              <code className="ref-chip">{instance}</code>&rsquo;s own configuration, read and written with{" "}
-              <code className="ref-chip">instance={instance}</code>, from{" "}
+              <code className="ref-chip">{instance}</code>
+              {t("ui.config.intro.instance-own")}
+              <code className="ref-chip">instance={instance}</code>
+              {t("ui.config.intro.instance-from")}
             </>
           ) : (
-            <>The daemon&rsquo;s own configuration, read from </>
+            t("ui.config.intro.daemon")
           )}
           <code className="ref-chip">{document.path}</code>
-          {document.exists ? "" : " — which does not exist yet; saving creates it"}. A save changes only the
-          fields you changed and leaves the file&rsquo;s comments alone, and the poller and receiver pick it up
-          on their next cycle.
+          {document.exists ? "" : t("ui.config.intro.missing")}
+          {t("ui.config.intro.tail")}
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <ControlButton primary disabled={!changedCount || blocked || saved.state === "saving"} onClick={() => void save()}>
-            {saved.state === "saving" ? "Saving…" : "Save changes"}
+            {saved.state === "saving" ? t("ui.config.saving") : t("ui.config.save")}
           </ControlButton>
           <ControlButton
             disabled={!changedCount}
@@ -176,7 +178,7 @@ export function ConfigEditor({ document, schema, onSave, onSaved, onRestart, ins
               setRevision((value) => value + 1);
             }}
           >
-            Discard
+            {t("ui.config.discard")}
           </ControlButton>
           <span className="font-mono text-[0.7rem] text-muted-foreground">{summarize(changedCount, blocked)}</span>
         </div>
@@ -195,22 +197,24 @@ export function ConfigEditor({ document, schema, onSave, onSaved, onRestart, ins
 }
 
 function summarize(changed: number, blocked: boolean): string {
-  if (blocked) return "fix the highlighted field before saving";
-  if (!changed) return "no changes";
-  return `${changed} section${changed === 1 ? "" : "s"} changed`;
+  if (blocked) return t("ui.config.summary.blocked");
+  if (!changed) return t("ui.config.summary.none");
+  return changed === 1 ? t("ui.config.summary.changed-one", { count: changed }) : t("ui.config.summary.changed-other", { count: changed });
 }
 
 function SaveReport({ saved, onRestart }: { saved: Saved; onRestart?: (() => Promise<RestartSchedule>) | undefined }) {
   if (saved.state === "failed") return <Report tone="fail" role="alert">{saved.message}</Report>;
   if (saved.state !== "done") return null;
   const { result } = saved;
-  if (!result.written) return <Report role="status">Nothing to save — the file already says that.</Report>;
+  if (!result.written) return <Report role="status">{t("ui.config.nothing-to-save")}</Report>;
   return (
     <Report tone="ok" role="status">
-      Saved {result.changed.join(", ")} to {result.path}.
+      {t("ui.config.saved", { changed: result.changed.join(", "), path: result.path })}
       {result.restartRequired.length
-        ? ` ${result.restartRequired.join(", ")} ${result.restartRequired.length === 1 ? "takes" : "take"} effect when the service restarts.`
-        : " Live now."}
+        ? result.restartRequired.length === 1
+          ? t("ui.config.restart-required-one", { keys: result.restartRequired.join(", ") })
+          : t("ui.config.restart-required-other", { keys: result.restartRequired.join(", ") })
+        : t("ui.config.live-now")}
       {result.restartRequired.length && onRestart ? <RestartNow onRestart={onRestart} /> : null}
     </Report>
   );
@@ -228,13 +232,13 @@ function RestartNow({ onRestart }: { onRestart: () => Promise<RestartSchedule> }
       setState("failed");
     }
   }
-  if (state === "scheduled") return <span> Restart scheduled — the service will drop and come back.</span>;
-  if (state === "failed") return <span> The restart could not be scheduled; run `the-loop restart` on the workstation.</span>;
+  if (state === "scheduled") return <span>{t("ui.config.restart.scheduled")}</span>;
+  if (state === "failed") return <span>{t("ui.config.restart.failed")}</span>;
   return (
     <>
       {" "}
       <ControlButton disabled={state === "asking"} onClick={() => void go()}>
-        {state === "asking" ? "Scheduling…" : "Restart now"}
+        {state === "asking" ? t("ui.config.restart.scheduling") : t("ui.config.restart.now")}
       </ControlButton>
     </>
   );
@@ -330,7 +334,7 @@ function Control({ field, id, describedBy, value, onChange, onInvalid }: Control
           // would be a value, and one the schema's enum would rightly refuse.
           onChange={(event) => onChange(field.path, event.target.value || null)}
         >
-          <option value="">{placeholder ? `${placeholder} (default)` : "unset"}</option>
+          <option value="">{placeholder ? t("ui.config.option.default", { value: placeholder }) : t("ui.config.option.unset")}</option>
           {(field.options ?? []).map((option) => (
             <option key={option} value={option}>
               {option}
@@ -424,7 +428,7 @@ function StructuredControl({ field, id, describedBy, value, onChange, onInvalid 
           onInvalid(key, null);
           onChange(field.path, parsed);
         } catch {
-          onInvalid(key, "this is not valid JSON, so it will not be saved");
+          onInvalid(key, t("ui.config.invalid-json"));
         }
       }}
     />

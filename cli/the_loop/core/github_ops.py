@@ -31,6 +31,7 @@ from dataclasses import replace
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from .. import eventlog
+from .. import strings
 from ..authz import mark_self_authored
 from ..cli_config import merge_on_approval
 from ..comments import create_issue, post_issue_comment_with_url, resolve_client
@@ -241,16 +242,16 @@ def _authority(
             and _is_adhoc(item, config)
         ):
             return ""
-    return (
-        f"{target.ref} is not a work item registered on this instance, nor a pull "
-        "request recorded against one — register the session (`the-loop sessions "
-        "register`) and record the pull request (`the-loop sessions link-pr`), or "
-        "act from an ad-hoc `the-loop do` work item named with --work-item"
-    )
+    return strings.t("core.github-ops.not-registered", ref=target.ref)
 
 
 def _failed(data: Dict[str, Any], text: str) -> Dict[str, Any]:
-    data.update(exitCode=1, messages=[{"stream": "err", "text": f"error: {text}"}])
+    data.update(
+        exitCode=1,
+        messages=[
+            {"stream": "err", "text": strings.t("core.github-ops.error", error=text)}
+        ],
+    )
     return data
 
 
@@ -414,8 +415,14 @@ def comment(
         "channelsPosted": channels_posted,
     }
     if not ok:
-        return _failed(data, f"could not comment on {item.ref}: {error}")
-    return _done(data, f"commented on {item.ref}" + (f" — {url}" if url else ""))
+        return _failed(
+            data, strings.t("core.github-ops.comment-failed", ref=item.ref, error=error)
+        )
+    return _done(
+        data,
+        strings.t("core.github-ops.commented", ref=item.ref)
+        + (f" — {url}" if url else ""),
+    )
 
 
 # ------------------------------------------------------------------ tickets
@@ -442,7 +449,9 @@ def show_ticket(
         is_pr = isinstance(doc.get("pull_request"), Mapping)
         comments = gh.list_comments(item.owner, item.repo, item.number, is_pr, host)
     except GitHubApiError as exc:
-        return _failed(data, f"could not read {item.ref}: {exc}")
+        return _failed(
+            data, strings.t("core.github-ops.read-failed", ref=item.ref, error=exc)
+        )
     from ..channels.attachments import github_attachment_urls
 
     hosts = [] if not host else [host]
@@ -513,8 +522,13 @@ def create_ticket(
     )
     data: Dict[str, Any] = {"ref": ref, "url": url}
     if not ok:
-        return _failed(data, f"could not open the ticket: {error}")
-    return _done(data, f"opened {ref}" + (f" — {url}" if url else ""))
+        return _failed(
+            data, strings.t("core.github-ops.open-ticket-failed", error=error)
+        )
+    return _done(
+        data,
+        strings.t("core.github-ops.opened", ref=ref) + (f" — {url}" if url else ""),
+    )
 
 
 # ------------------------------------------------------------------ pull requests
@@ -584,8 +598,7 @@ def create_pull_request(
     if _registry(config, registry_dir).find_by_work_item(item) is None:
         return _failed(
             data,
-            f"not opening a pull request for {item.ref}: no session is registered "
-            "for it on this instance — run `the-loop sessions register` first",
+            strings.t("core.github-ops.pr-no-session", ref=item.ref),
         )
     gh = _client(config, client)
     host = _host(target)
@@ -600,7 +613,7 @@ def create_pull_request(
             if not base:
                 return _failed(
                     data,
-                    f"{target.path} has no default branch to target; pass --base",
+                    strings.t("core.github-ops.no-default-branch", path=target.path),
                 )
         number, url = gh.create_pull(
             target.owner,
@@ -613,7 +626,7 @@ def create_pull_request(
             host=host,
         )
     except GitHubApiError as exc:
-        return _failed(data, f"could not open the pull request: {exc}")
+        return _failed(data, strings.t("core.github-ops.open-pr-failed", error=exc))
     # The repository's own spelling, as GitHub returned it: the ref keys the
     # registry, and a caller's lower-cased --repository must not become the key.
     pr = _pull_ref({"number": number, "html_url": url}, target)
@@ -621,7 +634,9 @@ def create_pull_request(
     eventlog.emit(
         "work_item.pr_opened", work_item=item.ref, pull_request=pr.ref, url=url or None
     )
-    lines = [f"opened {pr.ref}" + (f" — {url}" if url else "")]
+    lines = [
+        strings.t("core.github-ops.opened", ref=pr.ref) + (f" — {url}" if url else "")
+    ]
     try:
         link = core_sessions.link_pull_request(
             item.ref, pr.ref, config=dict(config or {}), registry_dir=registry_dir
@@ -636,7 +651,12 @@ def create_pull_request(
             messages.append({"stream": "out", "text": text})
         else:
             messages.append(
-                {"stream": "err", "text": f"note: {pr.ref} is not linked: {text}"}
+                {
+                    "stream": "err",
+                    "text": strings.t(
+                        "core.github-ops.not-linked", ref=pr.ref, detail=text
+                    ),
+                }
             )
     data.update(exitCode=0, messages=messages, labels=[])
     if data["linked"]:
@@ -698,9 +718,11 @@ def _arm(
         data.setdefault("messages", []).append(
             {
                 "stream": "err",
-                "text": (
-                    f"note: {pull_request} is not labelled {wanted}: {exc} — add "
-                    "them by hand, or the poller will not list it"
+                "text": strings.t(
+                    "core.github-ops.not-labelled",
+                    ref=pull_request,
+                    labels=wanted,
+                    error=exc,
                 ),
             }
         )
@@ -708,7 +730,10 @@ def _arm(
     eventlog.emit("work_item.pr_labelled", pull_request=pr.ref, labels=labels)
     data["labels"] = labels
     data.setdefault("messages", []).append(
-        {"stream": "out", "text": f"labelled {pr.ref} {wanted}"}
+        {
+            "stream": "out",
+            "text": strings.t("core.github-ops.labelled", ref=pr.ref, labels=wanted),
+        }
     )
 
 
@@ -799,7 +824,9 @@ def pull_request_status(
             else ([], [])
         )
     except GitHubApiError as exc:
-        return _failed(data, f"could not read {target.ref}: {exc}")
+        return _failed(
+            data, strings.t("core.github-ops.read-failed", ref=target.ref, error=exc)
+        )
     mergeable = doc.get("mergeable")
     data.update(
         url=str(doc.get("html_url") or ""),
@@ -885,7 +912,9 @@ def pull_request_checks(
             else ([], [])
         )
     except GitHubApiError as exc:
-        return _failed(data, f"could not read {target.ref}: {exc}")
+        return _failed(
+            data, strings.t("core.github-ops.read-failed", ref=target.ref, error=exc)
+        )
     checks: List[Dict[str, Any]] = []
     logs = 0
     for run in runs:
@@ -936,7 +965,10 @@ def pull_request_threads(
             target.owner, target.repo, target.number, host=_host(target)
         )
     except GitHubApiError as exc:
-        return _failed(data, f"could not read the threads of {target.ref}: {exc}")
+        return _failed(
+            data,
+            strings.t("core.github-ops.read-threads-failed", ref=target.ref, error=exc),
+        )
     data["threads"] = [t for t in threads if include_resolved or not t["isResolved"]]
     return _done(data)
 
@@ -980,8 +1012,7 @@ def merge_pull_request(
         )
         return _failed(
             data,
-            f"not merging {target.ref}: routing.mergeOnApproval is false in the "
-            "CLI config, so a person merges this pull request",
+            strings.t("core.github-ops.merge-off", ref=target.ref),
         )
     refusal = _authority(target, work_item, config, registry_dir)
     if refusal:
@@ -991,7 +1022,7 @@ def merge_pull_request(
             pull_request=target.ref,
             reason="not a registered work item",
         )
-        return _failed(data, f"not merging: {refusal}")
+        return _failed(data, strings.t("core.github-ops.not-merging", refusal=refusal))
     gh = _client(config, client)
     try:
         result = gh.merge_pull(
@@ -1003,17 +1034,27 @@ def merge_pull_request(
             sha=sha,
         )
     except GitHubApiError as exc:
-        return _failed(data, f"could not merge {target.ref}: {exc}")
+        return _failed(
+            data, strings.t("core.github-ops.merge-failed", ref=target.ref, error=exc)
+        )
     merged = bool(result.get("merged", True))
     data.update(merged=merged, sha=str(result.get("sha") or ""))
     if not merged:
         return _failed(
             data,
-            f"GitHub did not merge {target.ref}: "
-            + str(result.get("message") or "no reason given"),
+            strings.t(
+                "core.github-ops.not-merged",
+                ref=target.ref,
+                reason=str(
+                    result.get("message")
+                    or strings.t("core.github-ops.not-merged-no-reason")
+                ),
+            ),
         )
     eventlog.emit("work_item.pr_merged", pull_request=target.ref, method=method)
-    return _done(data, f"merged {target.ref} ({method})")
+    return _done(
+        data, strings.t("core.github-ops.merged", ref=target.ref, method=method)
+    )
 
 
 def mark_ready(
@@ -1036,28 +1077,37 @@ def mark_ready(
     data: Dict[str, Any] = {"pullRequest": target.ref, "ready": False, "changed": False}
     refusal = _authority(target, work_item, config, registry_dir)
     if refusal:
-        return _failed(data, f"not marking ready: {refusal}")
+        return _failed(
+            data, strings.t("core.github-ops.not-marking-ready", refusal=refusal)
+        )
     gh = _client(config, client)
     host = _host(target)
     try:
         doc = gh.get_pull(target.owner, target.repo, target.number, host=host)
     except GitHubApiError as exc:
-        return _failed(data, f"could not read {target.ref}: {exc}")
+        return _failed(
+            data, strings.t("core.github-ops.read-failed", ref=target.ref, error=exc)
+        )
     if str(doc.get("state") or "") != "open":
         state = "merged" if doc.get("merged") else "closed"
-        return _failed(data, f"{target.ref} is {state}; only an open draft is readied")
+        return _failed(
+            data, strings.t("core.github-ops.not-a-draft", ref=target.ref, state=state)
+        )
     if not doc.get("draft"):
         data["ready"] = True
-        return _done(data, f"{target.ref} is already ready for review")
+        return _done(data, strings.t("core.github-ops.already-ready", ref=target.ref))
     try:
         ready = gh.mark_pull_ready(str(doc.get("node_id") or ""), host=host)
     except GitHubApiError as exc:
-        return _failed(data, f"could not mark {target.ref} ready for review: {exc}")
+        return _failed(
+            data,
+            strings.t("core.github-ops.mark-ready-failed", ref=target.ref, error=exc),
+        )
     if not ready:
-        return _failed(data, f"GitHub left {target.ref} a draft")
+        return _failed(data, strings.t("core.github-ops.left-draft", ref=target.ref))
     data.update(ready=True, changed=True)
     eventlog.emit("work_item.pr_ready", pull_request=target.ref)
-    return _done(data, f"marked {target.ref} ready for review")
+    return _done(data, strings.t("core.github-ops.marked-ready", ref=target.ref))
 
 
 def _pull_ref(doc: Mapping[str, Any], target: WorkItemRef) -> WorkItemRef:
@@ -1136,7 +1186,10 @@ def discover_pull_requests(
             )
         except GitHubApiError as exc:
             return _failed(
-                data, f"could not list the pull requests of {place.path}: {exc}"
+                data,
+                strings.t(
+                    "core.github-ops.list-prs-failed", path=place.path, error=exc
+                ),
             )
         for doc in pulls:
             if isinstance(doc.get("number"), int) and doc["number"] > 0:
@@ -1145,7 +1198,12 @@ def discover_pull_requests(
                     found.append(pr)
     data["found"] = [pr.ref for pr in found]
     if not found:
-        return _done(data, f"no open pull request in {target.path} has head {branch!r}")
+        return _done(
+            data,
+            strings.t(
+                "core.github-ops.no-pr-for-head", path=target.path, branch=branch
+            ),
+        )
     messages: List[Dict[str, str]] = []
     exit_code = 0
     for pr in found:
@@ -1196,21 +1254,23 @@ def close_ticket(
     data: Dict[str, Any] = {"ref": target.ref, "closed": False}
     refusal = _authority(target, work_item, config, registry_dir)
     if refusal:
-        return _failed(data, f"not closing: {refusal}")
+        return _failed(data, strings.t("core.github-ops.not-closing", refusal=refusal))
     gh = _client(config, client)
     try:
         gh.close_issue(
             target.owner, target.repo, target.number, reason, host=_host(target)
         )
     except GitHubApiError as exc:
-        return _failed(data, f"could not close {target.ref}: {exc}")
+        return _failed(
+            data, strings.t("core.github-ops.close-failed", ref=target.ref, error=exc)
+        )
     data["closed"] = True
     eventlog.emit("work_item.ticket_closed", work_item=target.ref, reason=reason)
-    lines = [f"closed {target.ref} ({reason})"]
+    lines = [strings.t("core.github-ops.closed", ref=target.ref, reason=reason)]
     cancelled, note = _cancel_pending_start(target, config, registry_dir)
     data["startCancelled"] = cancelled
     if cancelled:
-        lines.append(f"cancelled the pending start for {target.ref}")
+        lines.append(strings.t("core.github-ops.start-cancelled", ref=target.ref))
     result = _done(data, *lines)
     if note:
         result["messages"].append({"stream": "err", "text": note})
@@ -1243,10 +1303,8 @@ def _cancel_pending_start(
         store.record(target, STOP, source="cli", actor=actor, instance=instance)
         store.clear_started(target)
     except Exception as exc:  # noqa: BLE001 — the close happened; say what did not
-        return False, (
-            f"warning: could not cancel the pending start for {target.ref} "
-            f"({exc}); run `the-loop sessions stop {target.ref}` so it is not "
-            "launched later"
+        return False, strings.t(
+            "core.github-ops.cancel-start-failed", ref=target.ref, error=exc
         )
     eventlog.emit(
         "control.command",
@@ -1287,18 +1345,38 @@ def resolve_thread(
     }
     refusal = _authority(target, work_item, config, registry_dir)
     if refusal:
-        return _failed(data, f"not resolving: {refusal}")
+        return _failed(
+            data, strings.t("core.github-ops.not-resolving", refusal=refusal)
+        )
     gh = _client(config, client)
     host = _host(target)
     try:
         threads = gh.review_threads(target.owner, target.repo, target.number, host=host)
         if thread not in [t.get("id") for t in threads]:
-            return _failed(data, f"{thread} is not a review thread of {target.ref}")
+            return _failed(
+                data,
+                strings.t(
+                    "core.github-ops.not-a-thread", thread=thread, ref=target.ref
+                ),
+            )
         resolved = gh.resolve_review_thread(thread, host=host)
     except GitHubApiError as exc:
-        return _failed(data, f"could not resolve {thread} on {target.ref}: {exc}")
+        return _failed(
+            data,
+            strings.t(
+                "core.github-ops.resolve-failed",
+                thread=thread,
+                ref=target.ref,
+                error=exc,
+            ),
+        )
     data["resolved"] = resolved
     if not resolved:
-        return _failed(data, f"GitHub did not resolve {thread} on {target.ref}")
+        return _failed(
+            data,
+            strings.t("core.github-ops.not-resolved", thread=thread, ref=target.ref),
+        )
     eventlog.emit("work_item.thread_resolved", pull_request=target.ref, thread=thread)
-    return _done(data, f"resolved {thread} on {target.ref}")
+    return _done(
+        data, strings.t("core.github-ops.resolved", thread=thread, ref=target.ref)
+    )

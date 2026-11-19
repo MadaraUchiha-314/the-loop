@@ -36,6 +36,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from . import prompts
 from .modelchoice import effort_args as _effort_args
 from .modelchoice import model_args as _model_args
 
@@ -65,7 +66,7 @@ UNKNOWN = "unknown"
 #: What the probe asks. A fixed the-loop constant — never any text from a work item, a
 #: comment or a repository. The cheapest thing that still proves the harness accepted the
 #: arguments: if the model or the flag is wrong, the CLI fails before answering.
-PROBE_PROMPT = "the-loop availability probe: reply with the single word ok"
+PROBE_PROMPT = prompts.load("modelprobe/probe", inline=True)  # issue-540
 
 #: A probe that has not answered in this long is ``unknown``, not ``refused``.
 PROBE_TIMEOUT_SECONDS = 60.0

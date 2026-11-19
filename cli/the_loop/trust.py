@@ -72,6 +72,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, List, Mapping, Optional
 
+from . import strings
+
 logger = logging.getLogger("the-loop.trust")
 
 __all__ = [
@@ -253,21 +255,20 @@ def update_json(path: Path, mutate: Callable[[dict], bool]) -> TrustResult:
             try:
                 raw = path.read_text(encoding="utf-8")
             except OSError as exc:
-                return TrustResult(ok=False, error=f"could not read {path}: {exc}")
+                return TrustResult(
+                    ok=False, error=strings.t("trust.error.read", path=path, exc=exc)
+                )
             try:
                 parsed = json.loads(raw or "{}")
             except json.JSONDecodeError as exc:
                 return TrustResult(
                     ok=False,
-                    error=(
-                        f"{path} is not valid JSON ({exc}); leaving it untouched — "
-                        "fix or remove it, or set routing.harnessTrust.enabled: false"
-                    ),
+                    error=strings.t("trust.error.invalid-json", path=path, exc=exc),
                 )
             if not isinstance(parsed, dict):
                 return TrustResult(
                     ok=False,
-                    error=(f"{path} does not hold a JSON object; leaving it untouched"),
+                    error=strings.t("trust.error.not-an-object", path=path),
                 )
             data = parsed
         if not mutate(data):
@@ -276,7 +277,9 @@ def update_json(path: Path, mutate: Callable[[dict], bool]) -> TrustResult:
             path.parent.mkdir(parents=True, exist_ok=True)
             _atomic_write_json(path, data)
         except OSError as exc:
-            return TrustResult(ok=False, error=f"could not write {path}: {exc}")
+            return TrustResult(
+                ok=False, error=strings.t("trust.error.write", path=path, exc=exc)
+            )
         return TrustResult(applied=[str(path)])
 
 
@@ -402,7 +405,7 @@ class ClaudeTrustStore:
         meant.
         """
         if not str(cwd or "").strip():
-            return TrustResult(ok=False, error="no working directory to trust")
+            return TrustResult(ok=False, error=strings.t("trust.error.no-cwd"))
         onboarding_keys = self.project_keys(cwd)
         trust_keys = list(onboarding_keys)
         root_keys: List[str] = []
@@ -432,8 +435,14 @@ class ClaudeTrustStore:
             # — the same directory under a second name is noise, not scope.
             scope = onboarding_keys[0]
             if root_keys:
-                scope += f" and {root_keys[0]} (and everything under it)"
-            result = TrustResult(applied=[f"trusted {scope} in {self.config_path()}"])
+                scope += strings.t("trust.applied.root-scope", root=root_keys[0])
+            result = TrustResult(
+                applied=[
+                    strings.t(
+                        "trust.applied.trusted", scope=scope, path=self.config_path()
+                    )
+                ]
+            )
         return result
 
     def accept_bypass_permissions(self) -> TrustResult:
@@ -458,7 +467,7 @@ class ClaudeTrustStore:
         settings = update_json(self.settings_path(), mutate_settings)
         if settings.applied:
             settings = TrustResult(
-                applied=[f"accepted bypass-permissions in {self.settings_path()}"]
+                applied=[strings.t("trust.applied.bypass", path=self.settings_path())]
             )
         config = update_json(self.config_path(), mutate_config)
         if config.applied:
@@ -466,7 +475,7 @@ class ClaudeTrustStore:
             # module makes has to show up in the `workspace.trusted` audit trail.
             config = TrustResult(
                 applied=[
-                    f"accepted bypass-permissions (legacy key) in {self.config_path()}"
+                    strings.t("trust.applied.bypass-legacy", path=self.config_path())
                 ]
             )
         return settings.merge(config)

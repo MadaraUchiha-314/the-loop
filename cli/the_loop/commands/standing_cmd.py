@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from .base import Command, register
-from .. import cli_config, eventlog
+from .. import cli_config, eventlog, strings
 from ..client.routing import routed, service_error
 from ..core import standing as core_standing
 
@@ -37,9 +37,9 @@ def _report(exc: Exception) -> int:
     mapped = service_error(exc)
     if mapped is None:
         if isinstance(exc, ValueError):
-            mapped = (f"error: {exc}", 2)
+            mapped = (strings.t("cli.standing.report.error", exc=exc), 2)
         elif isinstance(exc, LookupError):
-            mapped = (f"error: {exc}", 1)
+            mapped = (strings.t("cli.standing.report.error", exc=exc), 1)
         else:
             raise exc
     message, code = mapped
@@ -50,7 +50,10 @@ def _report(exc: Exception) -> int:
 def _print_control(result: Dict[str, Any]) -> int:
     rows: List[Dict[str, Any]] = result.get("sessions") or []
     if not rows:
-        print("(no standing sessions declared)", file=sys.stderr)
+        print(
+            strings.t("cli.standing.print-control.no-standing-sessions-declared"),
+            file=sys.stderr,
+        )
         return 0
     width = max(len(row["name"]) for row in rows)
     for row in rows:
@@ -64,23 +67,29 @@ def _print_control(result: Dict[str, Any]) -> int:
 @register
 class StandingCommand(Command):
     name = "standing"
-    help = "List and steer the standing sessions (sessions with no work item)"
+    help = strings.t("cli.standing.help")
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         sub = parser.add_subparsers(dest="_command", metavar="<action>")
 
-        listing = sub.add_parser("list", help="Every declared or recorded session")
+        listing = sub.add_parser("list", help=strings.t("cli.standing.list.help"))
         listing.add_argument("--format", choices=["text", "json"], default="text")
 
-        create = sub.add_parser(
-            "create", help="Create a session without editing the config, and start it"
-        )
+        create = sub.add_parser("create", help=strings.t("cli.standing.create.help"))
         create.add_argument("name")
-        create.add_argument("--harness", default="", help="claude | cursor")
-        create.add_argument("--cwd", default="", help="Where the session runs")
-        create.add_argument("--prompt", default="", help="The session's brief, inline")
         create.add_argument(
-            "--prompt-file", default="", help="The session's brief, from a file"
+            "--harness", default="", help=strings.t("cli.standing.create.harness.help")
+        )
+        create.add_argument(
+            "--cwd", default="", help=strings.t("cli.standing.create.cwd.help")
+        )
+        create.add_argument(
+            "--prompt", default="", help=strings.t("cli.standing.create.prompt.help")
+        )
+        create.add_argument(
+            "--prompt-file",
+            default="",
+            help=strings.t("cli.standing.create.prompt-file.help"),
         )
         create.add_argument("--description", default="")
         create.add_argument(
@@ -88,52 +97,56 @@ class StandingCommand(Command):
             action="append",
             default=None,
             dest="harness_args",
-            help="Repeatable. Omit to inherit routing.harnessArgs.<harness>.",
+            help=strings.t("cli.standing.create.harness-arg.help"),
         )
-        create.add_argument("--slack", action="store_true", help="Announce it in Slack")
+        create.add_argument(
+            "--slack",
+            action="store_true",
+            help=strings.t("cli.standing.create.slack.help"),
+        )
         create.add_argument("--slack-channel", default="")
         create.add_argument(
             "--no-auto-start",
             action="store_true",
-            help="Do not bring it back on the next `the-loop start`",
+            help=strings.t("cli.standing.create.no-auto-start.help"),
         )
         create.add_argument(
-            "--no-start", action="store_true", help="Record it without starting it"
+            "--no-start",
+            action="store_true",
+            help=strings.t("cli.standing.create.no-start.help"),
         )
 
         delete = sub.add_parser(
             "delete",
-            help="Stop a created session and forget it (not for declared ones)",
+            help=strings.t("cli.standing.delete.help"),
         )
         delete.add_argument("name")
 
-        start = sub.add_parser("start", help="Start one session, or every declared one")
+        start = sub.add_parser("start", help=strings.t("cli.standing.start.help"))
         start.add_argument("name", nargs="?", default="")
 
-        stop = sub.add_parser("stop", help="Stop one session, or every recorded one")
+        stop = sub.add_parser("stop", help=strings.t("cli.standing.stop.help"))
         stop.add_argument("name", nargs="?", default="")
 
-        restart = sub.add_parser("restart", help="Stop then start one session")
+        restart = sub.add_parser("restart", help=strings.t("cli.standing.restart.help"))
         restart.add_argument("name")
 
-        say = sub.add_parser("say", help="Paste a message into a running session")
+        say = sub.add_parser("say", help=strings.t("cli.standing.say.help"))
         say.add_argument("name")
-        say.add_argument("--text", required=True, help="The message to deliver")
+        say.add_argument(
+            "--text", required=True, help=strings.t("cli.standing.say.text.help")
+        )
         say.add_argument(
             "--actor",
             default="",
-            help=(
-                "Who is speaking, recorded on the event for the audit trail. "
-                "Never trusted as authentication."
-            ),
+            help=strings.t("cli.standing.say.actor.help"),
         )
 
     def run(self, args: argparse.Namespace) -> int:
         action = getattr(args, "_command", None)
         if not action:
             print(
-                "error: `the-loop standing` needs an action "
-                "(list|start|stop|restart|say)",
+                strings.t("cli.standing.run.the-loop-standing-needs-an"),
                 file=sys.stderr,
             )
             return 2
@@ -162,18 +175,35 @@ class StandingCommand(Command):
             print(json.dumps(rows, indent=2))
             return 0
         if not rows:
-            print("(no standing sessions declared)", file=sys.stderr)
+            print(
+                strings.t("cli.standing.list.no-standing-sessions-declared"),
+                file=sys.stderr,
+            )
             return 0
-        table = [("Name", "Harness", "Tmux", "Declared", "Status", "Live", "Slack")]
+        table = [
+            (
+                strings.t("cli.standing.list.table.header.name"),
+                strings.t("cli.standing.list.table.header.harness"),
+                strings.t("cli.standing.list.table.header.tmux"),
+                strings.t("cli.standing.list.table.header.declared"),
+                strings.t("cli.standing.list.table.header.status"),
+                strings.t("cli.standing.list.table.header.live"),
+                strings.t("cli.standing.list.table.header.slack"),
+            )
+        ]
         for row in rows:
             table.append(
                 (
                     row["name"],
                     row["harness"] or "-",
                     row["tmuxTarget"],
-                    "yes" if row["declared"] else "no",
+                    strings.t("cli.standing.list.yes")
+                    if row["declared"]
+                    else strings.t("cli.standing.list.no"),
                     row["status"],
-                    "yes" if row["running"] else "no",
+                    strings.t("cli.standing.list.yes")
+                    if row["running"]
+                    else strings.t("cli.standing.list.no"),
                     row["slackThread"] or "-",
                 )
             )
@@ -187,8 +217,7 @@ class StandingCommand(Command):
         if args.prompt_file:
             if prompt:
                 print(
-                    "error: pass --prompt or --prompt-file, not both — there is no "
-                    "precedence between them",
+                    strings.t("cli.standing.create.pass-prompt-or-prompt-file"),
                     file=sys.stderr,
                 )
                 return 2
@@ -196,7 +225,12 @@ class StandingCommand(Command):
                 prompt = Path(args.prompt_file).expanduser().read_text(encoding="utf-8")
             except OSError as exc:
                 print(
-                    f"error: cannot read {args.prompt_file!r}: {exc}", file=sys.stderr
+                    strings.t(
+                        "cli.standing.create.cannot-read",
+                        prompt_file=args.prompt_file,
+                        exc=exc,
+                    ),
+                    file=sys.stderr,
                 )
                 return 2
         body = {

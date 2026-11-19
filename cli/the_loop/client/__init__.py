@@ -21,22 +21,15 @@ import urllib.parse
 import urllib.request
 from typing import Any, Dict, Optional
 
+from .. import strings
 from ..api.config import base_url, service_config
 
 #: How long auto-start waits for /health before giving up.
 _AUTOSTART_TIMEOUT = 15.0
 
-UNAVAILABLE_HINT = (
-    "the control-plane service is not running and could not be started. "
-    "Start it with `the-loop start`, or check "
-    "`the-loop events --source service` for why it exited."
-)
+UNAVAILABLE_HINT = strings.t("client.unavailable-hint")
 
-DISABLED_HINT = (
-    "the control-plane service is disabled (service.enabled: false in the CLI "
-    "config) and will not be auto-started. Set service.enabled: true, then run "
-    "`the-loop start`."
-)
+DISABLED_HINT = strings.t("client.disabled-hint")
 
 
 class ServiceUnavailable(RuntimeError):

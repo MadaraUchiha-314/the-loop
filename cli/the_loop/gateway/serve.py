@@ -22,7 +22,7 @@ import time
 from contextlib import asynccontextmanager
 from typing import Any, Optional
 
-from .. import eventlog
+from .. import eventlog, strings
 from ..api.config import is_loopback
 from ..runlock import RunLock
 from .config import (
@@ -161,8 +161,7 @@ def main(argv: Optional[list] = None) -> int:
             config.listen.host,
         )
         print(
-            f"refusing to bind {config.listen.host}: set listen.exposed: true to serve "
-            "beyond loopback",
+            strings.t("gateway.serve.refuse-bind", host=config.listen.host),
             file=sys.stderr,
         )
         return 2
@@ -170,7 +169,8 @@ def main(argv: Optional[list] = None) -> int:
     lock = RunLock(str(config.pidfile), name="gateway")
     if not lock.acquire():
         print(
-            f"another gateway is already running (pid {lock.holder()})", file=sys.stderr
+            strings.t("gateway.serve.already-running", pid=lock.holder()),
+            file=sys.stderr,
         )
         return 1
     eventlog.configure(

@@ -42,3 +42,8 @@ labels sit unused precisely because past work bypassed the loop.)
    [`skills/the-loop/SKILL.md`](skills/the-loop/SKILL.md) and its `reference/`.
 
 **Prime directive: when you build the-loop, run the loop.**
+
+**Prompts and strings (issue-540).** Text the CLI sends to an agent goes in a Markdown file
+under `cli/the_loop/prompts/`, read with `the_loop.prompts`; never a Python string literal.
+A human-facing message the-loop posts goes in `cli/the_loop/strings/en.json`, read with
+`the_loop.strings.t`. See [`docs/capabilities/prompts-and-strings.md`](docs/capabilities/prompts-and-strings.md).

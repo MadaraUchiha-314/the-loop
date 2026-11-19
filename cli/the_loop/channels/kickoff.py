@@ -44,6 +44,7 @@ import re
 from dataclasses import dataclass
 from typing import List, Mapping, Optional, Tuple
 
+from .. import strings
 from ..repos import DeclaredRepo, declared_repositories, parse_repo_path
 
 __all__ = [
@@ -200,39 +201,33 @@ def resolve_target(
 def _candidate_list(candidates: Tuple[str, ...]) -> str:
     shown = [f"`{name}`" for name in candidates[:CANDIDATE_LIMIT]]
     extra = len(candidates) - len(shown)
-    return ", ".join(shown) + (f" …and {extra} more" if extra > 0 else "")
+    more = strings.t("channels.kickoff.candidates.more", extra=extra)
+    return ", ".join(shown) + (more if extra > 0 else "")
 
 
 def refusal_text(target: KickoffTarget) -> str:
     """What the thread is told. Fixed words, the prefix quoted, the declared names —
     no token, no other config value, and nothing else of the member's message (A5)."""
     if not target.candidates:
-        where = (
-            "I know no repositories — set the top-level `repositories` in the "
-            "CLI config, then try again."
-        )
+        where = strings.t("channels.kickoff.refusal.no-repositories")
     else:
-        where = f"I know: {_candidate_list(target.candidates)}."
-    if target.outcome == "empty-message":
-        return (
-            f"`{target.prefix}` is a repository I know, but the message said "
-            "nothing else — put the title after the prefix and I'll open it."
+        where = strings.t(
+            "channels.kickoff.refusal.known",
+            candidates=_candidate_list(target.candidates),
         )
+    if target.outcome == "empty-message":
+        return strings.t("channels.kickoff.refusal.empty-message", prefix=target.prefix)
     if target.outcome == "ambiguous-repo":
-        return (
-            f"`{target.prefix}` names more than one repository I know — say which "
-            f"owner: {_candidate_list(target.candidates)}. Nothing was created."
+        return strings.t(
+            "channels.kickoff.refusal.ambiguous-repo",
+            prefix=target.prefix,
+            candidates=_candidate_list(target.candidates),
         )
     if target.outcome == "unknown-repo":
-        return (
-            f"I don't know a repository called `{target.prefix}`, so nothing was "
-            f"created. Start your message with one I do know, or drop the prefix. "
-            f"{where}"
+        return strings.t(
+            "channels.kickoff.refusal.unknown-repo", prefix=target.prefix, where=where
         )
-    return (
-        "This channel has no default repository, so a kickoff has to name one: "
-        f"start your message with `<repo>: `. {where}"
-    )
+    return strings.t("channels.kickoff.refusal.no-target", where=where)
 
 
 def question_text(target: KickoffTarget) -> str:
@@ -246,18 +241,13 @@ def question_text(target: KickoffTarget) -> str:
     this question again.
     """
     if target.outcome == "ambiguous-repo":
-        opening = (
-            f"`{target.prefix}` names more than one repository I know. "
-            "Which one did you mean?"
+        opening = strings.t(
+            "channels.kickoff.question.ambiguous-repo", prefix=target.prefix
         )
     elif target.outcome == "unknown-repo":
-        opening = (
-            f"I don't know a repository called `{target.prefix}`. "
-            "Pick the one you meant and I'll open it there:"
+        opening = strings.t(
+            "channels.kickoff.question.unknown-repo", prefix=target.prefix
         )
     else:  # no-target — the common first-time case
-        opening = "Which repository should this go in?"
-    return (
-        f"{opening}\nNothing is created until you pick. Next time you can skip this "
-        "by starting your message with `<repo>: `."
-    )
+        opening = strings.t("channels.kickoff.question.no-target")
+    return strings.t("channels.kickoff.question", opening=opening)

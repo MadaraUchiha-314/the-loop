@@ -23,6 +23,8 @@ import os
 import sys
 from typing import Any, Callable, Optional, Tuple
 
+from .. import strings
+
 #: Env var marking an invocation that must execute core in-process (tests).
 SERVICE_LOCAL_ENV = "THE_LOOP_SERVICE_LOCAL"
 
@@ -72,34 +74,16 @@ def routed(
 
 #: What a harness verb says when it runs in-process (issue-447, R2.2): the
 #: fallback is never silent.
-IN_PROCESS_NOTE = (
-    "note: no control-plane service is reachable; running in-process on this "
-    "session's GitHub token (integrations.github.api.tokenEnv)"
-)
+IN_PROCESS_NOTE = strings.t("client.routing.in-process-note")
 
 
-#: What a harness verb in a daemon-spawned session says when no service answers
-#: (issue-482, R3.2). It does not run in-process: the session holds no credential.
-NO_SERVICE_IN_SESSION = (
-    "no control-plane service is answering at {url}. A session the-loop's daemon "
-    "starts holds no credentials ({marker} is set here), so this verb does not run "
-    "in-process — start the service (`the-loop start`) or ask the operator to"
-)
-
-#: The same, when the service that answers predates the verb.
-STALE_SERVICE_IN_SESSION = (
-    "the control-plane service at {url} does not serve this verb yet. A session "
-    "the-loop's daemon starts holds no credentials ({marker} is set here), so this "
-    "verb does not run in-process — restart the service (`the-loop restart`) or ask "
-    "the operator to"
-)
+# What a harness verb in a daemon-spawned session says when no service answers
+# (issue-482, R3.2) is ``client.routing.no-service-in-session``: it does not run
+# in-process, the session holds no credential. When the service that answers
+# predates the verb it is ``client.routing.stale-service-in-session``.
 
 #: What a harness verb says when the running service predates it.
-STALE_SERVICE_NOTE = (
-    "note: the running control-plane service does not serve this verb yet "
-    "(restart it with `the-loop restart`); running in-process on this "
-    "session's GitHub token"
-)
+STALE_SERVICE_NOTE = strings.t("client.routing.stale-service-note")
 
 
 def harness_routed(
@@ -146,15 +130,21 @@ def harness_routed(
                 raise
             if hosted:
                 raise client.ServiceUnavailable(
-                    STALE_SERVICE_IN_SESSION.format(
-                        url=base_url(resolved), marker=hosted
+                    strings.t(
+                        "client.routing.stale-service-in-session",
+                        url=base_url(resolved),
+                        marker=hosted,
                     )
                 ) from None
             print(STALE_SERVICE_NOTE, file=sys.stderr)
             return local()
     if hosted:
         raise client.ServiceUnavailable(
-            NO_SERVICE_IN_SESSION.format(url=base_url(resolved), marker=hosted)
+            strings.t(
+                "client.routing.no-service-in-session",
+                url=base_url(resolved),
+                marker=hosted,
+            )
         )
     print(IN_PROCESS_NOTE, file=sys.stderr)
     return local()
@@ -171,7 +161,10 @@ def service_error(exc: Exception) -> Optional[Tuple[str, int]]:
     from ..client import ApiError, ServiceUnavailable
 
     if isinstance(exc, ServiceUnavailable):
-        return f"error: {exc}", 2
+        return strings.t("client.routing.error", error=exc), 2
     if isinstance(exc, ApiError):
-        return f"error: {exc.detail or exc}", 2 if exc.status == 400 else 1
+        detail = exc.detail or exc
+        return strings.t("client.routing.error", error=detail), (
+            2 if exc.status == 400 else 1
+        )
     return None

@@ -16,6 +16,7 @@
  * into the config/tunnel instructions rather than a bare "failed to fetch".
  */
 
+import { t } from "../i18n.ts";
 import type { StreamFrame } from "../state/stream.ts";
 import type {
   AttentionItem,
@@ -66,16 +67,10 @@ export class ApiError extends Error {
    */
   get advice(): string {
     if (this.kind === "network") {
-      return (
-        "Could not reach the service. Check the base URL in Settings, and that " +
-        "`the-loop service start` is running. If this page's origin is not in " +
-        "service.cors.allowOrigins, the browser blocks the read (CORS) — add it " +
-        "there. The service binds loopback only, so one on another machine needs " +
-        "an SSH tunnel or a gateway in front."
-      );
+      return t("ui.api.advice.network");
     }
-    if (this.status === 404) return "The service has no such route — check it is a recent the-loop.";
-    if (this.status >= 500) return "The service errored. Check its log for the failing call.";
+    if (this.status === 404) return t("ui.api.advice.not-found");
+    if (this.status >= 500) return t("ui.api.advice.server-error");
     return this.message;
   }
 }
@@ -279,7 +274,7 @@ export class HttpApi implements TheLoopApi {
     try {
       body = await response.json();
     } catch {
-      throw new ApiError("malformed", "response was not JSON", url, response.status);
+      throw new ApiError("malformed", t("ui.api.error.not-json"), url, response.status);
     }
     // The contract types most responses as bare objects, so this is the one
     // place the untyped JSON becomes a typed record. `types.ts` makes every

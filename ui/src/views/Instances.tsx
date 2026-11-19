@@ -23,6 +23,7 @@ import { relativeTime } from "../api/model.ts";
 import type { InstanceRow, InstancesDocument } from "../api/types.ts";
 import type { Chrome } from "../components/HeaderBar.tsx";
 import { HeaderBar } from "../components/HeaderBar.tsx";
+import { t } from "../i18n.ts";
 import { Card, ControlButton, Empty, FieldLabel, INPUT_CLASS, Kicker, Notice, Report } from "../components/primitives.tsx";
 import { StatusDot, type DotStatus } from "../components/StatusDot.tsx";
 import { useApi } from "../state/ApiContext.tsx";
@@ -40,15 +41,15 @@ export function stateDot(state: string): DotStatus {
 
 /** The header's one line: who this is, how big the fleet is, how fresh the read. */
 export function fleetSummary(doc: InstancesDocument): string {
-  if (doc.role !== "manager") return `${doc.name || "unnamed"} · role ${doc.role}`;
+  if (doc.role !== "manager") return t("ui.instances.summary.role", { name: doc.name || t("ui.instances.summary.unnamed"), role: doc.role });
   const members = doc.instances.filter((row) => row.name !== doc.name);
   const live = members.filter((row) => row.state === "live").length;
   const newest = doc.instances.map((row) => row.probedAt).filter(Boolean).toSorted().at(-1);
   return [
-    `${doc.name} · role manager`,
-    `this instance + ${members.length} registered`,
-    members.length ? `${live} of ${members.length} live` : "",
-    newest ? `probed ${relativeTime(newest)}` : "",
+    t("ui.instances.summary.manager", { name: doc.name }),
+    t("ui.instances.summary.registered", { count: members.length }),
+    members.length ? t("ui.instances.summary.live", { live, count: members.length }) : "",
+    newest ? t("ui.instances.summary.probed", { when: relativeTime(newest) }) : "",
   ]
     .filter(Boolean)
     .join(" · ");
@@ -88,8 +89,8 @@ export function Instances({ chrome, onChanged }: { chrome: Chrome; onChanged?: (
     <>
       <HeaderBar
         chrome={chrome}
-        title="Instances"
-        meta={<span className="font-mono">{doc ? fleetSummary(doc) : fleet.loading ? "reading the fleet…" : ""}</span>}
+        title={t("ui.instances.title")}
+        meta={<span className="font-mono">{doc ? fleetSummary(doc) : fleet.loading ? t("ui.instances.reading") : ""}</span>}
       />
       <div className="scroll-thin min-h-0 flex-1 overflow-y-auto px-6 py-6">
         <div className="mx-auto max-w-5xl space-y-4">
@@ -100,7 +101,7 @@ export function Instances({ chrome, onChanged }: { chrome: Chrome; onChanged?: (
           ) : null}
           {error ? (
             <Report tone="fail" role="alert">
-              <strong className="font-medium">The service refused that.</strong> {error}
+              <strong className="font-medium">{t("ui.instances.refused")}</strong> {error}
             </Report>
           ) : null}
           {note && !error ? (
@@ -112,7 +113,7 @@ export function Instances({ chrome, onChanged }: { chrome: Chrome; onChanged?: (
           {down.length > 0 ? (
             <Notice tone="blocked" role="status">
               <div>
-                {down.length === 1 ? "One instance is" : `${down.length} instances are`} not live:{" "}
+                {down.length === 1 ? t("ui.instances.down.lead-one") : t("ui.instances.down.lead-other", { count: down.length })}
                 {down.map((row, index) => (
                   <span key={row.name}>
                     {index > 0 ? "; " : ""}
@@ -120,28 +121,27 @@ export function Instances({ chrome, onChanged }: { chrome: Chrome; onChanged?: (
                     {row.detail ? ` — ${row.detail}` : ""}
                   </span>
                 ))}
-                . {down.length === 1 ? "Its rows are" : "Their rows are"} left off the board until{" "}
-                {down.length === 1 ? "it answers" : "they answer"} to {down.length === 1 ? "its" : "their"} name.
+                {down.length === 1 ? t("ui.instances.down.tail-one") : t("ui.instances.down.tail-other")}
               </div>
             </Notice>
           ) : null}
 
-          {fleet.loading && !doc ? <Empty>Loading…</Empty> : null}
+          {fleet.loading && !doc ? <Empty>{t("ui.instances.loading")}</Empty> : null}
 
           {doc ? (
             <Card className="overflow-x-auto">
-              <Kicker>{manager ? "Registered instances" : "This instance"}</Kicker>
-              <table className="w-full border-collapse text-sm" aria-label="Instances">
+              <Kicker>{manager ? t("ui.instances.kicker.manager") : t("ui.instances.kicker.worker")}</Kicker>
+              <table className="w-full border-collapse text-sm" aria-label={t("ui.instances.table.label")}>
                 <thead className="max-md:hidden">
                   <tr className="text-left text-[0.68rem] font-medium text-muted-foreground">
-                    <th className="border-b border-border px-2 py-1.5">Name</th>
-                    <th className="border-b border-border px-2 py-1.5">URL</th>
-                    <th className="border-b border-border px-2 py-1.5">State</th>
-                    <th className="border-b border-border px-2 py-1.5">Version</th>
-                    <th className="border-b border-border px-2 py-1.5">Mode</th>
-                    <th className="border-b border-border px-2 py-1.5 text-right">Managed</th>
-                    <th className="border-b border-border px-2 py-1.5 text-right">Sessions</th>
-                    <th className="border-b border-border px-2 py-1.5">Probed</th>
+                    <th className="border-b border-border px-2 py-1.5">{t("ui.instances.table.name")}</th>
+                    <th className="border-b border-border px-2 py-1.5">{t("ui.instances.table.url")}</th>
+                    <th className="border-b border-border px-2 py-1.5">{t("ui.instances.table.state")}</th>
+                    <th className="border-b border-border px-2 py-1.5">{t("ui.instances.table.version")}</th>
+                    <th className="border-b border-border px-2 py-1.5">{t("ui.instances.table.mode")}</th>
+                    <th className="border-b border-border px-2 py-1.5 text-right">{t("ui.instances.table.managed")}</th>
+                    <th className="border-b border-border px-2 py-1.5 text-right">{t("ui.instances.table.sessions")}</th>
+                    <th className="border-b border-border px-2 py-1.5">{t("ui.instances.table.probed")}</th>
                     <th className="border-b border-border px-2 py-1.5" />
                   </tr>
                 </thead>
@@ -156,7 +156,7 @@ export function Instances({ chrome, onChanged }: { chrome: Chrome; onChanged?: (
                       confirming={confirming === row.name}
                       onConfirm={(open) => setConfirming(open ? row.name : "")}
                       onUnregister={() =>
-                        run(`unregister:${row.name}`, () => api.unregisterInstance(row.name), `Unregistered ${row.name}.`)
+                        run(`unregister:${row.name}`, () => api.unregisterInstance(row.name), t("ui.instances.done.unregistered", { name: row.name }))
                       }
                     />
                   ))}
@@ -170,16 +170,18 @@ export function Instances({ chrome, onChanged }: { chrome: Chrome; onChanged?: (
               busy={busy === "register"}
               taken={doc.instances.map((row) => row.name)}
               onRegister={(name, url) =>
-                run("register", () => api.registerInstance(name, url), `Registered ${name} — it shows unreachable until it answers.`)
+                run("register", () => api.registerInstance(name, url), t("ui.instances.done.registered", { name }))
               }
             />
           ) : null}
 
           {doc && !manager ? (
             <p className="text-xs leading-relaxed text-muted-foreground" data-worker-note>
-              This service is a <strong className="font-medium text-foreground">worker</strong> (
-              <code className="ref-chip">instance.role: worker</code>), so it manages no other instances and nothing can
-              be registered here. Point this browser at a manager to see a fleet.
+              {t("ui.instances.worker-note.a")}
+              <strong className="font-medium text-foreground">{t("ui.instances.worker-note.worker")}</strong>
+              {t("ui.instances.worker-note.b")}
+              <code className="ref-chip">instance.role: worker</code>
+              {t("ui.instances.worker-note.c")}
             </p>
           ) : null}
         </div>
@@ -214,7 +216,7 @@ function InstanceTableRow({
     <tr data-instance-row={row.name} className="max-md:block max-md:border-b max-md:border-border max-md:py-2">
       <td className={`${CELL} whitespace-nowrap font-mono`}>
         {row.name}
-        {own ? <span className="ml-1.5 font-sans text-[0.68rem] text-muted-foreground">this instance</span> : null}
+        {own ? <span className="ml-1.5 font-sans text-[0.68rem] text-muted-foreground">{t("ui.instances.row.own")}</span> : null}
       </td>
       <td className={`${CELL} font-mono text-[0.75rem] text-muted-foreground`}>{row.url}</td>
       <td className={`${CELL} whitespace-nowrap`}>
@@ -229,7 +231,7 @@ function InstanceTableRow({
       <td className={`${CELL} text-right tabular-nums`}>{dash(row.managedCount)}</td>
       <td className={`${CELL} text-right tabular-nums`}>{dash(row.sessionCount)}</td>
       <td className={`${CELL} text-[0.75rem] text-muted-foreground`} title={row.probedAt || undefined}>
-        {own ? "now" : row.probedAt ? relativeTime(row.probedAt) : "—"}
+        {own ? t("ui.instances.row.now") : row.probedAt ? relativeTime(row.probedAt) : "—"}
       </td>
       <td className={`${CELL} max-md:pt-1.5`}>
         <div className="flex flex-wrap justify-end gap-1.5 max-md:justify-start">
@@ -238,18 +240,18 @@ function InstanceTableRow({
               href={hrefFor({ name: "work", filter: row.name })}
               className="rounded-md border border-border px-2 py-1.5 font-mono text-[0.7rem] text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
             >
-              Open
+              {t("ui.instances.row.open")}
             </a>
           ) : (
-            <ControlButton disabled title="not live">
-              Open
+            <ControlButton disabled title={t("ui.instances.row.not-live")}>
+              {t("ui.instances.row.open")}
             </ControlButton>
           )}
           <a
             href={hrefFor({ name: "instance", instance: row.name })}
             className="rounded-md border border-border px-2 py-1.5 font-mono text-[0.7rem] text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
           >
-            Manage
+            {t("ui.instances.row.manage")}
           </a>
           {/* No Unregister on the manager's own row — it is not registered
               (R1.3) — nor on a worker, which registers nothing (R4.4). */}
@@ -261,13 +263,13 @@ function InstanceTableRow({
                   onClick={onUnregister}
                   className="border-state-blocked/40 text-state-blocked hover:bg-surface-2 hover:text-state-blocked"
                 >
-                  {working ? "Unregistering…" : `Unregister ${row.name} for good`}
+                  {working ? t("ui.instances.row.unregistering") : t("ui.instances.row.unregister-confirm", { name: row.name })}
                 </ControlButton>
-                <ControlButton onClick={() => onConfirm(false)}>Keep it</ControlButton>
+                <ControlButton onClick={() => onConfirm(false)}>{t("ui.instances.row.keep")}</ControlButton>
               </>
             ) : (
               <ControlButton disabled={working} onClick={() => onConfirm(true)} className="text-state-blocked">
-                Unregister…
+                {t("ui.instances.row.unregister")}
               </ControlButton>
             )
           ) : null}
@@ -284,9 +286,9 @@ function InstanceTableRow({
  */
 export function registerProblems(name: string, url: string, taken: string[]): { name?: string; url?: string } {
   const problems: { name?: string; url?: string } = {};
-  if (name && !INSTANCE_NAME_RE.test(name)) problems.name = "Name must fit ^[a-z0-9][a-z0-9-]{0,39}$.";
-  else if (name && taken.includes(name)) problems.name = `${name} is already registered.`;
-  if (url && !INSTANCE_URL_RE.test(url.trim())) problems.url = "URL must start with http:// or https://.";
+  if (name && !INSTANCE_NAME_RE.test(name)) problems.name = t("ui.instances.register.problem.name");
+  else if (name && taken.includes(name)) problems.name = t("ui.instances.register.problem.taken", { name });
+  if (url && !INSTANCE_URL_RE.test(url.trim())) problems.url = t("ui.instances.register.problem.url");
   return problems;
 }
 
@@ -306,7 +308,7 @@ function RegisterForm({
 
   return (
     <Card>
-      <Kicker>Register an instance</Kicker>
+      <Kicker>{t("ui.instances.register.kicker")}</Kicker>
       <form
         className="grid gap-3 md:grid-cols-[1fr_2fr_auto] md:items-end"
         onSubmit={(event) => {
@@ -319,14 +321,15 @@ function RegisterForm({
       >
         <div className="space-y-1">
           <FieldLabel htmlFor="register-name">
-            Name — the member&rsquo;s own <code className="ref-chip">instance.name</code>
+            {t("ui.instances.register.name")}
+            <code className="ref-chip">instance.name</code>
           </FieldLabel>
           <input
             id="register-name"
             className={`${INPUT_CLASS} font-mono`}
             value={name}
             onChange={(event) => setName(event.target.value)}
-            placeholder="cloud-2"
+            placeholder={t("ui.instances.register.name.placeholder")}
             autoComplete="off"
             spellCheck={false}
             aria-invalid={problems.name ? true : undefined}
@@ -338,7 +341,7 @@ function RegisterForm({
           ) : null}
         </div>
         <div className="space-y-1">
-          <FieldLabel htmlFor="register-url">URL — its service address, as this manager reaches it</FieldLabel>
+          <FieldLabel htmlFor="register-url">{t("ui.instances.register.url")}</FieldLabel>
           <input
             id="register-url"
             className={`${INPUT_CLASS} font-mono`}
@@ -356,15 +359,19 @@ function RegisterForm({
           ) : null}
         </div>
         <ControlButton type="submit" primary disabled={!valid || busy}>
-          {busy ? "Registering…" : "Register"}
+          {busy ? t("ui.instances.register.registering") : t("ui.instances.register.submit")}
         </ControlButton>
       </form>
       <p className="text-[0.7rem] leading-relaxed text-muted-foreground">
-        Name must fit <code className="ref-chip">^[a-z0-9][a-z0-9-]{"{0,39}"}$</code> and not already be registered; URL
-        must be http(s). The member need not be up yet — it shows <em>unreachable</em> until it is. Writes{" "}
-        <code className="ref-chip">instance.manager.instances</code> in the manager&rsquo;s{" "}
-        <code className="ref-chip">cli-config.yaml</code> — the same edit you could make by hand; live on the next
-        request.
+        {t("ui.instances.register.hint.a")}
+        <code className="ref-chip">^[a-z0-9][a-z0-9-]{"{0,39}"}$</code>
+        {t("ui.instances.register.hint.b")}
+        <em>{t("ui.instances.register.hint.unreachable")}</em>
+        {t("ui.instances.register.hint.c")}
+        <code className="ref-chip">instance.manager.instances</code>
+        {t("ui.instances.register.hint.d")}
+        <code className="ref-chip">cli-config.yaml</code>
+        {t("ui.instances.register.hint.e")}
       </p>
     </Card>
   );

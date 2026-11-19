@@ -16,6 +16,7 @@ import { relativeTime } from "../api/model.ts";
 import type { StandingSessionRecord, StandingVerb } from "../api/types.ts";
 import type { Chrome } from "../components/HeaderBar.tsx";
 import { HeaderBar } from "../components/HeaderBar.tsx";
+import { t } from "../i18n.ts";
 import { Card, ControlButton, Empty, FieldLabel, INPUT_CLASS, InstanceChip, KV, Report } from "../components/primitives.tsx";
 import { StatusDot } from "../components/StatusDot.tsx";
 import { useApi } from "../state/ApiContext.tsx";
@@ -51,28 +52,29 @@ export function Standing({ chrome, onChanged }: { chrome: Chrome; onChanged?: ()
     <>
       <HeaderBar
         chrome={chrome}
-        title="Standing sessions"
-        meta={<span>Sessions that belong to no work item — no ticket, no phases, running until you stop them.</span>}
+        title={t("ui.standing.title")}
+        meta={<span>{t("ui.standing.meta")}</span>}
       />
       <div className="scroll-thin min-h-0 flex-1 overflow-y-auto px-6 py-6">
         <div className="mx-auto max-w-3xl space-y-4">
           {error ? (
             <Report tone="fail" role="alert">
-              <strong className="font-medium">The service refused that.</strong> {error}
+              <strong className="font-medium">{t("ui.standing.refused")}</strong> {error}
             </Report>
           ) : null}
           {note && !error ? <Report tone="ok" role="status">{note}</Report> : null}
 
           <CreateForm
             busy={busy === "create"}
-            onCreate={(body) => run("create", () => api.createStandingSession(body), `Created and started ${body.name}.`)}
+            onCreate={(body) => run("create", () => api.createStandingSession(body), t("ui.standing.done.created", { name: body.name }))}
           />
 
-          {sessions.loading && rows.length === 0 ? <Empty>Loading…</Empty> : null}
+          {sessions.loading && rows.length === 0 ? <Empty>{t("ui.standing.loading")}</Empty> : null}
           {!sessions.loading && rows.length === 0 ? (
             <Empty>
-              No standing sessions. Declare one under <code className="ref-chip">standingSessions.sessions</code>, or
-              create one above.
+              {t("ui.standing.empty.a")}
+              <code className="ref-chip">standingSessions.sessions</code>
+              {t("ui.standing.empty.b")}
             </Empty>
           ) : null}
 
@@ -91,13 +93,13 @@ export function Standing({ chrome, onChanged }: { chrome: Chrome; onChanged?: ()
                 )
               }
               onDelete={() =>
-                run(`delete:${session.name}`, () => api.deleteStandingSession(session.name, session.instance), `Deleted ${session.name}.`)
+                run(`delete:${session.name}`, () => api.deleteStandingSession(session.name, session.instance), t("ui.standing.done.deleted", { name: session.name }))
               }
               onSay={(text) =>
                 run(
                   `say:${session.name}`,
                   () => api.sayToStandingSession(session.name, text, "", session.instance),
-                  `Delivered into ${session.name}.`,
+                  t("ui.standing.done.delivered", { name: session.name }),
                 )
               }
             />
@@ -127,7 +129,7 @@ function CreateForm({ busy, onCreate }: { busy: boolean; onCreate: (body: Create
   if (!open) {
     return (
       <div>
-        <ControlButton onClick={() => setOpen(true)}>Create a standing session</ControlButton>
+        <ControlButton onClick={() => setOpen(true)}>{t("ui.standing.create.open")}</ControlButton>
       </div>
     );
   }
@@ -145,67 +147,67 @@ function CreateForm({ busy, onCreate }: { busy: boolean; onCreate: (body: Create
         }}
       >
         <div className="space-y-1">
-          <FieldLabel htmlFor="standing-name">Name</FieldLabel>
+          <FieldLabel htmlFor="standing-name">{t("ui.standing.create.name")}</FieldLabel>
           <input
             id="standing-name"
             className={INPUT_CLASS}
             value={body.name}
             onChange={(event) => setBody({ ...body, name: event.target.value })}
-            placeholder="supervisor"
+            placeholder={t("ui.standing.create.name.placeholder")}
             autoComplete="off"
           />
           <p className="text-[0.7rem] text-muted-foreground">
-            Lowercase letters, digits and hyphens, not starting with a hyphen. Becomes{" "}
-            <code className="ref-chip">loop-standing-{body.name || "name"}</code> in tmux.
+            {t("ui.standing.create.name.hint")}
+            <code className="ref-chip">loop-standing-{body.name || "name"}</code>
+            {t("ui.standing.create.name.hint-end")}
           </p>
         </div>
 
         <div className="space-y-1">
-          <FieldLabel htmlFor="standing-cwd">Working directory</FieldLabel>
+          <FieldLabel htmlFor="standing-cwd">{t("ui.standing.create.cwd")}</FieldLabel>
           <input
             id="standing-cwd"
             className={INPUT_CLASS}
             value={body.cwd}
             onChange={(event) => setBody({ ...body, cwd: event.target.value })}
-            placeholder="empty inherits routing.spawnWorkdir"
+            placeholder={t("ui.standing.create.cwd.placeholder")}
             autoComplete="off"
           />
-          <p className="text-[0.7rem] text-muted-foreground">It must exist — a session is never spawned into a directory that is not there.</p>
+          <p className="text-[0.7rem] text-muted-foreground">{t("ui.standing.create.cwd.hint")}</p>
         </div>
 
         <div className="space-y-1">
-          <FieldLabel htmlFor="standing-description">Description</FieldLabel>
+          <FieldLabel htmlFor="standing-description">{t("ui.standing.create.description")}</FieldLabel>
           <input
             id="standing-description"
             className={INPUT_CLASS}
             value={body.description}
             onChange={(event) => setBody({ ...body, description: event.target.value })}
-            placeholder="What this session is for, in one line"
+            placeholder={t("ui.standing.create.description.placeholder")}
             autoComplete="off"
           />
         </div>
 
         <div className="space-y-1">
-          <FieldLabel htmlFor="standing-prompt">Brief</FieldLabel>
+          <FieldLabel htmlFor="standing-prompt">{t("ui.standing.create.brief")}</FieldLabel>
           <textarea
             id="standing-prompt"
             className={INPUT_CLASS}
             rows={3}
             value={body.prompt}
             onChange={(event) => setBody({ ...body, prompt: event.target.value })}
-            placeholder="Watch the work items in flight and tell me what is stuck."
+            placeholder={t("ui.standing.create.brief.placeholder")}
           />
           <p className="text-[0.7rem] text-muted-foreground">
-            Appended to the-loop&rsquo;s own directive — you own no work item, do not answer a phase gate or post a
-            control keyword on any ticket — never substituted for it.
+            {t("ui.standing.create.brief.hint")}
           </p>
         </div>
 
         <div className="flex flex-wrap gap-2">
           <ControlButton type="submit" primary disabled={!valid || busy}>
-            {busy ? "Creating…" : "Create and start"}
+            {busy ? t("ui.standing.create.creating") : t("ui.standing.create.submit")}
           </ControlButton>
-          <ControlButton onClick={() => setOpen(false)}>Cancel</ControlButton>
+          <ControlButton onClick={() => setOpen(false)}>{t("ui.standing.create.cancel")}</ControlButton>
         </div>
       </form>
     </Card>
@@ -238,34 +240,34 @@ function SessionCard({
         {/* Text, never a dot alone: the declared/created split decides whether
             `delete` is even offered, so it must survive being read without colour. */}
         <span className="rounded-md border border-border bg-surface-2 px-2 py-0.5 font-mono text-[0.68rem] text-muted-foreground">
-          {session.declared ? "declared in config" : "created here"}
+          {session.declared ? t("ui.standing.card.declared") : t("ui.standing.card.created")}
         </span>
-        <span className="font-mono text-[0.7rem] text-muted-foreground">{session.running ? "running" : session.status}</span>
+        <span className="font-mono text-[0.7rem] text-muted-foreground">{session.running ? t("ui.standing.card.running") : session.status}</span>
       </div>
 
       {session.description ? <p className="text-sm leading-relaxed text-foreground/85">{session.description}</p> : null}
 
       <div className="space-y-1.5">
-        <KV k="tmux" v={session.tmuxTarget} title={session.tmuxTarget} />
-        <KV k="harness" v={session.harness || "—"} />
-        <KV k="directory" v={session.cwd || "—"} title={session.cwd || undefined} />
-        <KV k="started" v={session.startedAt ? relativeTime(session.startedAt) : "—"} mono={false} title={session.startedAt || undefined} />
-        {session.slackThread ? <KV k="slack" v={`thread in ${session.slackChannel || "the configured channel"}`} mono={false} /> : null}
+        <KV k={t("ui.standing.card.tmux")} v={session.tmuxTarget} title={session.tmuxTarget} />
+        <KV k={t("ui.standing.card.harness")} v={session.harness || "—"} />
+        <KV k={t("ui.standing.card.directory")} v={session.cwd || "—"} title={session.cwd || undefined} />
+        <KV k={t("ui.standing.card.started")} v={session.startedAt ? relativeTime(session.startedAt) : "—"} mono={false} title={session.startedAt || undefined} />
+        {session.slackThread ? <KV k={t("ui.standing.card.slack")} v={t("ui.standing.card.slack-thread", { channel: session.slackChannel || t("ui.standing.card.slack-default") })} mono={false} /> : null}
       </div>
 
       <div className="flex flex-wrap gap-1.5">
         {session.running ? (
           <>
             <ControlButton disabled={working} onClick={() => onControl("stop")}>
-              Stop
+              {t("ui.standing.card.stop")}
             </ControlButton>
             <ControlButton disabled={working} onClick={() => onControl("restart")}>
-              Restart
+              {t("ui.standing.card.restart")}
             </ControlButton>
           </>
         ) : (
           <ControlButton primary disabled={working} onClick={() => onControl("start")}>
-            Start
+            {t("ui.standing.card.start")}
           </ControlButton>
         )}
         {/* Offered only for a created session: the service refuses it for a
@@ -274,13 +276,13 @@ function SessionCard({
         {session.declared ? null : confirming ? (
           <>
             <ControlButton disabled={working} onClick={onDelete} className="border-state-blocked/40 text-state-blocked hover:bg-surface-2 hover:text-state-blocked">
-              Delete {session.name} for good
+              {t("ui.standing.card.delete-confirm", { name: session.name })}
             </ControlButton>
-            <ControlButton onClick={() => setConfirming(false)}>Keep it</ControlButton>
+            <ControlButton onClick={() => setConfirming(false)}>{t("ui.standing.card.keep")}</ControlButton>
           </>
         ) : (
           <ControlButton disabled={working} onClick={() => setConfirming(true)}>
-            Delete…
+            {t("ui.standing.card.delete")}
           </ControlButton>
         )}
       </div>
@@ -295,24 +297,23 @@ function SessionCard({
         }}
       >
         <label className="sr-only-label" htmlFor={`say-${session.name}`}>
-          Message {session.name}
+          {t("ui.standing.card.message-label", { name: session.name })}
         </label>
         <input
           id={`say-${session.name}`}
           className={INPUT_CLASS}
           value={message}
           onChange={(event) => setMessage(event.target.value)}
-          placeholder={session.running ? `Message ${session.name}…` : "Start it to send a message"}
+          placeholder={session.running ? t("ui.standing.card.message-placeholder", { name: session.name }) : t("ui.standing.card.message-stopped")}
           disabled={!session.running || working}
           autoComplete="off"
         />
         <ControlButton type="submit" disabled={!session.running || !message.trim() || working}>
-          Send
+          {t("ui.standing.card.send")}
         </ControlButton>
       </form>
       <p className="text-[0.7rem] text-muted-foreground">
-        Pasted straight into the pane. Nothing is posted to any ticket — a standing session has none, so the event log is
-        the record.
+        {t("ui.standing.card.say-hint")}
       </p>
     </Card>
   );

@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
 from .. import cli_config, eventlog
+from .. import strings
 from ..api.config import base_url, service_config, service_pidfile
 from ..daemonize import open_logfile
 from ..repos import repository_bounds
@@ -90,11 +91,11 @@ def gateway_configured(config: Optional[dict]) -> bool:
 
 #: What `status` and `start` say about the Slack listener a gateway block switched off
 #: (R3.8 as amended on the PR, 2026-10-19: the listener alone).
-GATEWAY_OFF = "off · gateway configured"
+GATEWAY_OFF = strings.t("core.lifecycle.gateway-off")
 #: ... and about one `read.mode: gateway` switched off for want of a block (issue-503,
 #: R6.3): nothing reads Slack, and no socket is opened in its place.
-GATEWAY_MISSING = "off · read.mode is gateway but no gateway block is configured — nothing reads Slack"
-_LISTENER_OFF = "channels.slack.enabled is false or read.mode is not socket"
+GATEWAY_MISSING = strings.t("core.lifecycle.gateway-missing")
+_LISTENER_OFF = strings.t("core.lifecycle.listener-off")
 
 
 def _raw_read_mode(config: Optional[dict]) -> str:
@@ -168,7 +169,9 @@ def ingress_health(config: Optional[dict] = None) -> List[Dict[str, Any]]:
         running = RunLock(pidfile, name=name).is_held()
         detail = ""
         if enabled[name] and not running:
-            detail = f"{ENABLED_BY[name]} is true but nothing holds {pidfile}"
+            detail = strings.t(
+                "core.lifecycle.ingress-down", flag=ENABLED_BY[name], pidfile=pidfile
+            )
         elif name == SLACK_LISTENER and (
             gateway or _raw_read_mode(config) == "gateway"
         ):
@@ -227,7 +230,11 @@ def start_service(config: Optional[dict] = None) -> Dict[str, Any]:
         return {
             "running": True,
             "pid": lock.holder(),
-            "detail": f"already running (pid {lock.holder()}) at {base_url(config)}",
+            "detail": strings.t(
+                "core.lifecycle.service.already-running",
+                pid=lock.holder(),
+                url=base_url(config),
+            ),
             "started": False,
         }
     spawn_service()
@@ -237,17 +244,16 @@ def start_service(config: Optional[dict] = None) -> Dict[str, Any]:
             return {
                 "running": True,
                 "pid": lock.holder(),
-                "detail": f"started at {base_url(config)}",
+                "detail": strings.t(
+                    "core.lifecycle.service.started", url=base_url(config)
+                ),
                 "started": True,
             }
         time.sleep(0.25)
     return {
         "running": False,
         "pid": 0,
-        "detail": (
-            "did not become healthy; check the event log "
-            "(`the-loop events --source service`)"
-        ),
+        "detail": strings.t("core.lifecycle.service.unhealthy"),
         "started": False,
     }
 
@@ -258,7 +264,12 @@ def stop_service(
     """Stop the control-plane service and wait for it to exit (idempotent)."""
     lock = _service_lock(config)
     if not lock.is_held():
-        return {"running": False, "pid": 0, "detail": "not running", "stopped": False}
+        return {
+            "running": False,
+            "pid": 0,
+            "detail": strings.t("core.lifecycle.service.not-running"),
+            "stopped": False,
+        }
     pid = lock.holder()
     try:
         os.kill(pid, signal.SIGTERM)
@@ -268,13 +279,13 @@ def stop_service(
         return {
             "running": False,
             "pid": pid,
-            "detail": f"stopped (pid {pid})",
+            "detail": strings.t("core.lifecycle.service.stopped", pid=pid),
             "stopped": True,
         }
     return {
         "running": True,
         "pid": pid,
-        "detail": f"did not exit within {timeout:.0f}s",
+        "detail": strings.t("core.lifecycle.service.did-not-exit", timeout=timeout),
         "stopped": False,
     }
 
@@ -283,7 +294,12 @@ def _start_daemon(daemon: str, config: Optional[dict]) -> Dict[str, Any]:
     """Start an ingress daemon and wait for its lock — the honest start."""
     lock = RunLock(core_daemons._pidfile(daemon, config), name=daemon)
     if lock.is_held():
-        return _row(daemon, True, "already-running", f"pid {lock.holder()}")
+        return _row(
+            daemon,
+            True,
+            "already-running",
+            strings.t("core.lifecycle.pid", pid=lock.holder()),
+        )
     result = core_daemons.control_daemon(daemon, "start", config)
     deadline = time.monotonic() + DAEMON_START_TIMEOUT_SECONDS
     while time.monotonic() < deadline:
@@ -296,7 +312,10 @@ def _start_daemon(daemon: str, config: Optional[dict]) -> Dict[str, Any]:
         daemon,
         True,
         "failed",
-        f"did not come up; see {core_daemons._logfile(daemon, config)}",
+        strings.t(
+            "core.lifecycle.daemon-failed",
+            logfile=core_daemons._logfile(daemon, config),
+        ),
     )
 
 
@@ -318,15 +337,23 @@ def _await_hosted(
             holder = lock.holder()
             if service_pid and holder == service_pid:
                 return _row(
-                    daemon, True, "hosted", f"in the service process (pid {holder})"
+                    daemon,
+                    True,
+                    "hosted",
+                    strings.t("core.lifecycle.hosted", pid=holder),
                 )
-            return _row(daemon, True, "already-running", f"standalone, pid {holder}")
+            return _row(
+                daemon,
+                True,
+                "already-running",
+                strings.t("core.lifecycle.standalone", pid=holder),
+            )
         time.sleep(0.1)
     return _row(
         daemon,
         True,
         "failed",
-        "the service did not host it; check `the-loop events --source service`",
+        strings.t("core.lifecycle.not-hosted"),
     )
 
 
@@ -349,16 +376,23 @@ def start_all(config: Optional[dict] = None) -> Dict[str, Any]:
     service_pid = 0
 
     if not enabled["service"]:
-        rows.append(_row("service", False, "disabled", "service.enabled is false"))
+        rows.append(
+            _row(
+                "service",
+                False,
+                "disabled",
+                strings.t("core.lifecycle.service.disabled"),
+            )
+        )
     else:
         try:
             outcome = start_service(config)
             service_up = bool(outcome["running"])
             service_pid = int(outcome["pid"] or 0)
             mcp = (
-                "/mcp exposed"
+                strings.t("core.lifecycle.mcp.exposed")
                 if conf["mcpEnabled"]
-                else "MCP disabled (service.mcp.enabled)"
+                else strings.t("core.lifecycle.mcp.disabled")
             )
             rows.append(
                 _row(
@@ -382,8 +416,7 @@ def start_all(config: Optional[dict] = None) -> Dict[str, Any]:
                     daemon,
                     True,
                     "failed",
-                    "the service hosts the ingresses (service.hostIngresses) "
-                    "and did not come up",
+                    strings.t("core.lifecycle.ingresses-service-down"),
                 )
             return _await_hosted(daemon, config, service_pid)
         return _start_daemon(daemon, config)
@@ -397,8 +430,7 @@ def start_all(config: Optional[dict] = None) -> Dict[str, Any]:
                     GATEWAY_CLIENT,
                     True,
                     "manual",
-                    "service.hostIngresses is off — the gateway client runs only "
-                    "inside the service",
+                    strings.t("core.lifecycle.gateway-client-manual"),
                 )
             )
         else:
@@ -410,7 +442,12 @@ def start_all(config: Optional[dict] = None) -> Dict[str, Any]:
         pass
     elif not enabled["gh-webhook"]:
         rows.append(
-            _row("gh-webhook", False, "disabled", "webhooks.ghWebhook.enabled is false")
+            _row(
+                "gh-webhook",
+                False,
+                "disabled",
+                strings.t("core.lifecycle.webhook-disabled"),
+            )
         )
     else:
         try:
@@ -421,7 +458,11 @@ def start_all(config: Optional[dict] = None) -> Dict[str, Any]:
     if gateway:
         pass
     elif not enabled["poller"]:
-        rows.append(_row("poller", False, "disabled", "polling.enabled is false"))
+        rows.append(
+            _row(
+                "poller", False, "disabled", strings.t("core.lifecycle.poller-disabled")
+            )
+        )
     elif not (_polling(config).get("sources") or []):
         # Caught at plan time rather than as a spawn whose failure lands only
         # in a logfile: an enabled poller with nothing to poll is a config
@@ -431,7 +472,7 @@ def start_all(config: Optional[dict] = None) -> Dict[str, Any]:
                 "poller",
                 True,
                 "misconfigured",
-                "polling.enabled is true but polling.sources is empty",
+                strings.t("core.lifecycle.poller-no-sources"),
             )
         )
     elif not repository_bounds(config or {}):
@@ -443,8 +484,7 @@ def start_all(config: Optional[dict] = None) -> Dict[str, Any]:
                 "poller",
                 True,
                 "misconfigured",
-                "polling.enabled is true but the top-level `repositories` is empty "
-                "— nothing to poll",
+                strings.t("core.lifecycle.poller-no-repositories"),
             )
         )
     else:
@@ -474,8 +514,7 @@ def start_all(config: Optional[dict] = None) -> Dict[str, Any]:
                         SLACK_LISTENER,
                         True,
                         "failed",
-                        "the service hosts the listener (service.hostIngresses) "
-                        "and did not come up",
+                        strings.t("core.lifecycle.listener-service-down"),
                     )
                 )
             else:
@@ -492,10 +531,9 @@ def start_all(config: Optional[dict] = None) -> Dict[str, Any]:
                 True,
                 "already-running" if lock.is_held() else "manual",
                 (
-                    f"pid {lock.holder()}"
+                    strings.t("core.lifecycle.pid", pid=lock.holder())
                     if lock.is_held()
-                    else "service.hostIngresses is off — run `the-loop channels "
-                    "listen` in the foreground"
+                    else strings.t("core.lifecycle.listener-manual")
                 ),
             )
         )
@@ -572,9 +610,9 @@ def stop_all(config: Optional[dict] = None) -> Dict[str, Any]:
             enabled[daemon],
             "stopped" if freed else "failed",
             (
-                f"was hosted in the service (pid {service_pid}); stopped with it"
+                strings.t("core.lifecycle.hosted-stopped", pid=service_pid)
                 if freed
-                else "hosted lock still held after the service stopped"
+                else strings.t("core.lifecycle.hosted-lock-held")
             ),
         )
     rows = [
@@ -763,10 +801,9 @@ def posting_suffix(doc: Mapping[str, Any], config: Optional[Mapping[str, Any]]) 
     if path.kind == "local":
         return ""
     if path.kind == "gateway":
-        return " · posting through the gateway" if posting == "on" else ""
-    return (
-        f" — outbound Slack needs {slack.bot_token_env} on this instance "
-        f"(the gateway reports posting {posting})"
+        return strings.t("core.lifecycle.posting-gateway") if posting == "on" else ""
+    return strings.t(
+        "core.lifecycle.posting-none", var=slack.bot_token_env, posting=posting
     )
 
 
@@ -832,22 +869,27 @@ def gateway_line(
     (409)`, `unreachable · retrying`, `connecting · attempt n`, `not configured` —
     plus, given the config, the outbound-Slack suffix (issue-519)."""
     if not doc.get("configured"):
-        return "not configured"
+        return strings.t("core.lifecycle.gateway.not-configured")
     state = str(doc.get("state") or "unknown")
     url = str(doc.get("url") or "")
     if state == "connected":
         mode = doc.get("mode") or {}
         how = "long-poll" if (mode.get("longPollSeconds") or 0) > 0 else "polling"
-        return f"connected · {how} {url}".rstrip() + posting_suffix(doc, config)
+        return strings.t(
+            "core.lifecycle.gateway.connected", how=how, url=url
+        ).rstrip() + posting_suffix(doc, config)
     if state == "refused":
         who = doc.get("refusedBy")
-        return f"refused · {doc.get('error') or 'duplicate instance'} (409)" + (
-            f" — held by {who}" if who else ""
+        error = doc.get("error") or strings.t("core.lifecycle.gateway.duplicate")
+        return strings.t("core.lifecycle.gateway.refused", error=error) + (
+            strings.t("core.lifecycle.gateway.held-by", who=who) if who else ""
         )
     if state == "unreachable":
-        return f"unreachable · retrying {url}".rstrip()
+        return strings.t("core.lifecycle.gateway.unreachable", url=url).rstrip()
     if state == "connecting":
-        return f"connecting · attempt {doc.get('attempt') or 1}"
+        return strings.t(
+            "core.lifecycle.gateway.connecting", attempt=doc.get("attempt") or 1
+        )
     return f"{state} {url}".rstrip()
 
 
@@ -958,9 +1000,10 @@ def environment_line(doc: Mapping[str, Any]) -> str:
     stale = int(env.get("stale") or 0)
     if not stale:
         return ""
-    return (
-        f"{stale} of {int(env.get('running') or 0)} running with a stale "
-        "environment — `the-loop sessions restart --all`"
+    return strings.t(
+        "core.lifecycle.environment-stale",
+        stale=stale,
+        running=int(env.get("running") or 0),
     )
 
 
@@ -979,7 +1022,9 @@ def credentials_line(doc: Mapping[str, Any]) -> str:
     if not rows:
         return ""
     names = sorted({name for row in rows for name in row["credentials"]})
-    return f"{len(rows)} session(s) hold {', '.join(names)} (env.sessionCredentials)"
+    return strings.t(
+        "core.lifecycle.credentials-held", n=len(rows), names=", ".join(names)
+    )
 
 
 def undelivered_line(doc: Mapping[str, Any]) -> str:
@@ -1007,12 +1052,14 @@ def undelivered_line(doc: Mapping[str, Any]) -> str:
         if isinstance(row, Mapping) and row.get("service") in ("poller", "gh-webhook")
     )
     return (
-        f"{pending} event(s) undelivered, oldest {waited} ago"
+        strings.t("core.lifecycle.undelivered.count", pending=pending, waited=waited)
         + (f" ({error})" if error else "")
         + (
-            f" — retried every {DRAIN_INTERVAL_SECONDS}s"
+            strings.t(
+                "core.lifecycle.undelivered.retried", seconds=DRAIN_INTERVAL_SECONDS
+            )
             if draining
-            else " — nothing is draining them: start the poller or the webhook receiver"
+            else strings.t("core.lifecycle.undelivered.not-draining")
         )
     )
 

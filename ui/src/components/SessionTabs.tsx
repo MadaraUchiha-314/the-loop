@@ -12,6 +12,7 @@
  */
 
 import type { WorkItemView } from "../api/model.ts";
+import { t } from "../i18n.ts";
 import { itemHref } from "../state/route.ts";
 import { GitPullRequestIcon, PauseIcon, SquareTerminalIcon } from "./Icons.tsx";
 
@@ -23,7 +24,7 @@ export function SessionTabs({ view, viewed }: { view: WorkItemView; viewed: stri
   const on = "border-primary text-foreground";
   const off = "border-transparent text-muted-foreground hover:text-foreground";
   return (
-    <div className="scroll-thin flex items-center gap-1 overflow-x-auto border-b border-border px-6" role="navigation" aria-label="Sessions">
+    <div className="scroll-thin flex items-center gap-1 overflow-x-auto border-b border-border px-6" role="navigation" aria-label={t("ui.session-tabs.label")}>
       <a
         href={itemHref(view.ref, view.instance)}
         aria-label={view.shortRef}
@@ -31,7 +32,7 @@ export function SessionTabs({ view, viewed }: { view: WorkItemView; viewed: stri
         className={`${tab} ${viewed === view.ref ? on : off}`}
       >
         <SquareTerminalIcon className="h-3.5 w-3.5" />
-        <span>Work item loop</span>
+        <span>{t("ui.session-tabs.work-item-loop")}</span>
         {view.sessionState === "paused" ? <PauseIcon className="h-3 w-3 text-state-blocked" /> : null}
       </a>
       {prs.map((pr) => (
@@ -43,7 +44,7 @@ export function SessionTabs({ view, viewed }: { view: WorkItemView; viewed: stri
           className={`${tab} ${viewed === pr.ref ? on : off}`}
         >
           <GitPullRequestIcon className="h-3.5 w-3.5" />
-          <span>PR #{pr.number}</span>
+          <span>{t("ui.session-tabs.pr", { number: pr.number })}</span>
           {pr.prRepo ? <span className="font-mono text-[0.68rem] text-muted-foreground">{pr.prRepo.split("/").at(-1)}</span> : null}
           {pr.sessionState === "paused" ? <PauseIcon className="h-3 w-3 text-state-blocked" /> : null}
         </a>

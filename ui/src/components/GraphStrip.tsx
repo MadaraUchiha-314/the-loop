@@ -13,6 +13,7 @@
  */
 
 import type { RailNode } from "../api/model.ts";
+import { t } from "../i18n.ts";
 import { nodeDot, STATUS_TEXT, StatusDot } from "./StatusDot.tsx";
 
 export type StripEntry = RailNode | "gap";
@@ -37,9 +38,9 @@ export function compactRail(nodes: RailNode[]): StripEntry[] {
 export function railLabel(nodes: RailNode[]): string {
   const active = nodes.filter((node) => node.state !== "skipped");
   const current = nodes.find((node) => node.state === "current" || node.state === "blocked");
-  if (current) return `${current.label} · ${active.indexOf(current) + 1} of ${active.length}`;
-  if (active.length > 0 && active.every((node) => node.state === "done")) return "complete";
-  return `planned · ${active.length} phases`;
+  if (current) return t("ui.graph.rail.at", { label: current.label, index: active.indexOf(current) + 1, total: active.length });
+  if (active.length > 0 && active.every((node) => node.state === "done")) return t("ui.graph.rail.complete");
+  return t("ui.graph.rail.planned", { total: active.length });
 }
 
 /** A node id as the design writes it: `human-approval` → `Human approval`. */
@@ -65,11 +66,11 @@ interface GraphStripProps {
 export function GraphStrip({ nodes, loop, expanded, current }: GraphStripProps) {
   if (!expanded || nodes.length === 0) return null;
   return (
-    <section className="border-b border-border bg-surface/60 px-6 py-3" aria-label="Loop position">
+    <section className="border-b border-border bg-surface/60 px-6 py-3" aria-label={t("ui.graph.section")}>
       <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <span className="font-mono text-foreground">{loop}</span>
       </div>
-      <ol className="scroll-thin mt-3 flex items-center gap-1 overflow-x-auto pb-1" role="list" aria-label="loop position">
+      <ol className="scroll-thin mt-3 flex items-center gap-1 overflow-x-auto pb-1" role="list" aria-label={t("ui.graph.list")}>
         {nodes.map((node, index) => (
           <li key={node.id} className="flex shrink-0 items-center gap-1" role="listitem" data-node={node.id}>
             <GraphNode node={node} step={current ? node.id === current : node.state === "current"} />

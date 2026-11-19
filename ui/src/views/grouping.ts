@@ -16,6 +16,7 @@
 
 import { endedAsShipped, itemGroup, parseRef, type WorkItemView } from "../api/model.ts";
 import type { DotStatus } from "../components/StatusDot.tsx";
+import { t } from "../i18n.ts";
 
 export type SidebarGroup = "needs-you" | "in-flight" | "shipped" | "idle";
 
@@ -33,8 +34,8 @@ export function isShipped(view: WorkItemView): boolean {
 export type MinimalGroup = "needs-you" | "everything";
 
 export const SIDEBAR_GROUPS_MINIMAL: { key: MinimalGroup; title: string }[] = [
-  { key: "needs-you", title: "Needs you" },
-  { key: "everything", title: "Everything else" },
+  { key: "needs-you", title: t("ui.sidebar.group.needs-you") },
+  { key: "everything", title: t("ui.sidebar.group.everything") },
 ];
 
 /** Needs you stays; In flight, Shipped and Idle are one group of things that need nothing. */

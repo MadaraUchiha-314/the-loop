@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import List, Sequence
 
 from .base import Command, register
-from .. import install as install_mod
+from .. import install as install_mod, strings
 from ..cli_config import default_cli_config_path, load_cli_config
 
 logger = logging.getLogger("the-loop.install")
@@ -41,7 +41,13 @@ def _cli_config() -> dict:
         return {}
 
 
-_HEADERS = ["Component", "Outcome", "Step", "Command / file", "Detail"]
+_HEADERS = [
+    strings.t("cli.install.table.header.component"),
+    strings.t("cli.install.table.header.outcome"),
+    strings.t("cli.install.table.header.step"),
+    strings.t("cli.install.table.header.command-file"),
+    strings.t("cli.install.table.header.detail"),
+]
 
 
 def _rows(results: Sequence[install_mod.StepResult]) -> List[List[str]]:
@@ -82,45 +88,42 @@ class _InstallBase(Command):
             "components",
             nargs="*",
             metavar="COMPONENT",
-            help=(
-                "What to "
-                + verb
-                + ": any of "
-                + ", ".join(install_mod.COMPONENTS)
-                + ", or 'all'. Default: the CLI plus every harness found on PATH."
+            help=strings.t(
+                "cli.install.add-arguments.components.help",
+                verb=verb,
+                components=", ".join(install_mod.COMPONENTS),
             ),
         )
         parser.add_argument(
             "--scope",
             choices=("user", "project"),
             default="user",
-            help="Install for your user account (default) or for one project only.",
+            help=strings.t("cli.install.add-arguments.scope.help"),
         )
         parser.add_argument(
             "--project-dir",
             default=".",
-            help="The project for --scope project (default: current directory).",
+            help=strings.t("cli.install.add-arguments.project-dir.help"),
         )
         parser.add_argument(
             "--from",
             dest="marketplace_repo",
             default="",
-            help=(
-                "Marketplace repository as owner/repo. Default: the CLI config's "
-                "routing.harnessPlugins.marketplaceRepo, else "
-                f"{install_mod.DEFAULT_MARKETPLACE_REPO}."
+            help=strings.t(
+                "cli.install.add-arguments.from.help",
+                default_marketplace_repo=install_mod.DEFAULT_MARKETPLACE_REPO,
             ),
         )
         parser.add_argument(
             "--dry-run",
             action="store_true",
-            help="Print the plan and change nothing.",
+            help=strings.t("cli.install.add-arguments.dry-run.help"),
         )
         parser.add_argument(
             "--format",
             choices=("table", "json"),
             default="table",
-            help="Output format (default: table).",
+            help=strings.t("cli.install.add-arguments.format.help"),
         )
 
     def run(self, args: argparse.Namespace) -> int:
@@ -154,15 +157,20 @@ class _InstallBase(Command):
             # and it prints under --dry-run too, which is the point.
             plural = "s" if len(components) != 1 else ""
             print(
-                f"the-loop {'upgrade' if self.upgrade else 'install'} · "
-                f"component{plural}: {', '.join(components)} · scope: {args.scope}"
+                strings.t(
+                    "cli.install.run.header",
+                    verb="upgrade" if self.upgrade else "install",
+                    plural=plural,
+                    components=", ".join(components),
+                    scope=args.scope,
+                )
                 + (f" ({Path(args.project_dir)})" if args.scope == "project" else "")
                 + (
-                    f" · marketplace: {repo}"
+                    strings.t("cli.install.run.header-marketplace", repo=repo)
                     if any(name in install_mod.BINARIES for name in components)
                     else ""
                 )
-                + (" · dry run" if args.dry_run else "")
+                + (strings.t("cli.install.run.header-dry-run") if args.dry_run else "")
             )
 
         results = install_mod.execute(steps, dry_run=args.dry_run)
@@ -173,12 +181,12 @@ class _InstallBase(Command):
 @register
 class InstallCommand(_InstallBase):
     name = "install"
-    help = "Install the-loop's CLI and its Claude Code / Cursor plugin (user or project scope)"
+    help = strings.t("cli.install.help")
     upgrade = False
 
 
 @register
 class UpgradeCommand(_InstallBase):
     name = "upgrade"
-    help = "Upgrade the-loop's CLI and its Claude Code / Cursor plugin to the current version"
+    help = strings.t("cli.install.upgrade.help")
     upgrade = True

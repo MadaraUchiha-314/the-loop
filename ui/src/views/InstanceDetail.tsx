@@ -20,6 +20,7 @@ import type { DaemonStatus, DaemonVerb, GatewayDocument } from "../api/types.ts"
 import { ConfigSection } from "../components/ConfigEditor.tsx";
 import type { Chrome } from "../components/HeaderBar.tsx";
 import { HeaderBar } from "../components/HeaderBar.tsx";
+import { t } from "../i18n.ts";
 import { Card, ControlButton, Empty, Kicker, KV, Notice, Report } from "../components/primitives.tsx";
 import type { DotStatus } from "../components/StatusDot.tsx";
 import { StatusDot } from "../components/StatusDot.tsx";
@@ -43,7 +44,7 @@ export function InstanceDetail({ chrome, name, onChanged }: InstanceDetailProps)
   const own = doc?.name === name;
   const manager = doc?.role === "manager";
   const live = row?.state === "live";
-  const reason = row && !live ? row.detail || `not live (${row.state})` : "";
+  const reason = row && !live ? row.detail || t("ui.instance.not-live", { state: row.state }) : "";
 
   // The per-instance reads run only once the row is live: a request to a
   // member that has not answered to its name is one the manager refuses (R6.1).
@@ -84,7 +85,7 @@ export function InstanceDetail({ chrome, name, onChanged }: InstanceDetailProps)
   };
 
   const controlDaemon = (daemon: DaemonStatus, verb: DaemonVerb) =>
-    run(`${verb}:${daemon.daemon}`, () => api.controlDaemon(daemon.daemon, verb, name), `${verb} ${daemon.daemon} on ${name}.`, () =>
+    run(`${verb}:${daemon.daemon}`, () => api.controlDaemon(daemon.daemon, verb, name), t("ui.instance.done.daemon", { verb, daemon: daemon.daemon, name }), () =>
       daemons.reload(),
     );
 
@@ -93,7 +94,7 @@ export function InstanceDetail({ chrome, name, onChanged }: InstanceDetailProps)
       <>
         <HeaderBar chrome={chrome} title={<span className="font-mono">{name}</span>} />
         <div className="px-6 py-6">
-          <Empty>Loading…</Empty>
+          <Empty>{t("ui.instance.loading")}</Empty>
         </div>
       </>
     );
@@ -105,9 +106,11 @@ export function InstanceDetail({ chrome, name, onChanged }: InstanceDetailProps)
         <HeaderBar chrome={chrome} title={<span className="font-mono">{name}</span>} />
         <div className="px-6 py-6">
           <Empty>
-            No instance <code className="ref-chip">{name}</code> in this service&rsquo;s fleet.{" "}
+            {t("ui.instance.missing.a")}
+            <code className="ref-chip">{name}</code>
+            {t("ui.instance.missing.b")}
             <a href={hrefFor({ name: "instances" })} className="text-foreground underline-offset-2 hover:underline">
-              Back to the instances
+              {t("ui.instance.missing.back")}
             </a>
             .
           </Empty>
@@ -136,11 +139,13 @@ export function InstanceDetail({ chrome, name, onChanged }: InstanceDetailProps)
               </>
             ) : null}
             <span aria-hidden="true">·</span>
-            <span title={row.probedAt || undefined}>probed {own ? "now" : row.probedAt ? relativeTime(row.probedAt) : "—"}</span>
+            <span title={row.probedAt || undefined}>
+              {t("ui.instance.meta.probed", { when: own ? t("ui.instance.meta.now") : row.probedAt ? relativeTime(row.probedAt) : "—" })}
+            </span>
             {own ? (
               <>
                 <span aria-hidden="true">·</span>
-                <span>this instance</span>
+                <span>{t("ui.instance.meta.own")}</span>
               </>
             ) : null}
           </>
@@ -151,14 +156,15 @@ export function InstanceDetail({ chrome, name, onChanged }: InstanceDetailProps)
           {!live ? (
             <Notice tone="blocked" role="status">
               <div>
-                Not live: <strong className="font-medium">{reason}</strong>. Every control below is disabled until the
-                instance answers to its name.
+                {t("ui.instance.down.a")}
+                <strong className="font-medium">{reason}</strong>
+                {t("ui.instance.down.b")}
               </div>
             </Notice>
           ) : null}
           {error ? (
             <Report tone="fail" role="alert">
-              <strong className="font-medium">The service refused that.</strong> {error}
+              <strong className="font-medium">{t("ui.instance.refused")}</strong> {error}
             </Report>
           ) : null}
           {note && !error ? (
@@ -169,17 +175,17 @@ export function InstanceDetail({ chrome, name, onChanged }: InstanceDetailProps)
 
           <div className="grid gap-4 lg:grid-cols-2">
             <Card>
-              <Kicker>Identity</Kicker>
+              <Kicker>{t("ui.instance.identity.kicker")}</Kicker>
               <div className="space-y-1.5">
-                <KV k="name" v={row.name} />
-                <KV k="url" v={row.url} title={row.url} />
-                <KV k="version" v={live ? row.version || "—" : "—"} />
-                <KV k="mode" v={live ? identity.data?.scope?.mode || row.mode || "—" : "—"} />
-                <KV k="managed" mono={false}>
+                <KV k={t("ui.instance.identity.name")} v={row.name} />
+                <KV k={t("ui.instance.identity.url")} v={row.url} title={row.url} />
+                <KV k={t("ui.instance.identity.version")} v={live ? row.version || "—" : "—"} />
+                <KV k={t("ui.instance.identity.mode")} v={live ? identity.data?.scope?.mode || row.mode || "—" : "—"} />
+                <KV k={t("ui.instance.identity.managed")} mono={false}>
                   {!live ? (
                     "—"
                   ) : identity.loading && !identity.data ? (
-                    <span className="text-muted-foreground">reading…</span>
+                    <span className="text-muted-foreground">{t("ui.instance.identity.reading")}</span>
                   ) : identity.error ? (
                     <span className="text-state-blocked">{identity.error.message}</span>
                   ) : (
@@ -193,18 +199,18 @@ export function InstanceDetail({ chrome, name, onChanged }: InstanceDetailProps)
                     </span>
                   )}
                 </KV>
-                <KV k="sessions" v={live ? String(identity.data?.sessionCount ?? row.sessionCount) : "—"} />
+                <KV k={t("ui.instance.identity.sessions")} v={live ? String(identity.data?.sessionCount ?? row.sessionCount) : "—"} />
               </div>
             </Card>
 
             <Card data-card="daemons">
-              <Kicker>Daemons</Kicker>
+              <Kicker>{t("ui.instance.daemons.kicker")}</Kicker>
               {!live ? (
-                <p className="text-xs text-muted-foreground">Unknown — the instance has not answered.</p>
+                <p className="text-xs text-muted-foreground">{t("ui.instance.unanswered")}</p>
               ) : daemons.loading && !daemons.data ? (
-                <p className="text-xs text-muted-foreground">Reading…</p>
+                <p className="text-xs text-muted-foreground">{t("ui.instance.reading")}</p>
               ) : (daemons.data ?? []).length === 0 ? (
-                <p className="text-xs text-muted-foreground">No daemon reported.</p>
+                <p className="text-xs text-muted-foreground">{t("ui.instance.daemons.none")}</p>
               ) : (
                 <div className="divide-y divide-border">
                   {(daemons.data ?? []).map((daemon) => {
@@ -216,11 +222,11 @@ export function InstanceDetail({ chrome, name, onChanged }: InstanceDetailProps)
                         <span className="text-[0.7rem] text-muted-foreground">
                           {daemon.running
                             ? daemon.lastCycleAt
-                              ? `running · last cycle ${relativeTime(daemon.lastCycleAt)}`
-                              : "running"
+                              ? t("ui.instance.daemons.running-cycle", { when: relativeTime(daemon.lastCycleAt) })
+                              : t("ui.instance.daemons.running")
                             : offForGateway
-                              ? "off · gateway configured"
-                              : "stopped"}
+                              ? t("ui.instance.daemons.off-gateway")
+                              : t("ui.instance.daemons.stopped")}
                         </span>
                         <span className="ml-auto">
                           {offForGateway ? null : (
@@ -247,18 +253,18 @@ export function InstanceDetail({ chrome, name, onChanged }: InstanceDetailProps)
                         void run(
                           "restart",
                           () => api.restart(false, name),
-                          `Restart of ${name} scheduled — it will drop and come back.`,
+                          t("ui.instance.done.restart", { name }),
                           () => setConfirmRestart(false),
                         )
                       }
                     >
-                      {busy === "restart" ? "Scheduling…" : `Restart ${name} now`}
+                      {busy === "restart" ? t("ui.instance.restart.scheduling") : t("ui.instance.restart.confirm", { name })}
                     </ControlButton>
-                    <ControlButton onClick={() => setConfirmRestart(false)}>Cancel</ControlButton>
+                    <ControlButton onClick={() => setConfirmRestart(false)}>{t("ui.instance.restart.cancel")}</ControlButton>
                   </>
                 ) : (
                   <ControlButton disabled={!live || busy !== ""} title={reason || undefined} onClick={() => setConfirmRestart(true)}>
-                    Restart instance…
+                    {t("ui.instance.restart.open")}
                   </ControlButton>
                 )}
               </div>
@@ -269,34 +275,35 @@ export function InstanceDetail({ chrome, name, onChanged }: InstanceDetailProps)
             <ConfigSection instance={name} />
           ) : (
             <Card>
-              <Kicker>Configuration</Kicker>
+              <Kicker>{t("ui.instance.config.kicker")}</Kicker>
               <p className="text-xs leading-relaxed text-muted-foreground">
-                The schema-driven editor mounts here, reading and writing with{" "}
-                <code className="ref-chip">instance={name}</code>. Disabled: {reason}.
+                {t("ui.instance.config.a")}
+                <code className="ref-chip">instance={name}</code>
+                {t("ui.instance.config.b", { reason })}
               </p>
             </Card>
           )}
 
           <Card>
-            <Kicker>Health</Kicker>
+            <Kicker>{t("ui.instance.health.kicker")}</Kicker>
             {!live ? (
-              <p className="text-xs text-muted-foreground">Unknown — the instance has not answered.</p>
+              <p className="text-xs text-muted-foreground">{t("ui.instance.unanswered")}</p>
             ) : health.loading && !health.data ? (
-              <p className="text-xs text-muted-foreground">Reading…</p>
+              <p className="text-xs text-muted-foreground">{t("ui.instance.reading")}</p>
             ) : health.error ? (
               <Report tone="fail" role="alert">
                 {health.error.message}
               </Report>
             ) : health.data ? (
               <div className="space-y-1.5">
-                <KV k="status">
+                <KV k={t("ui.instance.health.status")}>
                   <span className="inline-flex items-center gap-1.5">
                     <StatusDot status={health.data.status === "ok" ? "done" : "blocked"} />
                     {health.data.status}
                   </span>
                 </KV>
-                <KV k="version" v={health.data.version} />
-                {typeof health.data.role === "string" ? <KV k="role" v={health.data.role} /> : null}
+                <KV k={t("ui.instance.health.version")} v={health.data.version} />
+                {typeof health.data.role === "string" ? <KV k={t("ui.instance.health.role")} v={health.data.role} /> : null}
               </div>
             ) : null}
           </Card>
@@ -305,31 +312,31 @@ export function InstanceDetail({ chrome, name, onChanged }: InstanceDetailProps)
 
           {manager && !own ? (
             <Card>
-              <Kicker>Danger</Kicker>
+              <Kicker>{t("ui.instance.danger.kicker")}</Kicker>
               <div className="flex flex-wrap items-center gap-2">
                 {confirmUnregister ? (
                   <>
                     <ControlButton
                       disabled={busy !== ""}
                       onClick={() =>
-                        void run(`unregister`, () => api.unregisterInstance(name), `Unregistered ${name}.`, () => {
+                        void run(`unregister`, () => api.unregisterInstance(name), t("ui.instance.done.unregistered", { name }), () => {
                           onChanged?.();
                           navigate({ name: "instances" });
                         })
                       }
                       className="border-state-blocked/40 text-state-blocked hover:bg-surface-2 hover:text-state-blocked"
                     >
-                      {busy === "unregister" ? "Unregistering…" : `Unregister ${name} for good`}
+                      {busy === "unregister" ? t("ui.instance.danger.unregistering") : t("ui.instance.danger.confirm", { name })}
                     </ControlButton>
-                    <ControlButton onClick={() => setConfirmUnregister(false)}>Keep it</ControlButton>
+                    <ControlButton onClick={() => setConfirmUnregister(false)}>{t("ui.instance.danger.keep")}</ControlButton>
                   </>
                 ) : (
                   <ControlButton disabled={busy !== ""} onClick={() => setConfirmUnregister(true)} className="text-state-blocked">
-                    Unregister {name}…
+                    {t("ui.instance.danger.open", { name })}
                   </ControlButton>
                 )}
               </div>
-              <p className="text-[0.7rem] text-muted-foreground">Removes it from the registry only; nothing on the box changes.</p>
+              <p className="text-[0.7rem] text-muted-foreground">{t("ui.instance.danger.note")}</p>
             </Card>
           ) : null}
         </div>
@@ -343,33 +350,40 @@ const LOCAL_INGRESSES = new Set(["poller", "gh-webhook", "slack-listener"]);
 
 /** The state word carries the meaning; the dot only colours it (prototype: design/gateway-card.html). */
 export function gatewayWords(doc: GatewayDocument): { words: string; dot: DotStatus } {
-  if (!doc.configured) return { words: "not configured", dot: "skipped" };
+  if (!doc.configured) return { words: t("ui.instance.gateway.not-configured"), dot: "skipped" };
   switch (doc.state) {
     case "connected":
       return {
         // `posting via gateway` (issue-519): the gateway makes this instance's Slack calls
-        words: `connected · ${(doc.mode?.longPollSeconds ?? 0) > 0 ? "long-poll" : "polling"}${doc.slackPosting === "on" ? " · posting via gateway" : ""}`,
+        words:
+          doc.slackPosting === "on"
+            ? t("ui.instance.gateway.connected-posting", { mode: gatewayMode(doc) })
+            : t("ui.instance.gateway.connected", { mode: gatewayMode(doc) }),
         dot: "active",
       };
     case "connecting":
-      return { words: `connecting · attempt ${doc.attempt ?? 1}`, dot: "pending" };
+      return { words: t("ui.instance.gateway.connecting", { attempt: doc.attempt ?? 1 }), dot: "pending" };
     case "refused":
-      return { words: "refused · duplicate instance (409)", dot: "blocked" };
+      return { words: t("ui.instance.gateway.refused"), dot: "blocked" };
     case "unreachable":
-      return { words: "unreachable · retrying", dot: "blocked" };
+      return { words: t("ui.instance.gateway.unreachable"), dot: "blocked" };
     default:
       return { words: doc.state, dot: "pending" };
   }
 }
 
+function gatewayMode(doc: GatewayDocument): string {
+  return (doc.mode?.longPollSeconds ?? 0) > 0 ? t("ui.instance.gateway.mode.long-poll") : t("ui.instance.gateway.mode.polling");
+}
+
 function gatewayHealthWords(doc: GatewayDocument): { words: string; dot: DotStatus } {
   const health = doc.health;
-  if (!health) return { words: doc.state === "connected" ? "reading…" : "unknown", dot: "pending" };
+  if (!health) return { words: doc.state === "connected" ? t("ui.instance.gateway.health.reading") : t("ui.instance.gateway.health.unknown"), dot: "pending" };
   const socket = health.slack?.socket;
   const running = Object.entries(health.ingresses ?? {}).filter(([, state]) => state === "running").length;
-  const parts = [health.ok ? "ok" : "store failing"];
-  if (socket && socket !== "off") parts.push(`slack socket ${socket}`);
-  parts.push(`${running} ingress${running === 1 ? "" : "es"} running`);
+  const parts = [health.ok ? t("ui.instance.gateway.health.ok") : t("ui.instance.gateway.health.store-failing")];
+  if (socket && socket !== "off") parts.push(t("ui.instance.gateway.health.socket", { socket }));
+  parts.push(running === 1 ? t("ui.instance.gateway.health.ingress-one", { count: running }) : t("ui.instance.gateway.health.ingress-other", { count: running }));
   return { words: parts.join(" · "), dot: health.ok ? "done" : "blocked" };
 }
 
@@ -377,11 +391,11 @@ function GatewayCard({ live, loading, error, doc }: { live: boolean; loading: bo
   const words = doc ? gatewayWords(doc) : null;
   return (
     <Card data-card="gateway">
-      <Kicker>Gateway</Kicker>
+      <Kicker>{t("ui.instance.gateway.kicker")}</Kicker>
       {!live ? (
-        <p className="text-xs text-muted-foreground">Unknown — the instance has not answered.</p>
+        <p className="text-xs text-muted-foreground">{t("ui.instance.unanswered")}</p>
       ) : loading ? (
-        <p className="text-xs text-muted-foreground">Reading…</p>
+        <p className="text-xs text-muted-foreground">{t("ui.instance.reading")}</p>
       ) : error ? (
         <Report tone="fail" role="alert">
           {error.message}
@@ -391,51 +405,54 @@ function GatewayCard({ live, loading, error, doc }: { live: boolean; loading: bo
           {doc.state === "refused" ? (
             <Notice tone="blocked" role="alert">
               <p>
-                <strong>Refused by the gateway:</strong> another process is already polling as{" "}
+                <strong>{t("ui.instance.gateway.refused.strong")}</strong>
+                {t("ui.instance.gateway.refused.a")}
                 <code className="ref-chip">{doc.instance}</code>
                 {doc.refusedBy ? (
                   <>
-                    {" "}
-                    (peer <span className="font-mono">{doc.refusedBy.slice(0, 8)}</span>)
+                    {t("ui.instance.gateway.refused.peer")}
+                    <span className="font-mono">{doc.refusedBy.slice(0, 8)}</span>)
                   </>
                 ) : null}
-                ; two instances cannot share one name. This one keeps retrying and starts no ingress of its own — stop the other, or
-                give this instance its own <code className="ref-chip">instance.name</code>.
+                {t("ui.instance.gateway.refused.b")}
+                <code className="ref-chip">instance.name</code>.
               </p>
             </Notice>
           ) : null}
           {doc.state === "unreachable" ? (
             <Notice tone="blocked" role="alert">
               <p>
-                <strong>Gateway unreachable</strong>
+                <strong>{t("ui.instance.gateway.unreachable.strong")}</strong>
                 {doc.url ? (
                   <>
-                    {" "}
-                    at <span className="font-mono">{doc.url}</span>
+                    {t("ui.instance.gateway.unreachable.at")}
+                    <span className="font-mono">{doc.url}</span>
                   </>
                 ) : null}
-                : retrying with back-off, not falling back to a local receiver, poller or listener. Events wait on the gateway's queue
-                for this instance and arrive in order once it answers.
+                {t("ui.instance.gateway.unreachable.body")}
               </p>
             </Notice>
           ) : null}
           <div className="space-y-1.5">
-            {doc.configured ? <KV k="url" v={doc.url ?? ""} /> : null}
-            <KV k="connection">
+            {doc.configured ? <KV k={t("ui.instance.gateway.url")} v={doc.url ?? ""} /> : null}
+            <KV k={t("ui.instance.gateway.connection")}>
               <span className="inline-flex items-center gap-1.5">
                 <StatusDot status={words.dot} />
                 {words.words}
               </span>
             </KV>
-            {doc.configured ? <KV k="polling as" v={doc.instance ?? ""} /> : null}
+            {doc.configured ? <KV k={t("ui.instance.gateway.polling-as")} v={doc.instance ?? ""} /> : null}
             {doc.configured && doc.state === "connected" ? (
-              <KV k="since">
-                {doc.since ? relativeTime(doc.since) : "—"} · committed <span className="font-mono">seq {doc.committed ?? 0}</span> · every{" "}
-                {doc.mode?.pollIntervalSeconds ?? 5} s{(doc.mode?.longPollSeconds ?? 0) > 0 ? `, long-poll ${doc.mode?.longPollSeconds} s` : ""}
+              <KV k={t("ui.instance.gateway.since")}>
+                {doc.since ? relativeTime(doc.since) : "—"}
+                {t("ui.instance.gateway.since.committed")}
+                <span className="font-mono">{t("ui.instance.gateway.since.seq", { seq: doc.committed ?? 0 })}</span>
+                {t("ui.instance.gateway.since.every", { seconds: doc.mode?.pollIntervalSeconds ?? 5 })}
+                {(doc.mode?.longPollSeconds ?? 0) > 0 ? t("ui.instance.gateway.since.long-poll", { seconds: doc.mode?.longPollSeconds ?? 0 }) : ""}
               </KV>
             ) : null}
             {doc.configured ? (
-              <KV k="gateway health">
+              <KV k={t("ui.instance.gateway.health")}>
                 <span className="inline-flex items-center gap-1.5">
                   <StatusDot status={gatewayHealthWords(doc).dot} />
                   {gatewayHealthWords(doc).words}
@@ -445,20 +462,20 @@ function GatewayCard({ live, loading, error, doc }: { live: boolean; loading: bo
           </div>
           {!doc.configured ? (
             <p className="text-xs leading-relaxed text-muted-foreground">
-              No gateway configured. This instance runs its own webhook receiver, poller and Slack listener.
+              {t("ui.instance.gateway.none")}
             </p>
           ) : doc.state === "connected" ? (
             (doc.claims ?? []).length === 0 ? (
-              <p className="text-xs text-muted-foreground">Queue empty — nothing has been routed to this instance since it started polling.</p>
+              <p className="text-xs text-muted-foreground">{t("ui.instance.gateway.queue-empty")}</p>
             ) : (
               <>
-                <table className="w-full text-xs" aria-label="This instance's queue, by subject">
+                <table className="w-full text-xs" aria-label={t("ui.instance.gateway.queue.label")}>
                   <thead className="text-muted-foreground">
                     <tr>
-                      <th className="py-1 text-left font-normal">subject</th>
-                      <th className="py-1 text-left font-normal">role</th>
-                      <th className="py-1 text-right font-normal">backlog</th>
-                      <th className="py-1 text-right font-normal">oldest uncommitted</th>
+                      <th className="py-1 text-left font-normal">{t("ui.instance.gateway.queue.subject")}</th>
+                      <th className="py-1 text-left font-normal">{t("ui.instance.gateway.queue.role")}</th>
+                      <th className="py-1 text-right font-normal">{t("ui.instance.gateway.queue.backlog")}</th>
+                      <th className="py-1 text-right font-normal">{t("ui.instance.gateway.queue.oldest")}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -477,8 +494,7 @@ function GatewayCard({ live, loading, error, doc }: { live: boolean; loading: bo
                   </tbody>
                 </table>
                 <p className="text-xs leading-relaxed text-muted-foreground">
-                  Backlog is what the gateway has routed to this instance's queue and this instance has not yet committed; the
-                  queue is one per instance, so it is shown against the first subject.
+                  {t("ui.instance.gateway.queue.note")}
                 </p>
               </>
             )

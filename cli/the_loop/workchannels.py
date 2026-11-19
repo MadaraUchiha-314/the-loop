@@ -103,6 +103,7 @@ from typing import (
     Union,
 )
 
+from . import strings
 from .sessions import WorkItemRef
 from .state import LegacyLayout
 from .workitem import COLLABORATION_CHANNELS, WorkItemStore
@@ -156,16 +157,11 @@ _SLACK_TARGET_RE = re.compile(r"^(?:[CGD][A-Z0-9_-]{1,20}|#?[^\s@#/\\]{1,80})$")
 CHANNEL_TYPES: Dict[str, Tuple[re.Pattern, str]] = {
     SLACK: (
         _SLACK_TARGET_RE,
-        "a Slack channel — its name (`#tmp-issue-375`, or bare) or its "
-        "conversation id (C…, G…, D…, shown under 'View channel details'). A "
-        "name is resolved to an id when the channel is declared, so the bot "
-        "must be able to see the channel and the app must carry the "
-        "`channels:read` / `groups:read` scopes",
+        strings.t("workchannels.target.slack"),
     ),
     JIRA: (
         _JIRA_TARGET_RE,
-        "a Jira issue key, e.g. PROJ-123, in a project listed under "
-        "`integrations.jira.projects`",
+        strings.t("workchannels.target.jira"),
     ),
 }
 
@@ -336,19 +332,16 @@ def describe_refusal(raw: object) -> str:
     known = ", ".join(sorted(CHANNEL_TYPES))
     match = _REF_RE.match(text)
     if not match:
-        return (
-            f"{text!r} is not a channel: expected <type>@<target> (or "
-            f"<type>://<target>), e.g. slack@C0123ABCD. Known types: {known}"
-        )
+        return strings.t("workchannels.refusal.shape", text=text, known=known)
     kind = match.group("type")
     entry = CHANNEL_TYPES.get(kind)
     if entry is None:
-        return (
-            f"the-loop has no adapter for channel type {kind!r} on this "
-            f"deployment; known types: {known}"
-        )
-    return (
-        f"{match.group('target')!r} is not a valid {kind} target: expected {entry[1]}"
+        return strings.t("workchannels.refusal.type", kind=kind, known=known)
+    return strings.t(
+        "workchannels.refusal.target",
+        target=match.group("target"),
+        kind=kind,
+        expected=entry[1],
     )
 
 

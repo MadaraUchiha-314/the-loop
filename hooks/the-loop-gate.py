@@ -126,12 +126,50 @@ def blocking_node(report: dict) -> dict | None:
     return None
 
 
+#: The feedback's words (issue-540), beside this script: the ``hooks/`` directory
+#: ships whole in the plugin and in the wheel. Three lines, by position — the
+#: heading, one unmet-check line (repeated per message, ``{message}``) and the
+#: closing line (``{attempts}``, ``{maximum}``). ``str.format``, single-pass.
+FEEDBACK_PROMPT = Path(__file__).resolve().parent / "prompts" / "gate-feedback.md"
+
+
+def _prompt(name: str) -> str:
+    """A prompt file beside this script, or ``""`` when it cannot be read."""
+    try:
+        return (FEEDBACK_PROMPT.parent / name).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return ""
+
+
 def feedback_text(node: dict, attempts: int, maximum: int) -> str:
-    lines = ["the-loop: this step is not complete."]
-    lines += [f"  · {m}" for m in (node.get("messages") or [])]
-    lines.append("")
-    lines.append(f"Fix the above, then finish. (attempt {attempts}/{maximum})")
+    """The text that stops the turn.
+
+    A missing, unreadable or malformed prompt file never crashes a stop (the
+    hook is the harness's clock), and never stops it from blocking either: the
+    unmet checks' own messages are then the whole text, so the gate still holds.
+    """
+    messages = [str(m) for m in (node.get("messages") or [])]
+    try:
+        heading, item, closing = _prompt("gate-feedback.md").splitlines()[:3]
+        lines = [heading.format()]
+        lines += [item.format(message=m) for m in messages]
+        lines.append("")
+        lines.append(closing.format(attempts=attempts, maximum=maximum))
+    except (ValueError, KeyError, IndexError):
+        return "\n".join(messages) or "the-loop check: unmet"
     return "\n".join(lines)
+
+
+def give_up_text(work_item: str, maximum: int) -> str:
+    """The stderr line when the attempts are spent, or ``""`` without its file."""
+    try:
+        return (
+            _prompt("gate-give-up.md")
+            .rstrip("\n")
+            .format(work_item=work_item, maximum=maximum)
+        )
+    except (ValueError, KeyError, IndexError):
+        return ""
 
 
 def emit(harness: str, text: str) -> int:
@@ -192,12 +230,9 @@ def main(argv: list[str]) -> int:
         counter.unlink(missing_ok=True)
         # Bail out rather than loop forever. The CI gate is the backstop, and a
         # hook that can wedge a session is worse than one that gives up loudly.
-        print(
-            f"the-loop: {work_item} is still incomplete after {maximum} attempts; "
-            "letting the turn end. `the-loop check` will still report it, and CI "
-            "gates the merge.",
-            file=sys.stderr,
-        )
+        message = give_up_text(work_item, maximum)
+        if message:
+            print(message, file=sys.stderr)
         return 0
 
     return emit(harness, feedback_text(node, attempts, maximum))

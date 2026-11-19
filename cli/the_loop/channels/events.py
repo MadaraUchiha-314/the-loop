@@ -22,6 +22,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Tuple
 
+from .. import strings
+
 __all__ = [
     "EVENTS",
     "EventSpec",
@@ -75,90 +77,56 @@ APPROVAL_EVENTS: Tuple[str, ...] = (
     "security-sign-off-pending",
 )
 
+#: What each event means, in words (`channels status`, the docs pin).
+_DESCRIPTIONS: Dict[str, str] = strings.section("channels.events.description")
+
 EVENTS: Dict[str, EventSpec] = {
     "session.awaiting_input": EventSpec(
-        "An agent asked a human a question (`the-loop ask`) and is waiting — "
-        "the conversation starter, and the default subscription.",
+        _DESCRIPTIONS["session.awaiting_input"],
         origin="cli",
         recorded=True,  # its record IS the question comment
     ),
-    "decision-pending": EventSpec(
-        "The graph reached a point where a human decision or opinion is "
-        "genuinely required."
-    ),
-    "phase-approval-pending": EventSpec(
-        "A spec-chain phase (requirements, design + testing plan, tasks) is "
-        "ready for its human gate."
-    ),
-    "pr-review-pending": EventSpec(
-        "A pull request delivering the work item is ready for human review."
-    ),
-    "security-sign-off-pending": EventSpec(
-        "The work item's risk tier requires a named human security sign-off."
-    ),
-    "conflict-escalated": EventSpec(
-        "The loop hit a genuine block, logged the conflict and escalated once."
-    ),
-    "work-item-complete": EventSpec("The work item reached `complete`."),
-    "phase.started": EventSpec(
-        "A phase of the work item's loop began — the node carrying the next "
-        "`loop:<phase>` label was entered (published by the runtime on every "
-        "walk, so every graph fires it; a human node says it waits on a person)."
-    ),
-    "phase.completed": EventSpec(
-        "A phase ended — the loop left its last node on a satisfied outcome, or "
-        "finished at a terminal one (published by the runtime)."
-    ),
-    "phase.progress": EventSpec(
-        "The loop stepped to a new node WITHIN the current phase — the review "
-        "chain walking self-review → critic-review → security-review is the loud "
-        "case (published by the runtime, issue-393). Not recorded on the ledger: "
-        "in an agentic room it edits that phase's one message in place, so a long "
-        "phase shows where it is rather than going silent until it ends."
-    ),
-    "work-item.closed": EventSpec(
-        "The work item ended on the ledger — its issue was closed, or the pull "
-        "request that is the work item merged or closed — and this deployment "
-        "released it (published by the dispatcher before the item's room is "
-        "forgotten)."
-    ),
+    "decision-pending": EventSpec(_DESCRIPTIONS["decision-pending"]),
+    "phase-approval-pending": EventSpec(_DESCRIPTIONS["phase-approval-pending"]),
+    "pr-review-pending": EventSpec(_DESCRIPTIONS["pr-review-pending"]),
+    "security-sign-off-pending": EventSpec(_DESCRIPTIONS["security-sign-off-pending"]),
+    "conflict-escalated": EventSpec(_DESCRIPTIONS["conflict-escalated"]),
+    "work-item-complete": EventSpec(_DESCRIPTIONS["work-item-complete"]),
+    "phase.started": EventSpec(_DESCRIPTIONS["phase.started"]),
+    "phase.completed": EventSpec(_DESCRIPTIONS["phase.completed"]),
+    "phase.progress": EventSpec(_DESCRIPTIONS["phase.progress"]),
+    "work-item.closed": EventSpec(_DESCRIPTIONS["work-item.closed"]),
     "comment.agent": EventSpec(
-        "The agent's own comment on the work item (marker-stamped) — the "
-        "requirements summary, the phase checklist, a review note.",
+        _DESCRIPTIONS["comment.agent"],
         origin="github",
     ),
     "comment.human": EventSpec(
-        "A human's comment the ledger accepted — an authorized user's, or a "
-        "work-item collaborator's.",
+        _DESCRIPTIONS["comment.human"],
         origin="github",
     ),
     "work-item.reply": EventSpec(
-        "A message on a channel, delivered into the waiting session as input — "
-        "the default grant, and today's behaviour.",
+        _DESCRIPTIONS["work-item.reply"],
         origin="channel",
         subscribable=False,
         publishable=True,
         recorded=True,
     ),
     "gate.feedback": EventSpec(
-        "A message on a channel that answers an open human gate — recorded on "
-        "the ledger unmarked, so the ledger's ingress classifies it.",
+        _DESCRIPTIONS["gate.feedback"],
         origin="channel",
         subscribable=False,
         publishable=True,
         recorded=True,
     ),
     "control.command": EventSpec(
-        "A control keyword typed on a channel — recorded on the ledger "
-        "unmarked, so the ledger's ingress executes it through the control seam.",
+        _DESCRIPTIONS["control.command"],
         origin="channel",
         subscribable=False,
         publishable=True,
         recorded=True,
     ),
     "work-item.create": EventSpec(
-        "A top-level message on a channel that opens a work item — the record "
-        "is the issue, created in `kickoff.repo` with `kickoff.labels`.",
+        _DESCRIPTIONS["work-item.create"],
         origin="channel",
         subscribable=False,
         publishable=True,
@@ -170,27 +138,21 @@ EVENTS: Dict[str, EventSpec] = {
     # the session with a preset frame. Grants, not subscriptions: what a message
     # may BECOME; a channel that wants to hear one subscribes to `comment.agent`.
     "context.added": EventSpec(
-        "A thread a member handed the loop as context (`@the-loop "
-        "record-context`) — snapshotted onto the ticket as a marked record and "
-        "delivered into the session, which appends it to context.md.",
+        _DESCRIPTIONS["context.added"],
         origin="channel",
         subscribable=False,
         publishable=True,
         recorded=True,
     ),
     "decision.recorded": EventSpec(
-        "A decision an authorized member recorded from a channel (`@the-loop "
-        "record-decision <text>`) — a marked record attributed to them by its "
-        "envelope, never a gate answer, delivered into the session, which "
-        "writes the decision record.",
+        _DESCRIPTIONS["decision.recorded"],
         origin="channel",
         subscribable=False,
         publishable=True,
         recorded=True,
     ),
     "standing.started": EventSpec(
-        "A standing session (issue-277) came up and opened its thread — no "
-        "ticket, so nothing to record.",
+        _DESCRIPTIONS["standing.started"],
         origin="loop",
     ),
     # The two grants a `/the-loop` slash command needs beyond `control.command`
@@ -198,18 +160,14 @@ EVENTS: Dict[str, EventSpec] = {
     # recorded: there is no ticket to record on, so the event log is their
     # paper trail — as it is for a standing session's reply (issue-277).
     "instance.command": EventSpec(
-        "A slash command on a channel that addresses this instance itself — "
-        "status, restart, upgrade — run through the core facade the API "
-        "exposes; not recorded (no ticket): the event log is its paper trail.",
+        _DESCRIPTIONS["instance.command"],
         origin="channel",
         subscribable=False,
         publishable=True,
         recorded=False,
     ),
     "standing.command": EventSpec(
-        "A slash command on a channel that lists, starts, stops or restarts a "
-        "standing session — run through the core facade; not recorded (no "
-        "ticket): the event log is its paper trail.",
+        _DESCRIPTIONS["standing.command"],
         origin="channel",
         subscribable=False,
         publishable=True,

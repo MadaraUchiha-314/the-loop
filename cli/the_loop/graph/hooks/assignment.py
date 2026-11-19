@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import logging
 
+from ... import prompts
 from ..contract import HookContext, HookResult
 from ..model import slash_command
 from ..registry import hook
@@ -36,6 +37,11 @@ from ..registry import hook
 logger = logging.getLogger("the-loop.graph")
 
 __all__ = ["deliver_assignment", "render_assignment"]
+
+
+def _text(name: str, /, **slots: object) -> str:
+    """One sentence of the assignment, from ``prompts/assignment/`` (issue-540)."""
+    return prompts.render(f"assignment/{name}", inline=True, **slots)
 
 
 def _surface(ctx: HookContext, pr_number: object) -> str:
@@ -49,67 +55,68 @@ def _surface(ctx: HookContext, pr_number: object) -> str:
     this string.
     """
     if pr_number is not None:
-        return "this pull request (the inner loop always runs on its PR)"
+        return _text("surface-pr")
     if str(getattr(ctx, "surface", "") or "") == "pull-request":
-        return (
-            "a pull request in the repository the ticket was created in — the "
-            "surface this work item chose at phase-selection"
-        )
-    return (
-        "the work item itself (the default) — comment on the ticket, and do "
-        "not open a pull request just to carry the spec chain"
-    )
+        return _text("surface-pull-request")
+    return _text("surface-work-item")
 
 
 def render_assignment(ctx: HookContext) -> str:
     """The assignment text for the node just entered — the graph's own voice.
 
     Composed only from the-loop's vocabulary (node fields and the work item's
-    id); no event payload text can reach it.
+    id); no event payload text can reach it. The prose is in
+    ``prompts/assignment/`` (issue-540).
     """
     node = ctx.node
     item_id = ctx.work_item.id
     pr_number = ctx.config.get("assignmentPr")
     pr_repo = str(ctx.config.get("assignmentPrRepo") or "")
     scope = (
-        f"pull request #{pr_number}'s pdlc-pr-loop on {item_id}"
+        prompts.render(
+            "graph-context/scope-pr", inline=True, pr_number=pr_number, item_id=item_id
+        )
         if pr_number is not None
         else item_id
     )
     if pr_number is not None and pr_repo:
-        scope += f" (in {pr_repo})"
+        scope += _text("scope-repo", pr_repo=pr_repo)
+    phase = (
+        prompts.render("graph-context/phase", inline=True, phase=node.get("phase"))
+        if node.get("phase")
+        else ""
+    )
     lines = [
-        f"the-loop assignment for {scope}:",
-        f"  you are now at node: {ctx.node_id}"
-        + (f" (phase: {node.get('phase')})" if node.get("phase") else ""),
+        _text("header", scope=scope),
+        "  " + _text("node", node_id=ctx.node_id, phase=phase),
     ]
     produces = [str(p) for p in (node.get("produces") or [])]
     if produces:
-        lines.append(f"  produce: {', '.join(produces)}")
-        lines.append(f"  iterate it on: {_surface(ctx, pr_number)}")
+        lines.append("  " + _text("produce", produces=", ".join(produces)))
+        lines.append("  " + _text("iterate", surface=_surface(ctx, pr_number)))
     if node.get("command"):
         lines.append(
-            f"  work it with: `{slash_command(str(node.get('command')))} {item_id}`"
+            "  "
+            + _text(
+                "command",
+                command=slash_command(str(node.get("command"))),
+                item_id=item_id,
+            )
         )
     if node.get("actor") == "human":
         # A human gate is announced, never assigned: the work here is somebody
         # else's, and a session told to "report back when done" at one would
         # claim a decision it does not get to make (issue-177 put the very
         # first node of the outer loop in this position).
-        lines.append(
-            "  this node is a HUMAN gate — the loop is waiting for an "
-            "authorized person on the ticket. Do not claim it; do not start "
-            "the work it gates."
-        )
+        lines.append("  " + _text("human-gate"))
     else:
         claim_suffix = f" --pr {pr_number}" if pr_number is not None else ""
         if pr_number is not None and pr_repo:
             claim_suffix += f" --pr-repo {pr_repo}"
         lines.append(
-            "  when this node's work is done, report back: "
-            f"`the-loop graph complete {item_id}{claim_suffix}`"
+            "  " + _text("complete", item_id=item_id, claim_suffix=claim_suffix)
         )
-    lines.append("  (assigned by the-loop's graph — not part of any event payload)")
+    lines.append("  " + _text("own-state"))
     return "\n".join(lines)
 
 

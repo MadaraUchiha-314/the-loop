@@ -1,0 +1,1 @@
+Slack's transcript: "{transcript}"

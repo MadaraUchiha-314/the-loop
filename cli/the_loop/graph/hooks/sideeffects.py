@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from typing import List
 
+from ... import strings
 from ...authz import mark_self_authored
 from ...cli_config import merge_on_approval
 from ..contract import HookContext, HookResult
@@ -160,9 +161,11 @@ def request_review(ctx: HookContext) -> HookResult:
     """
     name = "request-review"
     body = mark_self_authored(
-        f"🤖 _the-loop_ — **{ctx.node_id}** is ready for review.\n\n"
-        f"Work item `{ctx.work_item.id}` has reached a human gate. Reply with an "
-        "approval, an approval with comments, or the changes you want."
+        strings.t(
+            "graph.sideeffects.request-review",
+            node=ctx.node_id,
+            work_item=ctx.work_item.id,
+        )
     )
     try:
         _integration(ctx).call("add-comment", ref=ctx.work_item.ref, body=body)
@@ -207,10 +210,13 @@ def publish_artifact(ctx: HookContext) -> HookResult:
         logger.warning("could not read %s: %s", path, exc)
         return HookResult.ok(name, posted=False, error=str(exc))
     body = mark_self_authored(
-        f"🤖 _the-loop_ — **`{artifact}`** for `{ctx.work_item.id}`.\n\n"
-        "the-loop is a guest in this repository, so the artifact is working "
-        "state — kept out of git — and this comment is its review "
-        "surface.\n\n---\n\n" + content
+        strings.t(
+            "graph.sideeffects.publish-artifact",
+            artifact=artifact,
+            work_item=ctx.work_item.id,
+        )
+        + "\n\n---\n\n"
+        + content
     )
     # Deliberately bound at call time, not import time (the goal/selection
     # hooks' rule): the test seam and any embedder patch
@@ -266,7 +272,11 @@ def _excerpt(ctx: HookContext) -> str:
         return ""
     body = str(body or "").strip()
     if len(body) > EXCERPT_MAX_CHARS:
-        body = body[:EXCERPT_MAX_CHARS].rstrip() + "\n… (truncated)"
+        body = (
+            body[:EXCERPT_MAX_CHARS].rstrip()
+            + "\n"
+            + strings.t("graph.sideeffects.excerpt-truncated")
+        )
     return body
 
 
@@ -342,22 +352,27 @@ def notify(ctx: HookContext) -> HookResult:
         # true = the-loop merges and closes on approval; false = it stops at
         # approved and leaves the merge to a person / branch protection.
         consequence = (
-            "Approving will merge this PR and close the work item."
+            strings.t("graph.sideeffects.notify.approval-merges")
             if _merge_on_approval(ctx)
-            else "Approving marks it approved; a person merges it (branch "
-            "protection and required reviews still apply)."
+            else strings.t("graph.sideeffects.notify.approval-marks")
         )
-        text = (
-            f"👀 PR #{pr.number} is ready for review. "
-            f"Start there, then approve or request changes. {consequence}"
+        text = strings.t(
+            "graph.sideeffects.notify.pr-review",
+            number=pr.number,
+            consequence=consequence,
         )
         if pr.url:
             url = pr.url
         detail["pullRequest"] = str(pr.number)
     else:
-        text = f"the-loop: {ctx.work_item.id} is at *{ctx.node_id}* ({event})."
+        text = strings.t(
+            "graph.sideeffects.notify.at-node",
+            work_item=ctx.work_item.id,
+            node=ctx.node_id,
+            event=event,
+        )
     if roles:
-        text += f" Roles: {', '.join(roles)}"
+        text += strings.t("graph.sideeffects.notify.roles", roles=", ".join(roles))
     if roles:
         detail["roles"] = ", ".join(roles)
     excerpt = _excerpt(ctx)

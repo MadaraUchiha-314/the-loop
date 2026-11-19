@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from .. import cli_config
+from .. import strings
 from ..daemonize import open_logfile
 from ..poller.heartbeat import PollHeartbeat
 from ..runlock import RunLock
@@ -123,7 +124,7 @@ def control_daemon(
                 "running": True,
                 "pid": lock.holder(),
                 "exitCode": 0,
-                "output": "already running",
+                "output": strings.t("core.daemons.already-running"),
             }
         logfile = _logfile(daemon, config)
         try:
@@ -152,7 +153,7 @@ def control_daemon(
             "running": True,
             "pid": proc.pid,
             "exitCode": 0,
-            "output": f"spawned pid {proc.pid}; logging to {logfile}",
+            "output": strings.t("core.daemons.spawned", pid=proc.pid, logfile=logfile),
         }
 
     # stop — signal the holder and wait for the lock to clear. No subprocess.
@@ -163,7 +164,7 @@ def control_daemon(
             "running": False,
             "pid": 0,
             "exitCode": 0,
-            "output": f"{daemon} is not running",
+            "output": strings.t("core.daemons.not-running", daemon=daemon),
         }
     pid = lock.holder()
     try:
@@ -179,7 +180,7 @@ def control_daemon(
             "running": False,
             "pid": pid,
             "exitCode": 0,
-            "output": f"stopped {daemon} (pid {pid})",
+            "output": strings.t("core.daemons.stopped", daemon=daemon, pid=pid),
         }
     return {
         "daemon": daemon,
@@ -187,5 +188,7 @@ def control_daemon(
         "running": True,
         "pid": pid,
         "exitCode": 1,
-        "output": f"{daemon} (pid {pid}) did not exit within {timeout:.0f}s",
+        "output": strings.t(
+            "core.daemons.did-not-exit", daemon=daemon, pid=pid, timeout=timeout
+        ),
     }

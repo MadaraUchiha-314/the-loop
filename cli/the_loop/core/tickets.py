@@ -29,6 +29,7 @@ import logging
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple, Union
 
 from .. import eventlog
+from .. import strings
 from ..authz import (
     is_self_authored,
     mark_relayed_on_jira,
@@ -156,12 +157,14 @@ class JiraTickets:
             if issue.moved_to:
                 return github_ops._failed(
                     data,
-                    f"{key} has moved to {issue.moved_to}; register the work item "
-                    "under its new key",
+                    strings.t("core.tickets.moved", key=key, moved_to=issue.moved_to),
                 )
             comments = self.client.comments(key)
         except JiraApiError as exc:
-            return github_ops._failed(data, f"could not read {item.ref}: {exc}")
+            return github_ops._failed(
+                data,
+                strings.t("core.github-ops.read-failed", ref=item.ref, error=exc),
+            )
         data.update(
             number=item.number,
             title=issue.summary,
@@ -230,11 +233,15 @@ class JiraTickets:
                 parent_key=str(parent or "").strip(),
             )
         except JiraApiError as exc:
-            return github_ops._failed(data, f"could not open the ticket: {exc}")
+            return github_ops._failed(
+                data, strings.t("core.github-ops.open-ticket-failed", error=exc)
+            )
         ref = f"jira:{self.api.site}/{issue.key}" if issue.key else ""
         data.update(ref=ref, url=issue.url)
         return github_ops._done(
-            data, f"opened {ref}" + (f" — {issue.url}" if issue.url else "")
+            data,
+            strings.t("core.github-ops.opened", ref=ref)
+            + (f" — {issue.url}" if issue.url else ""),
         )
 
     # -- close -----------------------------------------------------------------
@@ -258,7 +265,9 @@ class JiraTickets:
         data: Dict[str, Any] = {"ref": target.ref, "closed": False}
         refusal = github_ops._authority(target, work_item, self.config, registry_dir)
         if refusal:
-            return github_ops._failed(data, f"not closing: {refusal}")
+            return github_ops._failed(
+                data, strings.t("core.github-ops.not-closing", refusal=refusal)
+            )
         provider = JiraProvider(config=self.api, client=self.client)
         try:
             moved = provider._transition(key, "done")
@@ -266,13 +275,19 @@ class JiraTickets:
             return github_ops._failed(data, str(exc))
         data.update(closed=True, transition=moved.get("transition", ""))
         eventlog.emit("work_item.ticket_closed", work_item=target.ref, reason=reason)
-        lines = [f"closed {target.ref} ({moved.get('transition') or 'done'})"]
+        lines = [
+            strings.t(
+                "core.github-ops.closed",
+                ref=target.ref,
+                reason=moved.get("transition") or "done",
+            )
+        ]
         cancelled, note = github_ops._cancel_pending_start(
             target, self.config, registry_dir
         )
         data["startCancelled"] = cancelled
         if cancelled:
-            lines.append(f"cancelled the pending start for {target.ref}")
+            lines.append(strings.t("core.github-ops.start-cancelled", ref=target.ref))
         result = github_ops._done(data, *lines)
         if note:
             result["messages"].append({"stream": "err", "text": note})
@@ -332,9 +347,14 @@ class JiraTickets:
             "channelsPosted": channels_posted,
         }
         if not ok:
-            return github_ops._failed(data, f"could not comment on {item.ref}: {error}")
+            return github_ops._failed(
+                data,
+                strings.t("core.github-ops.comment-failed", ref=item.ref, error=error),
+            )
         return github_ops._done(
-            data, f"commented on {item.ref}" + (f" — {url}" if url else "")
+            data,
+            strings.t("core.github-ops.commented", ref=item.ref)
+            + (f" — {url}" if url else ""),
         )
 
 

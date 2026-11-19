@@ -35,6 +35,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Sequence, Tuple
 
+from . import strings
+
 logger = logging.getLogger("the-loop.instructions")
 
 __all__ = [
@@ -120,15 +122,19 @@ def _invalid(entry: Any) -> InstructionDoc:
     believes a doc is registered, and nothing says otherwise.
     """
     if not isinstance(entry, Mapping):
-        detail = f"entry is a {type(entry).__name__}, expected a mapping with a 'path'"
+        detail = strings.t(
+            "instructions.entry.not-a-mapping", kind=type(entry).__name__
+        )
     else:
         raw = entry.get("path")
         detail = (
-            "entry has no 'path'"
+            strings.t("instructions.entry.no-path")
             if raw is None
-            else f"'path' is a {type(raw).__name__}, expected a non-empty string"
+            else strings.t(
+                "instructions.entry.path-not-a-string", kind=type(raw).__name__
+            )
             if not isinstance(raw, str)
-            else "'path' is blank"
+            else strings.t("instructions.entry.path-blank")
         )
     return InstructionDoc(path="", resolved="", state="invalid", detail=detail)
 
@@ -158,7 +164,7 @@ def _resolve(root: Path, entry: Mapping[str, Any]) -> InstructionDoc:
         if not target.exists():
             return record("missing")
         if not target.is_file():
-            return record("unreadable", "not a regular file")
+            return record("unreadable", strings.t("instructions.doc.not-a-file"))
         text = target.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError, ValueError) as exc:
         return record("unreadable", f"{type(exc).__name__}: {exc}")

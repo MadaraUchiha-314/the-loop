@@ -35,6 +35,7 @@ import {
 import type { EventRecord } from "../api/types.ts";
 import { GraphStrip } from "../components/GraphStrip.tsx";
 import { HeaderBar, type Chrome } from "../components/HeaderBar.tsx";
+import { t } from "../i18n.ts";
 import { CheckIcon, ChevronDownIcon, CopyIcon, ExternalLinkIcon, InfoIcon, TriangleAlertIcon } from "../components/Icons.tsx";
 import { ControlButton, Empty, IconButton, Notice, PhaseChip } from "../components/primitives.tsx";
 import { SessionControls, SessionFacts } from "../components/SessionFacts.tsx";
@@ -62,7 +63,7 @@ export function isAtNewest(panel: Pick<HTMLElement, "scrollHeight" | "scrollTop"
  * R2.5: the chip is the one statement of the position).
  */
 export function railNote(view: WorkItemView): string {
-  if (view.parked) return "parked — awaiting a human";
+  if (view.parked) return t("ui.work-item.parked-note");
   const entry = attentionEntries([view]).find((candidate) => candidate.tier >= 2);
   if (!entry) return "";
   const detail = entry.detail || entry.kind;
@@ -171,7 +172,7 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, tra
         meta={
           <>
             <span className="ref-chip">{view.ref}</span>
-            <PhaseChip phase={view.currentNode || (view.rail.length > 0 ? "planned" : "no graph")} status={itemStatus(view)} />
+            <PhaseChip phase={view.currentNode || (view.rail.length > 0 ? t("ui.work-item.phase.planned") : t("ui.work-item.phase.no-graph"))} status={itemStatus(view)} />
             {note ? (
               <>
                 <span aria-hidden="true">·</span>
@@ -185,7 +186,7 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, tra
               </>
             ) : null}
             <span aria-hidden="true">·</span>
-            <span title={view.lastActivity || undefined}>updated {relativeTime(view.lastActivity)}</span>
+            <span title={view.lastActivity || undefined}>{t("ui.work-item.updated", { when: relativeTime(view.lastActivity) })}</span>
             <span aria-hidden="true">·</span>
             {view.rail.length > 0 ? (
               <button
@@ -194,7 +195,7 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, tra
                 onClick={() => setGraphOpen((value) => !value)}
                 className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
               >
-                {graphOpen ? "Collapse graph" : "Full graph"}
+                {graphOpen ? t("ui.work-item.graph.collapse") : t("ui.work-item.graph.full")}
                 <ChevronDownIcon className={`h-3.5 w-3.5 transition-transform ${graphOpen ? "rotate-180" : ""}`} />
               </button>
             ) : (
@@ -202,8 +203,8 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, tra
                  by default as it was at 20.5.1 (R5.3; critic round 1). */
               <span>
                 {view.repoPath
-                  ? "The checkout has no work-item state for this item yet — it starts at phase-selection."
-                  : "No session on this machine recorded a checkout, so the work-item state cannot be read from here."}
+                  ? t("ui.work-item.no-state")
+                  : t("ui.work-item.no-checkout")}
               </span>
             )}
           </>
@@ -212,11 +213,11 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, tra
           <>
             {/* The session verbs, relocated from the panel (issue-511 row 64). */}
             <SessionControls view={view} viewed={viewed} onChanged={onChanged} />
-            <IconButton label={copied ? "Copied" : "Copy work item ref"} onClick={() => void copyRef()}>
+            <IconButton label={copied ? t("ui.work-item.copied") : t("ui.work-item.copy-ref")} onClick={() => void copyRef()}>
               {copied ? <CheckIcon className="h-4 w-4 text-state-done" /> : <CopyIcon className="h-4 w-4" />}
             </IconButton>
             {view.url ? (
-              <IconButton label="Open on GitHub" href={view.url} external>
+              <IconButton label={t("ui.work-item.open-on-github")} href={view.url} external>
                 <ExternalLinkIcon className="h-4 w-4" />
               </IconButton>
             ) : null}
@@ -228,8 +229,8 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, tra
              every width (R6.3). The summary wears the icon-button idiom. */
           <details className="relative" data-session-details onToggle={onDetailsToggle}>
             <summary
-              aria-label="Session details"
-              title="Session details"
+              aria-label={t("ui.work-item.session-details")}
+              title={t("ui.work-item.session-details")}
               className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md border border-transparent text-muted-foreground transition-colors hover:border-border hover:bg-surface-2 hover:text-foreground"
             >
               <InfoIcon className="h-4 w-4" />
@@ -250,10 +251,10 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, tra
 
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="flex items-center justify-between border-b border-border px-6 py-2 text-xs text-muted-foreground">
-          <span>Harness trace</span>
+          <span>{t("ui.work-item.trace.title")}</span>
           <label
             className="flex cursor-pointer items-center gap-2"
-            title="Show the tool calls, the harness bookkeeping and the whole event trail"
+            title={t("ui.work-item.trace.verbose-hint")}
           >
             <span>{VERBOSE_LABEL}</span>
             <span
@@ -278,7 +279,7 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, tra
           ref={traceScroll}
           tabIndex={0}
           role="log"
-          aria-label="Session transcript"
+          aria-label={t("ui.work-item.trace.label")}
           data-trace
           className="scroll-thin min-h-0 flex-1 overflow-y-auto px-6 py-6"
           onScroll={(event: UIEvent<HTMLDivElement>) => {
@@ -290,16 +291,16 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, tra
                 while loading, or after an error, the held `data` is the
                 PREVIOUS tab's transcript and must not be drawn. */}
             {transcript.loading ? (
-              <Empty>Loading the transcript…</Empty>
+              <Empty>{t("ui.work-item.trace.loading")}</Empty>
             ) : transcript.data && !transcript.error ? (
               <>
                 {transcript.data.truncated ? (
                   <p className="text-center font-mono text-[0.68rem] text-muted-foreground">
-                    tail — the last {transcript.data.entries.length} of {transcript.data.totalLines} entries
+                    {t("ui.work-item.trace.tail", { shown: transcript.data.entries.length, total: transcript.data.totalLines })}
                   </p>
                 ) : null}
                 {transcript.data.entries.length === 0 ? (
-                  <Empty>The transcript exists but holds no entries yet.</Empty>
+                  <Empty>{t("ui.work-item.trace.empty")}</Empty>
                 ) : (
                   <TranscriptView entries={transcript.data.entries} verbose={verbose} />
                 )}
@@ -308,13 +309,13 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, tra
               <>
                 <Notice tone="muted" icon={<TriangleAlertIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />}>
                   <div>
-                    <strong className="font-medium text-foreground">No transcript served for this session.</strong>{" "}
+                    <strong className="font-medium text-foreground">{t("ui.work-item.trace.none")}</strong>{" "}
                     {fallbackReason(transcript.error)}
                   </div>
-                  <div>Falling back to the event-log trail for this work item.</div>
+                  <div>{t("ui.work-item.trace.fallback")}</div>
                 </Notice>
                 {events.loading && !events.data ? (
-                  <Empty>Loading events…</Empty>
+                  <Empty>{t("ui.work-item.events.loading")}</Empty>
                 ) : events.data && events.data.length > 0 ? (
                   <EventTrail
                     events={events.data
@@ -323,7 +324,7 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, tra
                     verbose={verbose}
                   />
                 ) : (
-                  <Empty>No events recorded for this work item.</Empty>
+                  <Empty>{t("ui.work-item.events.none")}</Empty>
                 )}
               </>
             )}
@@ -382,10 +383,10 @@ function GateBanner({ view, onChanged }: { view: WorkItemView; onChanged: () => 
   return (
     <Notice icon={<TriangleAlertIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />} role="status">
       <div className="flex flex-wrap items-baseline gap-x-2">
-        <span className="font-medium">Human gate</span>
+        <span className="font-medium">{t("ui.work-item.gate.title")}</span>
         {parked.since ? (
           <span className="font-mono text-[0.68rem] opacity-80" title={parked.since}>
-            waiting {relativeTime(parked.since)}
+            {t("ui.work-item.gate.waiting", { when: relativeTime(parked.since) })}
           </span>
         ) : null}
       </div>
@@ -394,14 +395,14 @@ function GateBanner({ view, onChanged }: { view: WorkItemView; onChanged: () => 
         <ControlButton
           primary
           disabled={busy || !canApprove}
-          title={canApprove ? undefined : "No checkout recorded for this item on the service's machine."}
+          title={canApprove ? undefined : t("ui.work-item.gate.no-checkout")}
           onClick={() => void approve()}
         >
-          {busy ? "Approving…" : "Approve — advance graph"}
+          {busy ? t("ui.work-item.gate.approving") : t("ui.work-item.gate.approve")}
         </ControlButton>
         {view.url ? (
           <a href={view.url} target="_blank" rel="noreferrer" className="text-xs underline-offset-2 hover:underline">
-            Request changes on the ticket ↗
+            {t("ui.work-item.gate.request-changes")}
           </a>
         ) : null}
       </div>
@@ -421,24 +422,24 @@ function GateBanner({ view, onChanged }: { view: WorkItemView; onChanged: () => 
  * next refresh.
  */
 function QuestionBanner({ question }: { question: EventRecord }) {
-  const text = questionOf(question) || "(the event carried no question text)";
+  const text = questionOf(question) || t("ui.work-item.question.no-text");
   const commentUrl = typeof question["comment_url"] === "string" ? question["comment_url"] : "";
   return (
     <Notice icon={<TriangleAlertIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />} role="status">
       <div className="flex flex-wrap items-baseline gap-x-2">
-        <span className="font-medium">The loop asks</span>
+        <span className="font-medium">{t("ui.work-item.question.title")}</span>
         <span className="font-mono text-[0.68rem] opacity-80" title={question.ts}>
           {relativeTime(question.ts)}
         </span>
       </div>
       <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{text}</div>
       <div className="opacity-80">
-        Reply below — delivered into the session, recorded on the ticket.
+        {t("ui.work-item.question.reply-below")}
         {commentUrl ? (
           <>
             {" "}
             <a href={commentUrl} target="_blank" rel="noreferrer" className="underline-offset-2 hover:underline">
-              Answer on the ticket instead ↗
+              {t("ui.work-item.question.answer-on-ticket")}
             </a>
           </>
         ) : null}

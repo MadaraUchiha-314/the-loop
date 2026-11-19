@@ -30,6 +30,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Callable, List, Optional, Tuple
 
+from .. import strings
 from ..redact import neutralise_broadcasts, strip_html_comments
 
 __all__ = [
@@ -210,11 +211,7 @@ _ABBREVIATIONS = ("e.g", "i.e", "vs", "etc", "cf", "no", "fig", "approx")
 _CLAUSE_END = re.compile(r"[,;:]|\s—|\s–")
 _REPLY_WORD = re.compile(r"\breply\b", re.I)
 
-_POINTERS = {
-    "code": "code: {n} lines",
-    "table": "table: {n} rows",
-    "trace": "stack trace: {n} lines",
-}
+_POINTERS = strings.section("digest.pointer")
 
 
 @dataclass
@@ -421,9 +418,9 @@ def _render(block: _Block) -> List[str]:
 
 def _footer(url: str) -> str:
     return (
-        f"_… full text: <{url}|GitHub>_"
+        strings.t("channels.digest.footer.link", url=url)
         if url
-        else "_… the full text is on the ticket_"
+        else strings.t("channels.digest.footer.ticket")
     )
 
 
@@ -517,7 +514,7 @@ def truncate(text: str, limit: int) -> str:
     if len(text) <= limit:
         return text
     rest = len(text) - limit
-    return text[:limit].rstrip() + f"\n… ({rest} more characters — see the link)"
+    return text[:limit].rstrip() + strings.t("channels.digest.truncate.note", rest=rest)
 
 
 def sanitize_summary(summary: str, limit: int = SUMMARY_MAX_CHARS) -> str:

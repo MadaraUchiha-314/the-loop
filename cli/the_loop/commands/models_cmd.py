@@ -24,6 +24,7 @@ from typing import Any, Dict, List, Sequence
 
 from .base import Command, register
 from .sessions_cmd import _cli_config
+from .. import strings
 from ..harness import build_adapters
 from ..modelchoice import (
     launch_args,
@@ -46,7 +47,13 @@ from ..modelprobe import (
 )
 from ..state import layout_from_config
 
-_HEADERS = ["Harness", "Kind", "Name", "Verdict", "Checked"]
+_HEADERS = [
+    strings.t("cli.models.table.header.harness"),
+    strings.t("cli.models.table.header.kind"),
+    strings.t("cli.models.table.header.name"),
+    strings.t("cli.models.table.header.verdict"),
+    strings.t("cli.models.table.header.checked"),
+]
 
 _EXIT_OK = 0
 _EXIT_REFUSED = 1
@@ -92,10 +99,10 @@ def _age(checked_at: float) -> str:
         return "—"
     seconds = max(0, int(time.time() - checked_at))
     if seconds < 60:
-        return f"{seconds}s ago"
+        return strings.t("cli.models.age.seconds", seconds=seconds)
     if seconds < 3600:
-        return f"{seconds // 60}m ago"
-    return f"{seconds // 3600}h ago"
+        return strings.t("cli.models.age.minutes", minutes=seconds // 60)
+    return strings.t("cli.models.age.hours", hours=seconds // 3600)
 
 
 def _render(rows: Sequence[Dict[str, Any]]) -> str:
@@ -123,7 +130,7 @@ def _render(rows: Sequence[Dict[str, Any]]) -> str:
 @register
 class ModelsCommand(Command):
     name = "models"
-    help = "List the declared models and effort levels, and check what each harness accepts"
+    help = strings.t("cli.models.help")
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         actions = parser.add_subparsers(dest="action", metavar="<action>")
@@ -131,40 +138,31 @@ class ModelsCommand(Command):
 
         lst = actions.add_parser(
             "list",
-            help="Print the declared models and effort levels with their cached verdicts",
+            help=strings.t("cli.models.list.help"),
         )
         lst.add_argument(
             "--format",
             choices=("table", "json"),
             default="table",
-            help="Output format (default: table).",
+            help=strings.t("cli.models.list.format.help"),
         )
         lst.set_defaults(_action=self._list)
 
         check = actions.add_parser(
             "check",
-            help=(
-                "Ask each harness whether it can run each declared model and effort "
-                "level, and cache the answers"
-            ),
-            description=(
-                "Runs each harness once per declared combination with a fixed "
-                "the-loop prompt — never any text from a work item — and records "
-                "ok / refused / unknown. A refused choice is then never offered on "
-                "a phase-selection checklist, so nobody can pick a model that would "
-                "leave a session dead in a pane nobody is watching."
-            ),
+            help=strings.t("cli.models.check.help"),
+            description=strings.t("cli.models.check.description"),
         )
         check.add_argument(
             "--format",
             choices=("table", "json"),
             default="table",
-            help="Output format (default: table).",
+            help=strings.t("cli.models.check.format.help"),
         )
         check.add_argument(
             "--refresh",
             action="store_true",
-            help="Re-probe every combination, even ones with a standing verdict.",
+            help=strings.t("cli.models.check.refresh.help"),
         )
         check.set_defaults(_action=self._check)
 
@@ -207,7 +205,7 @@ class ModelsCommand(Command):
                         "kind": kind,
                         "name": name,
                         "verdict": UNKNOWN,
-                        "checked": "no adapter",
+                        "checked": strings.t("cli.models.check.no-adapter"),
                     }
                 )
                 continue
@@ -255,10 +253,7 @@ class ModelsCommand(Command):
             if rows:
                 print(_render(rows))
             else:
-                print(
-                    "nothing declared — set the top-level `models` and `effort` in "
-                    "the CLI config to offer a work item a choice"
-                )
+                print(strings.t("cli.models.emit.nothing-declared-set-the-top"))
             for finding in findings:
                 print(f"{finding.level}: {finding.where}: {finding.message}")
         if any(f.level == "error" for f in findings):

@@ -32,6 +32,7 @@ PR** as the work item that changes behaviour (a ready-to-ship gate item).
 | [documentation](documentation.md) | The docs site: its information architecture, the authored-not-generated rule, and the docs↔code parity test. |
 | [token-economy](token-economy.md) | Token/cost-reduction guidance (thinking effort and verbosity by stage, disclosure, sub-agents, compaction, telemetry); advisory, never configured, never at the expense of rigor. |
 | [writing-style](writing-style.md) | How the artifacts a human reads are written: the `the-loop:writing` skill, the document spine, the diagram-first rule and the formal-language carve-out. No length limits. |
+| [prompts-and-strings](prompts-and-strings.md) | Every prompt sent to an agent as a Markdown file under `cli/the_loop/prompts/`; human-facing messages from one JSON string catalog (`strings/en.json`) with a locale fallback. |
 
 Related views: [`docs/architecture/architecture.md`](../architecture/architecture.md)
 (how it's built) · [`docs/decisions/decisions.md`](../decisions/decisions.md) (why) ·

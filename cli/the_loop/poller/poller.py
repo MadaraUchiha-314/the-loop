@@ -42,7 +42,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
-from .. import __version__, eventlog
+from .. import __version__, eventlog, strings
 from ..authz import (
     ORIGIN_RELAY,
     ORIGIN_SELF,
@@ -129,30 +129,27 @@ def giveup_notice(*, ref: str, comment_id: str, comment_url: str, attempts: int)
     # and an operator greps the event log by the same id `poll.comment_failed`
     # recorded.
     named = (
-        f"[a comment]({comment_url}) (`{comment_id}`)"
+        strings.t(
+            "poller.poller.giveup.named-link",
+            comment_url=comment_url,
+            comment_id=comment_id,
+        )
         if comment_url
-        else f"comment `{comment_id}`"
+        else strings.t("poller.poller.giveup.named-id", comment_id=comment_id)
     )
-    attempt_word = "attempt" if attempts == 1 else "attempts"
+    attempt_word = (
+        strings.t("poller.poller.giveup.attempt-one")
+        if attempts == 1
+        else strings.t("poller.poller.giveup.attempt-many")
+    )
     return mark_self_authored(
-        f"😕 **the-loop could not deliver {named} to the session for `{ref}`.**\n"
-        "\n"
-        f"Every one of {attempts} delivery {attempt_word} failed, so the comment "
-        "has been abandoned: the session never received it, and the poller will "
-        "not try again on its own.\n"
-        "\n"
-        "**To get it through:** post the instruction again. A new comment is a "
-        "new delivery with a full retry budget — nothing the-loop stores needs "
-        "editing.\n"
-        "\n"
-        "**Before you do,** check the session is still there and attachable:\n"
-        "\n"
-        "```sh\n"
-        "the-loop sessions list\n"
-        "```\n"
-        "\n"
-        "The cause of each failed delivery is in the daemon's event log, as the "
-        "`error` field of the `dispatch.failed` entries for this work item.\n"
+        strings.t(
+            "poller.poller.giveup.body",
+            named=named,
+            ref=ref,
+            attempts=attempts,
+            attempt_word=attempt_word,
+        )
     )
 
 

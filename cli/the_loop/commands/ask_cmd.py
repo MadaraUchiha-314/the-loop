@@ -33,7 +33,7 @@ from pathlib import Path
 
 from .base import Command, register
 from .sessions_cmd import _cli_config, _render
-from .. import eventlog
+from .. import eventlog, strings
 from ..client.routing import harness_routed, service_error
 from ..core import sessions as core_sessions
 
@@ -41,42 +41,33 @@ from ..core import sessions as core_sessions
 @register
 class AskCommand(Command):
     name = "ask"
-    help = (
-        "Ask a human a question on the work item (marker stamped centrally; "
-        "the wait is recorded as session.awaiting_input)"
-    )
+    help = strings.t("cli.ask.help")
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
             "--work-item",
             required=True,
-            help="Work-item ref the question goes to, e.g. github:OWNER/REPO#15 "
-            "(the issues endpoint serves PR conversations too).",
+            help=strings.t("cli.ask.work-item.help"),
         )
         text = parser.add_mutually_exclusive_group(required=True)
         text.add_argument(
             "--question",
-            help="The question text (markdown).",
+            help=strings.t("cli.ask.question.help"),
         )
         text.add_argument(
             "--question-file",
-            help="Read the question from this file ('-' = stdin) — where "
-            "multi-line markdown goes to survive shell quoting.",
+            help=strings.t("cli.ask.question-file.help"),
         )
         parser.add_argument(
             "--summary",
             default="",
-            help="A 2-3 sentence summary (what you decided, what you are least "
-            "sure of) that leads the room's message instead of an excerpt "
-            "(issue-393 R8). Optional; the question text is still recorded in full.",
+            help=strings.t("cli.ask.summary.help"),
         )
         parser.add_argument(
             "--default",
             default="",
             dest="default_answer",
-            help="The affirmative answer to take if the human does not object "
-            "(issue-393 R12.1) — e.g. 'Defaults are fine'. When set, the room's "
-            "message offers a one-tap button that replies with this text.",
+            help=strings.t("cli.ask.default.help"),
         )
 
     def run(self, args: argparse.Namespace) -> int:
@@ -89,7 +80,10 @@ class AskCommand(Command):
                     else Path(args.question_file).read_text(encoding="utf-8")
                 )
             except OSError as exc:
-                print(f"error: cannot read the question: {exc}", file=sys.stderr)
+                print(
+                    strings.t("cli.ask.run.cannot-read-the-question", exc=exc),
+                    file=sys.stderr,
+                )
                 return 2
         else:
             question = args.question
@@ -120,7 +114,7 @@ class AskCommand(Command):
             if mapped is None:
                 if not isinstance(exc, ValueError):
                     raise
-                mapped = (f"error: {exc}", 2)
+                mapped = (strings.t("cli.ask.run.error", exc=exc), 2)
             print(mapped[0], file=sys.stderr)
             return mapped[1]
         return _render(result)

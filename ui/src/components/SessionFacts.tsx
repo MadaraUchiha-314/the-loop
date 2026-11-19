@@ -27,6 +27,7 @@ import { useState } from "react";
 import { ApiError } from "../api/client.ts";
 import { relativeTime, transcriptPath, type PullRequestView, type WorkItemView } from "../api/model.ts";
 import type { SessionVerb } from "../api/types.ts";
+import { t } from "../i18n.ts";
 import { useApi } from "../state/ApiContext.tsx";
 import { railLabel } from "./GraphStrip.tsx";
 import { CopyIcon, ExternalLinkIcon } from "./Icons.tsx";
@@ -66,33 +67,33 @@ export function SessionFacts({ view, viewed }: FactsProps) {
 
   return (
     <div data-session-facts>
-      <Section title="Harness">
-        <KV k="harness" v={session?.harness ?? "—"} />
-        <KV k="status" v={sessionLabel(state)} />
-        {session?.createdAt ? <KV k="started" v={relativeTime(session.createdAt)} mono={false} title={session.createdAt} /> : null}
-        <KV k="session id" v={session?.harnessSessionId ?? "—"} />
-        <KV k="transcript" v={path ?? "no derivable transcript path"} />
+      <Section title={t("ui.session-facts.harness.title")}>
+        <KV k={t("ui.session-facts.harness")} v={session?.harness ?? "—"} />
+        <KV k={t("ui.session-facts.status")} v={sessionLabel(state)} />
+        {session?.createdAt ? <KV k={t("ui.session-facts.started")} v={relativeTime(session.createdAt)} mono={false} title={session.createdAt} /> : null}
+        <KV k={t("ui.session-facts.session-id")} v={session?.harnessSessionId ?? "—"} />
+        <KV k={t("ui.session-facts.transcript")} v={path ?? t("ui.session-facts.transcript.none")} />
       </Section>
 
-      <Section title="tmux">
-        <KV k="cwd" v={session?.cwd ?? "—"} />
+      <Section title={t("ui.session-facts.tmux.title")}>
+        <KV k={t("ui.session-facts.cwd")} v={session?.cwd ?? "—"} />
         {tmux ? (
           <div className="pt-2">
             <button
               type="button"
               onClick={() => void copyAttach()}
-              title="Copy to the clipboard"
+              title={t("ui.session-facts.copy")}
               className="flex w-full items-start gap-2 rounded-md border border-border bg-surface-2 px-2 py-1.5 text-left font-mono text-[0.7rem] leading-relaxed text-muted-foreground transition-colors hover:text-foreground"
             >
               <CopyIcon className="mt-0.5 h-3 w-3 shrink-0" />
-              <span className="min-w-0 break-all">{copied ? "copied" : `tmux attach -t ${tmux}`}</span>
+              <span className="min-w-0 break-all">{copied ? t("ui.session-facts.copied") : `tmux attach -t ${tmux}`}</span>
             </button>
           </div>
         ) : null}
       </Section>
 
-      <Section title={pr ? "Pull request" : "Ticket"}>
-        {pr ? <KV k="inner loop" v={railLabel(pr.rail)} /> : null}
+      <Section title={pr ? t("ui.session-facts.pull-request.title") : t("ui.session-facts.ticket.title")}>
+        {pr ? <KV k={t("ui.session-facts.inner-loop")} v={railLabel(pr.rail)} /> : null}
         {url ? (
           <div className="pt-1">
             <a
@@ -102,11 +103,11 @@ export function SessionFacts({ view, viewed }: FactsProps) {
               className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
             >
               <ExternalLinkIcon className="h-3.5 w-3.5" />
-              Open on GitHub
+              {t("ui.session-facts.open-on-github")}
             </a>
           </div>
         ) : (
-          <p className="text-[0.7rem] text-muted-foreground">No ticket URL in the record.</p>
+          <p className="text-[0.7rem] text-muted-foreground">{t("ui.session-facts.no-url")}</p>
         )}
       </Section>
     </div>
@@ -143,14 +144,14 @@ export function SessionControls({ view, viewed, onChanged }: ControlsProps) {
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label={pr ? "Controls · work item session" : "Controls"}>
-      {pr ? <Kicker>work item</Kicker> : null}
+    <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label={pr ? t("ui.session-controls.label-pr") : t("ui.session-controls.label")}>
+      {pr ? <Kicker>{t("ui.session-controls.work-item")}</Kicker> : null}
       {verbs.map((verb) => (
         <ControlButton
           key={verb}
           disabled={busy !== null}
           onClick={() => void run(verb)}
-          title={view.sessionState === "none" && verb === "start" ? "No session on this machine — start spawns one." : undefined}
+          title={view.sessionState === "none" && verb === "start" ? t("ui.session-controls.start-spawns") : undefined}
         >
           {busy === verb ? `${verb}…` : verb}
         </ControlButton>

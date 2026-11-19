@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
+from .. import strings
 from ..codex_support import (
     codex_home,
     conversation_marker,
@@ -84,8 +85,10 @@ class CodexAdapter(HarnessAdapter):
                 result = result.merge(
                     TrustResult(
                         applied=[
-                            f"did not trust worktree main root {main_root}: too broad "
-                            "(/ or the home directory); Codex may ask to trust it"
+                            strings.t(
+                                "harness.codex-agent.main-root-too-broad",
+                                root=main_root,
+                            )
                         ]
                     )
                 )
@@ -167,7 +170,10 @@ def _write_trust(path: Path, keys: List[str]) -> TrustResult:
         if not isinstance(projects, dict):
             raise ValueError("projects must be a TOML table")
     except (OSError, ValueError) as exc:
-        return TrustResult(ok=False, error=f"could not read {path}: {exc}")
+        return TrustResult(
+            ok=False,
+            error=strings.t("harness.codex-agent.read-failed", path=path, error=exc),
+        )
     missing = [key for key in dict.fromkeys(keys) if key not in projects]
     additions = [
         f'\n[projects.{json.dumps(key, ensure_ascii=False)}]\ntrust_level = "trusted"\n'
@@ -187,8 +193,16 @@ def _write_trust(path: Path, keys: List[str]) -> TrustResult:
         os.chmod(tmp, mode)
         os.replace(tmp, path)
     except (OSError, ValueError) as exc:
-        return TrustResult(ok=False, error=f"could not write {path}: {exc}")
+        return TrustResult(
+            ok=False,
+            error=strings.t("harness.codex-agent.write-failed", path=path, error=exc),
+        )
     finally:
         if tmp and os.path.exists(tmp):
             os.unlink(tmp)
-    return TrustResult(applied=[f"trusted {key} in {path}" for key in missing])
+    return TrustResult(
+        applied=[
+            strings.t("harness.codex-agent.trusted", key=key, path=path)
+            for key in missing
+        ]
+    )

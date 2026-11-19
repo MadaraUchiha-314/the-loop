@@ -23,6 +23,8 @@ import argparse
 import sys
 from typing import List, Optional
 
+from . import strings
+
 DAEMONS = ("poller", "gh-webhook")
 
 
@@ -30,17 +32,17 @@ def main(argv: Optional[List[str]] = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     parser = argparse.ArgumentParser(
         prog="python -m the_loop.daemon_entry",
-        description="Run a the-loop ingress daemon in the foreground.",
+        description=strings.t("daemon-entry.description"),
     )
     parser.add_argument("daemon", choices=DAEMONS)
     parser.add_argument(
         "--once",
         action="store_true",
-        help="Poller only: run a single poll cycle and exit (cron form).",
+        help=strings.t("daemon-entry.once.help"),
     )
     args = parser.parse_args(argv)
     if args.once and args.daemon != "poller":
-        parser.error("--once applies to the poller only")
+        parser.error(strings.t("daemon-entry.once.error"))
     # A daemon started here directly (systemd, cron) sees the same variables as one
     # `the-loop start` spawned: the env file the config names is loaded first
     # (issue-318), before the daemon module reads any secret's variable.

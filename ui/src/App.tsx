@@ -19,6 +19,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ConnectionBanner, DemoBanner } from "./components/Banner.tsx";
 import type { Chrome } from "./components/HeaderBar.tsx";
 import { DEMO_TITLES } from "./demo/fixture.ts";
+import { t } from "./i18n.ts";
 import { useApi } from "./state/ApiContext.tsx";
 import { navigate, useRoute, type Surface } from "./state/route.ts";
 import { applyTheme, browserPrefersDark, otherTheme, resolveTheme } from "./state/theme.ts";
@@ -88,11 +89,14 @@ export function App() {
   }, [board.views]);
   const titleFor = (ref: string) => titles.get(ref) ?? (api.isDemo ? DEMO_TITLES[ref] : undefined);
 
+  const fleetSize = board.instances.instances.length;
   const serviceLabel = api.isDemo
-    ? "demo fixture · nothing leaves the browser"
+    ? t("ui.app.service.demo")
     : board.instances.role === "manager"
-      ? `manager · ${hostOf(api.baseUrl)} · ${board.instances.instances.length} instance${board.instances.instances.length === 1 ? "" : "s"}`
-      : `service · ${hostOf(api.baseUrl)}`;
+      ? fleetSize === 1
+        ? t("ui.app.service.manager-one", { host: hostOf(api.baseUrl), count: fleetSize })
+        : t("ui.app.service.manager-other", { host: hostOf(api.baseUrl), count: fleetSize })
+      : t("ui.app.service.worker", { host: hostOf(api.baseUrl) });
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">

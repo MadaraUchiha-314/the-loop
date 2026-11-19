@@ -1,0 +1,1 @@
+[the-loop] This session was relaunched in place to pick up a refreshed environment (an operator rotated a credential). Your conversation, working directory and work item are unchanged — carry on where you left off.

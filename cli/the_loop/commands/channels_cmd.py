@@ -22,7 +22,7 @@ from typing import Mapping, Optional
 
 from .base import Command, register
 from .sessions_cmd import _cli_config
-from .. import eventlog
+from .. import eventlog, strings
 from ..channels import inbound
 from ..channels.events import SUBSCRIBABLE_EVENTS
 from ..channels.records import RECORD_TYPES, records_from_comments, render
@@ -45,12 +45,20 @@ from ..channels.state import ChannelState, ChannelStores, canonical
 
 
 def _presence(env_name: str) -> str:
-    return "set" if os.environ.get(env_name) else "unset"
+    return (
+        strings.t("cli.channels.presence.set")
+        if os.environ.get(env_name)
+        else strings.t("cli.channels.presence.unset")
+    )
 
 
 def _transport(slack: SlackChannelConfig) -> str:
     """How an interactive payload reaches this instance (issue-503)."""
-    return "through the gateway" if slack.read_mode == "gateway" else "over Socket Mode"
+    return (
+        strings.t("cli.channels.transport.gateway")
+        if slack.read_mode == "gateway"
+        else strings.t("cli.channels.transport.socket")
+    )
 
 
 def _read_mode_findings(config: dict) -> list:
@@ -64,10 +72,7 @@ def _read_mode_findings(config: dict) -> list:
     if mode == "gateway" and gateway_block(config) is None:
         return ["  [!] " + GATEWAY_MISSING.removeprefix("off · ")]
     if socket_beside_gateway(config):
-        return [
-            "  [!] read.mode is socket beside a gateway block — the listener stays "
-            "off; run the-loop migrate-config to set read.mode: gateway"
-        ]
+        return [strings.t("cli.channels.status.socket-beside-gateway")]
     return []
 
 
@@ -92,14 +97,23 @@ def _posting_lines(slack: SlackChannelConfig, config: dict) -> list:
         slack, config, gateway_posting=str(reported) if reported else None
     )
     if path.kind == "local":
-        return [f"  posting:      local token ({path.detail})"]
+        return [strings.t("cli.channels.status.posting.local", detail=path.detail)]
     if path.kind == "gateway":
-        how = "" if reported == "on" else " — whether it posts is not yet known"
-        return [f"  posting:      through the gateway ({path.detail}){how}"]
+        how = (
+            "" if reported == "on" else strings.t("cli.channels.status.posting.unknown")
+        )
+        return [
+            strings.t(
+                "cli.channels.status.posting.gateway", detail=path.detail, how=how
+            )
+        ]
     return [
-        f"  posting:      unavailable — {path.detail}",
-        f"  [!] outbound Slack needs {slack.bot_token_env} on this instance — "
-        f"{path.detail}; a failed post waits in the outbox",
+        strings.t("cli.channels.status.posting.unavailable", detail=path.detail),
+        strings.t(
+            "cli.channels.status.posting.needs-token",
+            env=slack.bot_token_env,
+            detail=path.detail,
+        ),
     ]
 
 
@@ -111,45 +125,57 @@ def _status(config: dict, probe: bool = False) -> int:
     path = slack_state_path(config)
     stores = ChannelStores.beside(path)
     state = ChannelState.load(path, stores)
-    print(f"ledger:         {ledger_name(config)}")
-    print("slack:")
-    print(f"  enabled:      {str(slack.enabled).lower()}")
-    print(f"  channel:      {slack.channel or '(unset)'}")
-    print(f"  subscribe:    {', '.join(slack.subscribe)}")
-    print(f"  publish:      {', '.join(slack.publish) or '(nothing)'}")
-    print(f"  verbosity:    {slack.verbosity}")
-    print(f"  maxChars:     {slack.max_chars}")
+    print(strings.t("cli.channels.status.ledger", ledger=ledger_name(config)))
+    print(strings.t("cli.channels.status.slack"))
+    print(strings.t("cli.channels.status.enabled", enabled=str(slack.enabled).lower()))
+    print(
+        strings.t(
+            "cli.channels.status.channel",
+            channel=slack.channel or strings.t("cli.channels.status.unset"),
+        )
+    )
+    print(strings.t("cli.channels.status.subscribe", events=", ".join(slack.subscribe)))
+    print(
+        strings.t(
+            "cli.channels.status.publish",
+            grants=", ".join(slack.publish) or strings.t("cli.channels.status.nothing"),
+        )
+    )
+    print(strings.t("cli.channels.status.verbosity", verbosity=slack.verbosity))
+    print(strings.t("cli.channels.status.max-chars", max_chars=slack.max_chars))
     # Above the cap (issue-338): the digest, or 13.10.0's cut.
     print(
-        "  longMessages: "
+        strings.t("cli.channels.status.long-messages")
         + (
-            "digest — above maxChars: the ask first, choices numbered, code and "
-            "traces as pointers, cut at a sentence, the link for the rest"
+            strings.t("cli.channels.status.long-messages.digest")
             if slack.long_messages == "digest"
-            else "truncate — above maxChars: the first maxChars characters and a "
-            "note (13.10.0)"
+            else strings.t("cli.channels.status.long-messages.truncate")
         )
     )
     # What the read mode costs an operator who is waiting (issue-362): poll says
     # its cadence, socket says how often it RECONCILES on top of its push reads —
     # which is the ceiling on how late a missed envelope can be.
     if slack.read_mode == "poll":
-        cadence = f" every {slack.read_interval_seconds:g}s"
+        cadence = strings.t(
+            "cli.channels.status.cadence.poll", seconds=slack.read_interval_seconds
+        )
     elif slack.read_mode == "socket":
         cadence = (
-            f", reconciling every {slack.catch_up_seconds}s"
+            strings.t(
+                "cli.channels.status.cadence.reconciling",
+                seconds=slack.catch_up_seconds,
+            )
             if slack.catch_up_seconds
-            else ", reconciling only at connect (read.catchUpSeconds: 0)"
+            else strings.t("cli.channels.status.cadence.connect-only")
         )
     elif slack.read_mode == "gateway":
         block = gateway_block(config)
-        cadence = (
-            " — events arrive through the gateway client"
-            f" ({block.url if block else '?'}); no Socket Mode connection here"
+        cadence = strings.t(
+            "cli.channels.status.cadence.gateway", url=block.url if block else "?"
         )
     else:
         cadence = ""
-    print(f"  read:         {slack.read_mode}{cadence}")
+    print(strings.t("cli.channels.status.read", mode=slack.read_mode, cadence=cadence))
     for line in _read_mode_findings(config):
         print(line)
     for line in _posting_lines(slack, config):
@@ -168,46 +194,52 @@ def _status(config: dict, probe: bool = False) -> int:
     # not get a question.
     if slack.kickoff_enabled:
         declared = declared_repositories(config)
-        target = slack.kickoff_repo or "(no fallback — every message must name one)"
+        target = slack.kickoff_repo or strings.t(
+            "cli.channels.status.kickoff.no-fallback"
+        )
         if not declared:
-            asks = "cannot ask which repository — nothing is declared"
+            asks = strings.t("cli.channels.status.kickoff.nothing-declared")
         elif not slack.kickoff_picker:
-            asks = (
-                f"cannot ask which repository — read.mode is {slack.read_mode}, so a "
-                "press cannot be received; an unresolved message is refused"
+            asks = strings.t(
+                "cli.channels.status.kickoff.no-picker", mode=slack.read_mode
             )
         else:
-            asks = (
-                "asks which repository when a message names none, and opens it "
-                "where the member picks"
-            )
-        kickoff = (
-            f"{target} (labels: {', '.join(slack.kickoff_labels) or 'none'}); "
-            f"a `<repo>:` prefix may name any of {len(declared)} declared "
-            f"repositories; {asks}"
+            asks = strings.t("cli.channels.status.kickoff.asks")
+        kickoff = strings.t(
+            "cli.channels.status.kickoff.on",
+            target=target,
+            labels=", ".join(slack.kickoff_labels)
+            or strings.t("cli.channels.status.kickoff.no-labels"),
+            count=len(declared),
+            asks=asks,
         )
     else:
-        kickoff = "off" + (
-            " — channels.slack.publish does not grant work-item.create"
+        kickoff = strings.t("cli.channels.status.kickoff.off") + (
+            strings.t("cli.channels.status.kickoff.no-grant")
             if slack.enabled and slack.channel
             else ""
         )
-    print(f"  kickoff:      {kickoff}")
+    print(strings.t("cli.channels.status.kickoff", kickoff=kickoff))
     # The slash command (issue-334): which verb families this channel may run,
     # or why none can arrive at all.
     from ..channels.commands import FAMILY_GRANTS
 
     if slack.push_reachable:
+        granted = strings.t("cli.channels.status.granted")
+        not_granted = strings.t("cli.channels.status.not-granted")
         families = " · ".join(
-            f"{family}: {'granted' if grant in slack.publish else 'not granted'}"
+            f"{family}: {granted if grant in slack.publish else not_granted}"
             for family, grant in FAMILY_GRANTS.items()
         )
-        print(f"  commands:     /the-loop {_transport(slack)} — {families}")
-    else:
         print(
-            f"  commands:     off (read.mode is {slack.read_mode} — slash commands "
-            "need read.mode: socket or gateway)"
+            strings.t(
+                "cli.channels.status.commands",
+                transport=_transport(slack),
+                families=families,
+            )
         )
+    else:
+        print(strings.t("cli.channels.status.commands-off", mode=slack.read_mode))
     # The address (issue-389): a mention is the one way a message in a room
     # reaches the-loop, and it arrives only over Socket Mode — so `status`
     # says what a mention needs, what the two shortcuts need, and how many
@@ -215,48 +247,69 @@ def _status(config: dict, probe: bool = False) -> int:
     for line in _mention_lines(slack, stores):
         print(line)
     reactions = slack.reactions
+    skipped = strings.t("cli.channels.status.reactions.skipped")
     print(
-        "  reactions:    "
+        strings.t("cli.channels.status.reactions")
         + (
             " / ".join(
-                f"{state}={reactions.content_for(state) or '(skipped)'}"
+                f"{state}={reactions.content_for(state) or skipped}"
                 for state in REACTION_STATES
             )
-            + " (on the accepted message; needs reactions:write)"
+            + strings.t("cli.channels.status.reactions.needs")
             if reactions.enabled
-            else "off"
+            else strings.t("cli.channels.status.off")
         )
     )
     # Identity is one list now (issue-309): say how many PEOPLE it names and how
     # many of them can speak here — never the ids themselves.
     print(
-        f"  authorized:   {len(slack.authorized_users)} member id(s) among "
-        f"{len(slack.principals)} routing.authorizedUsers entr"
-        f"{'y' if len(slack.principals) == 1 else 'ies'}"
+        strings.t(
+            "cli.channels.status.authorized-one",
+            members=len(slack.authorized_users),
+            principals=len(slack.principals),
+        )
+        if len(slack.principals) == 1
+        else strings.t(
+            "cli.channels.status.authorized-many",
+            members=len(slack.authorized_users),
+            principals=len(slack.principals),
+        )
     )
     # Presence only, by contract (R3.1): the value never reaches stdout.
-    print(f"  bot token:    {_presence(slack.bot_token_env)} ({slack.bot_token_env})")
-    print(f"  app token:    {_presence(slack.app_token_env)} ({slack.app_token_env})")
     print(
-        f"  conversations: {len(state.conversations)} work item(s) in "
-        f"{len(state.threads)} bound thread(s), {len(state.cursors)} cursor(s) "
-        "— `the-loop channels threads` lists them"
+        strings.t(
+            "cli.channels.status.bot-token",
+            presence=_presence(slack.bot_token_env),
+            env=slack.bot_token_env,
+        )
+    )
+    print(
+        strings.t(
+            "cli.channels.status.app-token",
+            presence=_presence(slack.app_token_env),
+            env=slack.app_token_env,
+        )
+    )
+    print(
+        strings.t(
+            "cli.channels.status.conversations",
+            items=len(state.conversations),
+            threads=len(state.threads),
+            cursors=len(state.cursors),
+        )
     )
     for line in _jira_lines(config):
         print(line)
     # The common event definition (PR #267 review): what CAN be subscribed,
     # with what IS — so configuring `subscribe` never means guessing names.
-    print("subscribable events ([x] = in channels.slack.subscribe):")
+    print(strings.t("cli.channels.status.subscribable"))
     for name, meaning in SUBSCRIBABLE_EVENTS.items():
         tick = "x" if name in slack.subscribe else " "
         print(f"  [{tick}] {name} — {meaning}")
     for name in slack.subscribe:
         if name not in SUBSCRIBABLE_EVENTS:
-            print(
-                f"  [!] {name} — not in the shipped catalog; nothing shipped "
-                "broadcasts it (a custom graph notify event, or a typo)"
-            )
-    print("publishable events ([x] = granted in channels.slack.publish):")
+            print(strings.t("cli.channels.status.unknown-event", name=name))
+    print(strings.t("cli.channels.status.publishable"))
     for name in PUBLISHABLE_EVENTS:
         tick = "x" if name in slack.publish else " "
         print(
@@ -274,22 +327,40 @@ def _jira_lines(config: dict) -> list:
     from ..sessions.refs import jira_section
 
     api = JiraApiConfig.from_cli_config(config)
-    lines = ["jira:"]
+    lines = [strings.t("cli.channels.jira.head")]
     if not api.configured:
-        lines.append("  integration:  not configured (integrations.jira)")
+        lines.append(strings.t("cli.channels.jira.not-configured"))
         return lines
-    lines.append(f"  integration:  {api.site} ({api.deployment})")
+    lines.append(
+        strings.t(
+            "cli.channels.jira.integration", site=api.site, deployment=api.deployment
+        )
+    )
     origins = origin_projects(config)
     projects = [
-        f"{key} → {origins[key]}" if key in origins else f"{key} (mirror-only)"
+        f"{key} → {origins[key]}"
+        if key in origins
+        else strings.t("cli.channels.jira.mirror-only", key=key)
         for key in api.projects
     ]
-    lines.append(f"  projects:     {', '.join(projects) or '(none)'}")
+    lines.append(
+        strings.t(
+            "cli.channels.jira.projects",
+            projects=", ".join(projects) or strings.t("cli.channels.jira.none"),
+        )
+    )
     names = [name for _, group in api._required() for name in group]  # noqa: SLF001
     missing = api.missing_credentials()
     lines.append(
-        "  credentials:  "
-        + ("set" if not missing else "unset — set " + " and ".join(missing))
+        strings.t("cli.channels.jira.credentials")
+        + (
+            strings.t("cli.channels.jira.credentials.set")
+            if not missing
+            else strings.t(
+                "cli.channels.jira.credentials.unset",
+                missing=strings.t("cli.channels.jira.credentials.and").join(missing),
+            )
+        )
         + (f" ({', '.join(names)})" if names else "")
     )
     webhook = jira_section(config).get("webhook")
@@ -297,25 +368,29 @@ def _jira_lines(config: dict) -> list:
         str(webhook.get("secretEnv") or "") if isinstance(webhook, Mapping) else ""
     )
     lines.append(
-        "  webhook:      "
+        strings.t("cli.channels.jira.webhook")
         + (
-            f"/jira-webhook, secret {_presence(secret_env)} ({secret_env})"
+            strings.t(
+                "cli.channels.jira.webhook.on",
+                presence=_presence(secret_env),
+                env=secret_env,
+            )
             if secret_env
-            else "off (no integrations.jira.webhook.secretEnv) — polling only"
+            else strings.t("cli.channels.jira.webhook.off")
         )
     )
-    lines.append(
-        "  ledger:       a Jira work item's events on its Jira ticket; "
-        "work-item.create on the channels.ledger tracker"
-    )
+    lines.append(strings.t("cli.channels.jira.ledger"))
     channel = JiraChannelConfig.from_mapping(config)
     lines.append(
-        "  channel:      "
+        strings.t("cli.channels.jira.channel")
         + (
-            f"enabled — {', '.join(channel.subscribe)} ({channel.verbosity}), "
-            "into declared jira@ rooms"
+            strings.t(
+                "cli.channels.jira.channel.on",
+                events=", ".join(channel.subscribe),
+                verbosity=channel.verbosity,
+            )
             if channel.enabled
-            else "off (channels.jira.enabled)"
+            else strings.t("cli.channels.jira.channel.off")
         )
     )
     return lines
@@ -333,7 +408,12 @@ def _split_check_lines(slack: SlackChannelConfig, config: dict) -> list:
     if slack.read_mode != "socket":
         return []
     state = splitwatch.read_state(splitwatch.split_state_path(config))
-    lines = [f"  split check:  {splitwatch.cadence_line(state, slack)}"]
+    lines = [
+        strings.t(
+            "cli.channels.status.split-check",
+            line=splitwatch.cadence_line(state, slack),
+        )
+    ]
     lines += [f"  [!] {line}" for line in splitwatch.split_lines(state)]
     return lines
 
@@ -355,7 +435,9 @@ def _subscription_lines(
     """
     if not slack.channel:
         return []
-    lines = [f"  channel kind: {kind_summary(slack.channel)}"]
+    lines = [
+        strings.t("cli.channels.status.channel-kind", kind=kind_summary(slack.channel))
+    ]
     if not probe:
         lines += [f"  [!] {advice}" for advice in unchecked_advice(slack.channel)]
         return lines
@@ -364,14 +446,18 @@ def _subscription_lines(
         # The manifest is local, so the expected events are printable even when
         # Slack could not be asked — labelled unverifiable either way.
         return lines + [
-            f"  probe:        not probed — {result['skipped']}",
+            strings.t("cli.channels.status.not-probed", reason=result["skipped"]),
             events_line(expected_bot_events()),
         ]
     kind = result["kind"]
     scopes = result["scopes"]
     lines.append(
-        f"  probe:        conversations.info says {kind}; granted bot scopes: "
-        + (", ".join(scopes) if scopes else "(the response carried no x-oauth-scopes)")
+        strings.t("cli.channels.status.probe", kind=kind)
+        + (
+            ", ".join(scopes)
+            if scopes
+            else strings.t("cli.channels.status.probe.no-scopes")
+        )
     )
     lines.append(events_line(result.get("events") or ()))
     # The probe's own findings: the kind's absence first, then the mention's
@@ -384,8 +470,14 @@ def events_line(events) -> str:
     """The `events:` line (issue-393 R2.1): what the manifest subscribes the bot
     to, and the one caveat — the same sentence in `channels status --probe` and
     `doctor slack`, so an operator reads it once and recognises it."""
-    named = ", ".join(events) if events else "(the packaged manifest could not be read)"
-    return f"  events:       the manifest subscribes the bot to {named} — {EVENTS_UNVERIFIABLE_CAVEAT}"
+    named = (
+        ", ".join(events)
+        if events
+        else strings.t("cli.channels.status.events.unreadable")
+    )
+    return strings.t(
+        "cli.channels.status.events", named=named, caveat=EVENTS_UNVERIFIABLE_CAVEAT
+    )
 
 
 def _mention_lines(slack: SlackChannelConfig, stores: ChannelStores) -> list:
@@ -395,36 +487,33 @@ def _mention_lines(slack: SlackChannelConfig, stores: ChannelStores) -> list:
     `--probe` is what measures the scope (`mention_findings`).
     """
     if slack.push_reachable:
-        mentions = (
-            f"@the-loop is the address in every channel — {MENTION.event} "
-            f"{_transport(slack)}; needs the bot scope {MENTION.scope} (`--probe` "
-            "measures it). A DM with the bot and a room declared --listen all "
-            "also hear plain messages"
+        mentions = strings.t(
+            "cli.channels.status.mentions.on",
+            event=MENTION.event,
+            transport=_transport(slack),
+            scope=MENTION.scope,
         )
-        shortcuts = (
-            "Add as the-loop context / Record the-loop decision "
-            f"({', '.join(MENTION_SHORTCUTS)}) {_transport(slack)} — each exactly "
-            "the typed mention"
+        shortcuts = strings.t(
+            "cli.channels.status.shortcuts.on",
+            shortcuts=", ".join(MENTION_SHORTCUTS),
+            transport=_transport(slack),
         )
     else:
-        mentions = (
-            f"off (read.mode is {slack.read_mode} — nothing addressed can "
-            f"arrive; {MENTION.event} needs read.mode: socket or gateway)"
+        mentions = strings.t(
+            "cli.channels.status.mentions.off",
+            mode=slack.read_mode,
+            event=MENTION.event,
         )
-        shortcuts = (
-            f"off (read.mode is {slack.read_mode} — a message shortcut needs "
-            "read.mode: socket or gateway)"
-        )
+        shortcuts = strings.t("cli.channels.status.shortcuts.off", mode=slack.read_mode)
     targets = stores.declared_targets()
     hearing_all = sum(1 for target in targets if stores.listen_mode(target) == "all")
-    rooms = (
-        f"{len(targets)} declared room(s); {hearing_all} hear(s) every message "
-        "(--listen all), the rest mentions only"
+    rooms = strings.t(
+        "cli.channels.status.rooms.value", rooms=len(targets), hearing=hearing_all
     )
     return [
-        f"  mentions:     {mentions}",
-        f"  shortcuts:    {shortcuts}",
-        f"  rooms:        {rooms}",
+        strings.t("cli.channels.status.mentions", mentions=mentions),
+        strings.t("cli.channels.status.shortcuts", shortcuts=shortcuts),
+        strings.t("cli.channels.status.rooms", rooms=rooms),
     ]
 
 
@@ -437,9 +526,14 @@ def _button_lines(slack: SlackChannelConfig) -> list:
     presence only, never a value."""
     approve = slack.interactive
     commands = slack.command_buttons
-    head = (
-        f"  buttons:      Approve / Request changes: {'on' if approve else 'off'}"
-        f" · Execute / Do / Start: {'on' if commands else 'off'}"
+    on, off = (
+        strings.t("cli.channels.buttons.on"),
+        strings.t("cli.channels.buttons.off"),
+    )
+    head = strings.t(
+        "cli.channels.buttons.head",
+        approve=on if approve else off,
+        commands=on if commands else off,
     )
     app_token = _presence(slack.app_token_env)
     steps: list = []
@@ -447,38 +541,42 @@ def _button_lines(slack: SlackChannelConfig) -> list:
     # instance opens no connection, so it neither needs the token nor `socket`.
     if app_token != "set" and not slack.gateway:
         steps.append(
-            "mint an app-level token: api.slack.com/apps → your app → Basic "
-            "Information → App-Level Tokens → Generate (scope connections:write), "
-            f"and export it as {slack.app_token_env} (now: {app_token})"
+            strings.t(
+                "cli.channels.buttons.mint-token",
+                env=slack.app_token_env,
+                presence=app_token,
+            )
         )
     if not slack.push_reachable:
         wanted = "gateway" if slack.gateway else "socket"
-        steps.append(f"set channels.slack.read.mode: {wanted} (now: {slack.read_mode})")
+        steps.append(
+            strings.t(
+                "cli.channels.buttons.set-read-mode",
+                wanted=wanted,
+                mode=slack.read_mode,
+            )
+        )
     missing = [
         f"{grant} ({label})"
         for grant, label in (
-            ("gate.feedback", "Approve / Request changes"),
-            ("control.command", "Execute / Do / Start"),
+            ("gate.feedback", strings.t("cli.channels.buttons.label.approve")),
+            ("control.command", strings.t("cli.channels.buttons.label.commands")),
         )
         if grant not in slack.publish
     ]
     if missing:
-        steps.append("add to channels.slack.publish: " + ", ".join(missing))
+        steps.append(strings.t("cli.channels.buttons.add-grants") + ", ".join(missing))
     if not steps:
         return [head]
-    steps.append(
-        "the-loop restart — the service hosts the listener; `the-loop status` "
-        "shows the slack-listener row, and this line reads on"
-    )
+    steps.append(strings.t("cli.channels.buttons.restart"))
     lines = [
         head
         + (
-            " — a press reaches this instance only through the gateway client. "
+            strings.t("cli.channels.buttons.via-gateway")
             if slack.gateway
-            else " — a press reaches the-loop only over a Socket Mode listener "
-            "connected with the app-level token. "
+            else strings.t("cli.channels.buttons.via-socket")
         )
-        + "Still needed:"
+        + strings.t("cli.channels.buttons.still-needed")
     ]
     lines += [f"                  {n}. {step}" for n, step in enumerate(steps, 1)]
     return lines
@@ -500,35 +598,51 @@ def _threads(config: dict, work_item: str, as_json: bool) -> int:
         if not wanted or item == wanted
     ]
     if work_item and not records:
-        print(f"no conversation for {work_item}")
+        print(strings.t("cli.channels.threads.none-for", work_item=work_item))
         return 1
     if as_json:
         print(json.dumps(records, indent=2))
         return 0
     if not records:
-        print("no conversations — no work item has a bound thread yet")
+        print(strings.t("cli.channels.threads.none"))
         return 0
+    title = {
+        "workItem": strings.t("cli.channels.threads.column.work-item"),
+        "channel": strings.t("cli.channels.threads.column.channel"),
+        "thread": strings.t("cli.channels.threads.column.thread"),
+        "opened": strings.t("cli.channels.threads.column.opened"),
+        "origin": strings.t("cli.channels.threads.column.origin"),
+        "listen": strings.t("cli.channels.threads.column.listen"),
+    }
+    room = strings.t("cli.channels.threads.room")
     widths = {
-        "workItem": max(len("work item"), *(len(r["workItem"]) for r in records)),
-        "channel": max(len("channel"), *(len(r.get("channel", "")) for r in records)),
-        "thread": max(len("thread"), *(len(r.get("thread", "")) for r in records)),
-        "opened": max(len("opened"), *(len(r.get("opened", "")) for r in records)),
-        "origin": max(len("origin"), *(len(r.get("origin", "")) for r in records)),
+        "workItem": max(len(title["workItem"]), *(len(r["workItem"]) for r in records)),
+        "channel": max(
+            len(title["channel"]), *(len(r.get("channel", "")) for r in records)
+        ),
+        "thread": max(
+            len(title["thread"]), *(len(r.get("thread", "")) for r in records)
+        ),
+        "opened": max(
+            len(title["opened"]), *(len(r.get("opened", "")) for r in records)
+        ),
+        "origin": max(
+            len(title["origin"]), *(len(r.get("origin", "")) for r in records)
+        ),
     }
     # A room conversation (issue-378) has no thread: the column says so.
-    widths["thread"] = max(widths["thread"], len("(channel)"))
-    widths["listen"] = max(len("listen"), *(len(r["listen"]) for r in records))
-    header = (
-        f"{'work item':<{widths['workItem']}}  {'channel':<{widths['channel']}}  "
-        f"{'thread':<{widths['thread']}}  {'opened':<{widths['opened']}}  "
-        f"{'origin':<{widths['origin']}}  {'listen':<{widths['listen']}}  link"
+    widths["thread"] = max(widths["thread"], len(room))
+    widths["listen"] = max(len(title["listen"]), *(len(r["listen"]) for r in records))
+    header = "  ".join(
+        [f"{title[column]:<{widths[column]}}" for column in title]
+        + [strings.t("cli.channels.threads.column.link")]
     )
     print(header)
     for record in records:
         print(
             f"{record['workItem']:<{widths['workItem']}}  "
             f"{record.get('channel', ''):<{widths['channel']}}  "
-            f"{record.get('thread') or '(channel)':<{widths['thread']}}  "
+            f"{record.get('thread') or room:<{widths['thread']}}  "
             f"{record.get('opened', ''):<{widths['opened']}}  "
             f"{record.get('origin', ''):<{widths['origin']}}  "
             f"{record['listen']:<{widths['listen']}}  "
@@ -580,14 +694,15 @@ def _records(config: dict, work_item: str, types: list, fmt: str) -> int:
     try:
         login, comments = _ledger_comments(config, work_item)
     except (ValueError, GitHubApiError) as exc:
-        print(f"could not read the records of {work_item}: {exc}", file=sys.stderr)
-        return 1
-    if not login:
         print(
-            "warning: could not read the GitHub login, so the records are listed by "
-            "their marker alone — check each row's author before trusting it",
+            strings.t(
+                "cli.channels.records.unreadable", work_item=work_item, error=exc
+            ),
             file=sys.stderr,
         )
+        return 1
+    if not login:
+        print(strings.t("cli.channels.records.no-login"), file=sys.stderr)
     records = records_from_comments(comments, types or None, login or None)
     if fmt == "json":
         print(json.dumps([r.to_dict() for r in records], indent=2))
@@ -619,10 +734,10 @@ def _manifest(args: argparse.Namespace) -> int:
             return 0
         manifest = app_manifest.build(args.name)
     except ValueError as exc:
-        print(f"the-loop channels manifest: {exc}", file=sys.stderr)
+        print(strings.t("cli.channels.manifest.error", error=exc), file=sys.stderr)
         return 2
     except OSError as exc:
-        print(f"the-loop channels manifest: {exc}", file=sys.stderr)
+        print(strings.t("cli.channels.manifest.error", error=exc), file=sys.stderr)
         return 1
     if args.link:
         print(app_manifest.link(manifest))
@@ -639,131 +754,121 @@ def _manifest_report(result: dict) -> int:
     """What `--write` did, what Slack needs from the operator, and the link (R3.5)."""
     path, name, status = result["path"], result["name"], result["status"]
     if status == "unchanged":
-        print(f"{path} unchanged (app {json.dumps(name)})")
+        print(
+            strings.t(
+                "cli.channels.manifest.unchanged", path=path, name=json.dumps(name)
+            )
+        )
     else:
-        print(f"wrote {path} (app {json.dumps(name)})")
+        print(
+            strings.t("cli.channels.manifest.wrote", path=path, name=json.dumps(name))
+        )
     if status == "updated":
-        for label, key in (("bot scopes", "scopes"), ("bot events", "events")):
+        for label, key in (
+            (strings.t("cli.channels.manifest.bot-scopes"), "scopes"),
+            (strings.t("cli.channels.manifest.bot-events"), "events"),
+        ):
             change = [f"+ {item}" for item in result[key]["added"]]
             change += [f"- {item}" for item in result[key]["removed"]]
-            print(f"  {label}: {', '.join(change) if change else '(unchanged)'}")
+            print(
+                strings.t(
+                    "cli.channels.manifest.change",
+                    label=label,
+                    change=", ".join(change)
+                    if change
+                    else strings.t("cli.channels.manifest.no-change"),
+                )
+            )
         scopes = result["scopes"]
         reinstall = (
-            " and reinstall it, since its scopes changed"
+            strings.t("cli.channels.manifest.reinstall")
             if scopes["added"] or scopes["removed"]
             else ""
         )
-        print(
-            "  An app created from the old manifest: replace its manifest "
-            f"(api.slack.com/apps → your app → App Manifest){reinstall}."
-        )
-    print(f"create a new app from it: {result['link']}")
+        print(strings.t("cli.channels.manifest.replace", reinstall=reinstall))
+    print(strings.t("cli.channels.manifest.create-link", link=result["link"]))
     return 0
 
 
 @register
 class ChannelsCommand(Command):
     name = "channels"
-    help = (
-        "Operate the communication channels: status, one poll cycle, the "
-        "Socket Mode listener, or the Slack app manifest"
-    )
+    help = strings.t("cli.channels.help")
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         sub = parser.add_subparsers(dest="channels_command", required=True)
         status = sub.add_parser(
             "status",
-            help="Resolved channel config and conversation counts (no secrets)",
+            help=strings.t("cli.channels.status.help"),
         )
         status.add_argument(
             "--probe",
             action="store_true",
-            help=(
-                "Ask Slack what the configured channel is and which bot scopes "
-                "the app was granted, and report what it cannot receive "
-                "(conversations.info + auth.test; never prints a token)"
-            ),
+            help=strings.t("cli.channels.status.probe.help"),
         )
         threads = sub.add_parser(
             "threads",
-            help=(
-                "Which Slack thread carries which work item's conversation "
-                "(reads the state file; no secrets)"
-            ),
+            help=strings.t("cli.channels.threads.help"),
         )
         threads.add_argument(
             "--work-item",
             default="",
             metavar="REF",
-            help="Show one work item's conversation (exit 1 when it has none)",
+            help=strings.t("cli.channels.threads.work-item.help"),
         )
         threads.add_argument(
-            "--json", action="store_true", help="Print the records as JSON"
+            "--json",
+            action="store_true",
+            help=strings.t("cli.channels.threads.json.help"),
         )
         records = sub.add_parser(
             "records",
-            help=(
-                "The context and decision records a channel wrote on a work "
-                "item's ticket (one gh read; no Slack call, no secrets)"
-            ),
+            help=strings.t("cli.channels.records.help"),
         )
-        records.add_argument("work_item", metavar="REF", help="The work item ref")
+        records.add_argument(
+            "work_item",
+            metavar="REF",
+            help=strings.t("cli.channels.records.work-item.help"),
+        )
         records.add_argument(
             "--type",
             action="append",
             choices=list(RECORD_TYPES),
             default=[],
-            help="Only records of this type (repeatable; default: both)",
+            help=strings.t("cli.channels.records.type.help"),
         )
         records.add_argument(
             "--format",
             choices=["json", "markdown"],
             default="markdown",
-            help="JSON rows, or markdown with the text quoted back (default)",
+            help=strings.t("cli.channels.records.format.help"),
         )
         sub.add_parser(
             "poll",
-            help=(
-                "Run one read cycle over the bound threads — and, with the "
-                "work-item.create grant, the channel's top-level messages "
-                "(cron-friendly)"
-            ),
+            help=strings.t("cli.channels.poll.help"),
         )
         sub.add_parser(
             "listen",
-            help=(
-                "Receive replies, button presses and /the-loop commands over "
-                "Slack Socket Mode in the foreground"
-            ),
+            help=strings.t("cli.channels.listen.help"),
         )
         manifest = sub.add_parser(
             "manifest",
-            help=(
-                "Print the Slack app manifest to import (scopes, events, Socket "
-                "Mode, the /the-loop command), or Slack's one-click create link"
-            ),
+            help=strings.t("cli.channels.manifest.help"),
         )
         manifest.add_argument(
             "--name",
-            help=(
-                "The app's name in Slack (35 characters at most); the bot's handle "
-                "is derived from it. Default: the packaged name, or the kept "
-                "file's under --write"
-            ),
+            help=strings.t("cli.channels.manifest.name.help"),
         )
         manifest.add_argument(
             "--format",
             choices=("yaml", "json"),
             default="yaml",
-            help="Print the manifest as YAML (default) or JSON",
+            help=strings.t("cli.channels.manifest.format.help"),
         )
         manifest.add_argument(
             "--link",
             action="store_true",
-            help=(
-                "Print Slack's create-app URL with the manifest prefilled "
-                "(api.slack.com/apps?new_app=1&manifest_json=…)"
-            ),
+            help=strings.t("cli.channels.manifest.link.help"),
         )
         manifest.add_argument(
             "--write",
@@ -771,11 +876,7 @@ class ChannelsCommand(Command):
             const="",
             default=None,
             metavar="PATH",
-            help=(
-                "Keep the manifest as JSON (default: slack-app-manifest.json beside "
-                "the CLI config), name what changed since the last write, and print "
-                "the link"
-            ),
+            help=strings.t("cli.channels.manifest.write.help"),
         )
 
     def run(self, args: argparse.Namespace) -> int:
@@ -792,13 +893,17 @@ class ChannelsCommand(Command):
         if args.channels_command == "poll":
             summary = inbound.poll_once(config)
             if summary.get("skipped"):
-                print(f"skipped: {summary['skipped']}")
+                print(strings.t("cli.channels.poll.skipped", reason=summary["skipped"]))
                 return 1
             print(
-                f"{summary['replies']} message(s): {summary['processed']} "
-                f"processed ({summary['delivered']} delivered), "
-                f"{summary.get('created', 0)} work item(s) created, "
-                f"{summary['dropped']} dropped"
+                strings.t(
+                    "cli.channels.poll.summary",
+                    replies=summary["replies"],
+                    processed=summary["processed"],
+                    delivered=summary["delivered"],
+                    created=summary.get("created", 0),
+                    dropped=summary["dropped"],
+                )
             )
             return 0
         return _listen(config)
@@ -817,16 +922,13 @@ def _listen(config: dict) -> int:
     )
     try:
         if not lock.acquire():
-            holder = lock.holder() or "unknown"
+            holder = lock.holder() or strings.t("cli.channels.listen.unknown-holder")
             print(
-                f"error: a slack listener is already running (pid {holder}) — "
-                "the service hosts one when service.hostIngresses is on; stop it "
-                "with `the-loop stop` to run the listener in the foreground",
-                file=sys.stderr,
+                strings.t("cli.channels.listen.running", holder=holder), file=sys.stderr
             )
             return 1
     except OSError as exc:
-        print(f"error: cannot use the listener lockfile: {exc}", file=sys.stderr)
+        print(strings.t("cli.channels.listen.lockfile", error=exc), file=sys.stderr)
         return 1
     try:
         return run_socket_listener(config)

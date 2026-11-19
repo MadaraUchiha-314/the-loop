@@ -22,7 +22,8 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .. import envstate, eventlog
+from .. import envstate, eventlog, prompts
+from .. import strings
 from ..harness import build_adapters
 from ..harness.base import HarnessAdapter, TrustResult, UnsupportedRunnerError
 from ..harness_plugins import PluginConfig
@@ -68,32 +69,7 @@ CONTROL_VERBS = ("start", "stop", "restart")
 #: The same reasoning ``$interaction_directive`` already follows for work-item
 #: prompts, where a custom template that omits the placeholder gets the
 #: directive appended anyway.
-_DIRECTIVE = """You are **{name}**, a the-loop *standing session*.
-
-A standing session is not a work item's session. You were started by
-`the-loop start` (or by an operator's `the-loop standing start`), you own no
-ticket, no spec chain and no pull request, and you finish when an operator stops
-you rather than when something is delivered.
-
-What that means concretely:
-
-- **Do not answer a phase-selection gate, approve a phase, or post a control
-  keyword (`the-loop start`/`stop`/`pause`/`resume`) on any ticket.** Those are a
-  named human's declarations; a session with no work item has no standing to make
-  them, and posting one would arm or steer somebody else's work item.
-- **Do not open pull requests or push branches** unless your operator asks you to
-  in this conversation.
-- You may **read** freely — `the-loop sessions list`, `the-loop status`,
-  `the-loop events`, `the-loop graph show`, the GitHub surfaces — and report what
-  you find.
-- Every comment you do post carries the loop-prevention marker
-  `<!-- the-loop:agent-comment -->` and a short visible attribution line, exactly
-  as a work-item session's would.
-
-**Where your operator speaks to you:** {surfaces}. There is no ticket to comment
-on, so a question you ask into the void is never answered — say what you need on
-the surfaces above and wait.
-"""
+_DIRECTIVE = prompts.load("standing/directive")  # issue-540: prose in prompts/
 
 
 def _layout(config: Optional[dict] = None):
@@ -162,12 +138,13 @@ def _adapter(entry: StandingSession, config: Optional[dict]) -> HarnessAdapter:
 def _surfaces(entry: StandingSession, config: Optional[dict]) -> str:
     """Where this session's operator can reach it — rendered into the directive."""
     where = [
-        f"the control plane (`the-loop standing say {entry.name} --text …`, or "
-        "`POST /api/v1/standing-sessions/say`)",
-        f"an attached terminal (`tmux attach -t {entry.tmux_target}`)",
+        prompts.render("standing/surface-control-plane", inline=True, name=entry.name),
+        prompts.render(
+            "standing/surface-terminal", inline=True, tmux_target=entry.tmux_target
+        ),
     ]
     if entry.slack.enabled and _slack_enabled(config):
-        where.append("the Slack thread this session was announced in")
+        where.append(prompts.load("standing/surface-slack", inline=True))
     return "; ".join(where)
 
 
@@ -353,7 +330,7 @@ def _start_one(
         return _outcome(
             row,
             "failed",
-            f"tmux did not answer whether {target} exists; not spawning over it",
+            strings.t("core.standing.tmux-unknown", target=target),
         )
     if state == SESSION_LIVE:
         if record is None:
@@ -370,9 +347,7 @@ def _start_one(
             return _outcome(
                 row,
                 "failed",
-                f"a tmux session named {target} exists but the-loop has no record "
-                f"of it — inspect it with `tmux attach -r -t {target}`, then either "
-                f"`tmux kill-session -t {target}` or leave it be",
+                strings.t("core.standing.tmux-unaccounted", target=target),
             )
         if not record.is_running:
             record.status = RUNNING
@@ -398,10 +373,7 @@ def _start_one(
 
     cwd = str(Path(entry.cwd).expanduser())
     if not os.path.isdir(cwd):
-        detail = (
-            f"cwd {entry.cwd!r} is not a directory; a standing session is never "
-            "spawned into a directory that is not there"
-        )
+        detail = strings.t("core.standing.cwd-missing", cwd=entry.cwd)
         eventlog.emit(
             "standing.spawn_failed", level="error", standing=entry.name, error=detail
         )
@@ -412,9 +384,8 @@ def _start_one(
     except ValueError as exc:
         return _outcome(row, "failed", str(exc))
     if not adapter.is_available():
-        detail = (
-            f"harness CLI {adapter.binary!r} not found on PATH — install it or "
-            f"point the {entry.harness} adapter at the binary"
+        detail = strings.t(
+            "core.standing.no-binary", binary=adapter.binary, harness=entry.harness
         )
         eventlog.emit(
             "standing.spawn_failed",
@@ -507,8 +478,21 @@ def _start_one(
     return _outcome(
         _row(entry.name, entry, record, True),
         "resumed" if resumed else "started",
-        f"{'resumed' if resumed else 'started'} {target} "
-        f"({entry.harness} {session_id})",
+        (
+            strings.t(
+                "core.standing.resumed",
+                target=target,
+                harness=entry.harness,
+                session=session_id,
+            )
+            if resumed
+            else strings.t(
+                "core.standing.started",
+                target=target,
+                harness=entry.harness,
+                session=session_id,
+            )
+        ),
     )
 
 
@@ -554,11 +538,8 @@ def _announce(
             OutboundEvent(
                 event_type="standing.started",
                 work_item=standing_ref(entry.name),
-                text=(
-                    f"the-loop standing session `{entry.name}` is up "
-                    f"({entry.harness}). Reply in this thread to talk to it — "
-                    "replies from an authorized member are pasted straight into "
-                    "its terminal."
+                text=strings.t(
+                    "core.standing.announce", name=entry.name, harness=entry.harness
                 ),
                 detail={"harness": entry.harness, "tmux": entry.tmux_target},
             )
@@ -655,7 +636,7 @@ def _stop_one(
         return _outcome(
             _row(name, entry, None, False),
             "not-running",
-            "the-loop has no record of this session; nothing of its own to stop",
+            strings.t("core.standing.stop.no-record"),
         )
     if not runner.has_session(target):
         if record and record.is_running:
@@ -683,7 +664,11 @@ def _stop_one(
         )
         return _outcome(_row(name, entry, record, False), "failed", result.error)
     eventlog.emit("standing.stopped", standing=name, tmux_target=target)
-    return _outcome(_row(name, entry, record, False), "stopped", f"stopped {target}")
+    return _outcome(
+        _row(name, entry, record, False),
+        "stopped",
+        strings.t("core.standing.stopped", target=target),
+    )
 
 
 def stop_standing(
@@ -866,7 +851,7 @@ def delete_standing(
     for row in rows:
         row["outcome"] = "deleted"
         row["status"] = "absent"
-        row["detail"] = f"stopped and forgot {tmux_target_for(name)}"
+        row["detail"] = strings.t("core.standing.deleted", target=tmux_target_for(name))
     return {"sessions": rows, "ok": True}
 
 
@@ -888,7 +873,8 @@ def control_standing(
 
 def _framed(name: str, text: str, actor: str) -> str:
     who = f" ({actor})" if actor else ""
-    return f"Message from your operator{who} to standing session `{name}`:\n\n{text}"
+    head = prompts.render("standing/message", inline=True, who=who, name=name)
+    return f"{head}\n\n{text}"
 
 
 def say_standing(
@@ -932,7 +918,9 @@ def say_standing(
             "messages": [
                 {
                     "stream": "err",
-                    "text": f"error: could not deliver the message: {result.error}",
+                    "text": strings.t(
+                        "core.standing.say.deliver-failed", error=result.error
+                    ),
                 }
             ],
         }
@@ -949,6 +937,9 @@ def say_standing(
         "delivered": True,
         "exitCode": 0,
         "messages": [
-            {"stream": "out", "text": f"delivered into {target} (standing.said)"}
+            {
+                "stream": "out",
+                "text": strings.t("core.standing.say.delivered", target=target),
+            }
         ],
     }

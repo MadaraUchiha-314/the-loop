@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from .base import Command, register
+from .. import strings
 from ..client.routing import routed, service_error
 from ..core import repo as core_repo
 
@@ -35,7 +36,14 @@ _EXIT_OK = 0
 _EXIT_ROUND_FAILED = 1
 _EXIT_MISCONFIGURED = 2
 
-_LIST_HEADERS = ["Critic", "Harness", "Model", "Executable", "Available", "Enabled"]
+_LIST_HEADERS = [
+    strings.t("cli.critic.table.header.critic"),
+    strings.t("cli.critic.table.header.harness"),
+    strings.t("cli.critic.table.header.model"),
+    strings.t("cli.critic.table.header.executable"),
+    strings.t("cli.critic.table.header.available"),
+    strings.t("cli.critic.table.header.enabled"),
+]
 
 
 def _render_table(rows: Sequence[Mapping[str, Any]]) -> str:
@@ -45,8 +53,12 @@ def _render_table(rows: Sequence[Mapping[str, Any]]) -> str:
             str(row["harness"] or "—"),
             str(row["model"] or "—"),
             str(row["binary"] or "—"),
-            "yes" if row["available"] else "no",
-            "yes" if row["enabled"] else "no",
+            strings.t("cli.critic.table.yes")
+            if row["available"]
+            else strings.t("cli.critic.table.no"),
+            strings.t("cli.critic.table.yes")
+            if row["enabled"]
+            else strings.t("cli.critic.table.no"),
         ]
         for row in rows
     ]
@@ -69,7 +81,7 @@ def _render_table(rows: Sequence[Mapping[str, Any]]) -> str:
 @register
 class CriticCommand(Command):
     name = "critic"
-    help = "List the configured critic harnesses and run one critic-review round"
+    help = strings.t("cli.critic.help")
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         actions = parser.add_subparsers(dest="action", metavar="<action>")
@@ -77,69 +89,67 @@ class CriticCommand(Command):
 
         lst = actions.add_parser(
             "list",
-            help="List the CLI config's critics[] with each one's executable and availability",
+            help=strings.t("cli.critic.list.help"),
         )
-        lst.add_argument("--root", default=".", help="Project root (default: .)")
+        lst.add_argument(
+            "--root", default=".", help=strings.t("cli.critic.list.root.help")
+        )
         lst.add_argument(
             "--format",
             choices=("table", "json"),
             default="table",
-            help="Output format (default: table).",
+            help=strings.t("cli.critic.list.format.help"),
         )
         lst.set_defaults(_action=self._list)
 
         policy = actions.add_parser(
             "policy",
-            help=(
-                "Print the review-round policy — the CLI config's reviews block, "
-                "defaulted (self/critic round caps, stop and escalate rules)"
-            ),
+            help=strings.t("cli.critic.policy.help"),
         )
-        policy.add_argument("--root", default=".", help="Project root (default: .)")
+        policy.add_argument(
+            "--root", default=".", help=strings.t("cli.critic.policy.root.help")
+        )
         policy.add_argument(
             "--format",
             choices=("text", "json"),
             default="text",
-            help="Output format (default: text).",
+            help=strings.t("cli.critic.policy.format.help"),
         )
         policy.set_defaults(_action=self._policy)
 
         run = actions.add_parser(
             "run",
-            help="Run ONE critic-review round and print its JSON envelope on stdout",
-            description=(
-                "Run one round with the named critic. Exactly one critic per "
-                "invocation — there is deliberately no run-all mode."
-            ),
+            help=strings.t("cli.critic.run.help"),
+            description=strings.t("cli.critic.run.description"),
         )
+        run.add_argument("critic", help=strings.t("cli.critic.run.critic.help"))
         run.add_argument(
-            "critic", help="The CLI config's critics[] entry to run, by name."
+            "--root", default=".", help=strings.t("cli.critic.run.root.help")
         )
-        run.add_argument("--root", default=".", help="Project root (default: .)")
         prompt = run.add_mutually_exclusive_group(required=True)
-        prompt.add_argument("--prompt", help="The review prompt, inline.")
+        prompt.add_argument("--prompt", help=strings.t("cli.critic.run.prompt.help"))
         prompt.add_argument(
             "--prompt-file",
-            help="File holding the review prompt (preferred: prompts are long).",
+            help=strings.t("cli.critic.run.prompt-file.help"),
         )
         run.add_argument(
             "--cwd",
-            help="Directory to run the critic in (default: the critic's cwd, else --root).",
+            help=strings.t("cli.critic.run.cwd.help"),
         )
         run.add_argument(
-            "--work-item", default="", help="Work item id, e.g. issue-108."
+            "--work-item", default="", help=strings.t("cli.critic.run.work-item.help")
         )
         run.add_argument(
             "--spec-dir",
-            help="Spec directory for {specDir} (default: <specDir>/<work item>).",
+            help=strings.t("cli.critic.run.spec-dir.help"),
         )
         run.add_argument(
             "--timeout",
             type=float,
-            help="Override the critic's timeoutSeconds for this round.",
+            help=strings.t("cli.critic.run.timeout.help"),
         )
         run.add_argument(
-            "--output-file", help="Also write the JSON envelope to this path."
+            "--output-file", help=strings.t("cli.critic.run.output-file.help")
         )
         run.set_defaults(_action=self._run)
 
@@ -164,10 +174,7 @@ class CriticCommand(Command):
         if not rows:
             # An empty critics list is a valid configuration (self-review only),
             # so this is information, not a failure.
-            print(
-                "No critics configured — add critics[] to your cli-config.yaml "
-                "(the operator's file, not the repository's) to run critic rounds."
-            )
+            print(strings.t("cli.critic.list.no-critics-configured-add-critics"))
             return _EXIT_OK
         print(_render_table(rows))
         return _EXIT_OK

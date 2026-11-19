@@ -14,6 +14,7 @@ from itertools import islice
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
+from . import prompts, strings
 from .gitexclude import exclude_from_git
 from .trust import TrustResult, _lock_for, update_json
 
@@ -276,7 +277,7 @@ def prepare_instructions(
             hook_home is None and not hooks_file.resolve().is_relative_to(directory)
         ):
             return TrustResult(
-                ok=False, error="Codex instruction files resolve outside the checkout"
+                ok=False, error=strings.t("codex-support.error.outside-checkout")
             )
         if keep_out_of_git and _is_tracked_in_git(agents):
             home = hook_home or codex_home()
@@ -289,20 +290,16 @@ def prepare_instructions(
         ):
             return TrustResult(
                 ok=False,
-                error="AGENTS.md has an incomplete the-loop managed block; leaving it untouched",
+                error=strings.t("codex-support.error.incomplete-block"),
             )
         block = (
             f"{BEGIN}\n"
-            "This session runs the-loop. Read and follow the operating skill at\n"
-            f"{resources / 'skills/the-loop/SKILL.md'} and its relevant references.\n"
-            "Read .the-loop/harness-config.yaml and custom instructions when present.\n"
-            "Use the-loop ticket show, graph status, graph complete, check, comment,\n"
-            "ask, and pr create for the work item in THE_LOOP_WORK_ITEM.\n"
-            "A graph command such as /the-loop:work-on names a procedure; read the\n"
-            f"corresponding Markdown under {resources / 'commands'} and perform it.\n"
-            "Use the-loop ask for human decisions; advance the graph after completing\n"
-            "the current node. Honor frozen selections and human gates.\n"
-            f"{END}"
+            + prompts.render(
+                "codex/agents-block",
+                skill=resources / "skills/the-loop/SKILL.md",
+                commands=resources / "commands",
+            )
+            + f"{END}"
         )
         if BEGIN in original:
             start, finish = original.index(BEGIN), original.index(END) + len(END)
@@ -312,7 +309,7 @@ def prepare_instructions(
         notes = []
         if desired != original:
             _write_agents(agents, original, desired)
-            notes.append(f"prepared the-loop instructions in {agents}")
+            notes.append(strings.t("codex-support.applied.prepared", path=agents))
         if keep_out_of_git:
             notes += _keep_out_of_git(agents)
         command = shlex.join(
@@ -358,13 +355,11 @@ def prepare_instructions(
 
         result = update_json(hooks_file, mutate)
         if result.applied:
-            notes.append(
-                "Codex Stop hook installed; review and trust this definition once using /hooks"
-            )
+            notes.append(strings.t("codex-support.applied.hook"))
         return TrustResult(applied=notes).merge(result)
     except (OSError, ValueError, subprocess.SubprocessError) as exc:
         return TrustResult(
-            ok=False, error=f"could not prepare Codex instructions: {exc}"
+            ok=False, error=strings.t("codex-support.error.prepare", exc=exc)
         )
 
 
@@ -435,13 +430,12 @@ def _keep_out_of_git(agents: Path) -> list:
     if prefix.returncode != 0:
         return []  # not a git checkout — nothing to keep out of history
     if tracked.returncode == 0:
-        return [
-            f"{agents.name} is tracked in this checkout; the-loop's managed block "
-            "is a local change there — keep it out of commits"
-        ]
+        return [strings.t("codex-support.note.tracked", name=agents.name)]
     entry = "/" + prefix.stdout.strip() + agents.name
     if exclude_from_git(directory, entry) == "added":
-        return [f"excluded {entry} from git in {directory}"]
+        return [
+            strings.t("codex-support.note.excluded", entry=entry, directory=directory)
+        ]
     return []
 
 

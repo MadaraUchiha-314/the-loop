@@ -7,6 +7,7 @@
 
 import type { ReactNode } from "react";
 
+import { t } from "../i18n.ts";
 import { STATUS_TEXT, StatusDot, type DotStatus } from "./StatusDot.tsx";
 
 /** `loop:` + value in mono on the raised surface, with the state's dot. */
@@ -225,7 +226,7 @@ export function InstanceChip({ instance, className = "" }: { instance: string; c
   return (
     <span
       data-instance={instance}
-      title={`served by ${instance}`}
+      title={t("ui.primitives.served-by", { instance })}
       className={`inline-block shrink-0 whitespace-nowrap rounded-full bg-accent px-1.5 py-px font-mono text-[0.62rem] leading-[1.1rem] text-accent-foreground ${className}`.trim()}
     >
       {instance}
@@ -257,7 +258,7 @@ export function FieldLabel({ htmlFor, children, className = "" }: { htmlFor?: st
 }
 
 /** The "Learn more" disclosure under a card, in the muted register. */
-export function LearnMore({ children, summary = "Learn more" }: { children: ReactNode; summary?: string }) {
+export function LearnMore({ children, summary = t("ui.primitives.learn-more") }: { children: ReactNode; summary?: string }) {
   return (
     <details className="group text-xs text-muted-foreground">
       <summary className="inline-flex items-center gap-1 rounded-md py-0.5 transition-colors hover:text-foreground">

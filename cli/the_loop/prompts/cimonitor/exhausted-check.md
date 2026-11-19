@@ -1,0 +1,1 @@
+- Check: `{name}` has failed on {attempt} different commits since it last passed (`routing.ci.maxAttempts`: {max_attempts}); latest `{conclusion}` on `{sha}`.

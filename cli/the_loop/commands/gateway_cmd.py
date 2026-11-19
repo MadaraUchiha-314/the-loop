@@ -24,6 +24,7 @@ import urllib.error
 import urllib.request
 from typing import Any, Dict, List, Optional
 
+from .. import strings
 from ..daemonize import open_logfile
 from ..gateway.config import (
     ConfigError,
@@ -105,7 +106,7 @@ def start_gateway(
             "verb": "start",
             "running": True,
             "pid": lock.holder(),
-            "output": "already running",
+            "output": strings.t("cli.gateway.start.already-running"),
         }
     config.state_root.mkdir(parents=True, exist_ok=True)
     config.logfile.parent.mkdir(parents=True, exist_ok=True)
@@ -135,21 +136,35 @@ def start_gateway(
                 "running": False,
                 "pid": proc.pid,
                 "exitCode": proc.returncode,
-                "output": f"the gateway exited with {proc.returncode}; see {config.logfile}",
+                "output": strings.t(
+                    "cli.gateway.start.exited",
+                    returncode=proc.returncode,
+                    logfile=config.logfile,
+                ),
             }
         if _get(config, "health", timeout=1.0) is not None:
             return {
                 "verb": "start",
                 "running": True,
                 "pid": proc.pid,
-                "output": f"spawned pid {proc.pid}; listening on {config.base_url}; logging to {config.logfile}",
+                "output": strings.t(
+                    "cli.gateway.start.spawned",
+                    pid=proc.pid,
+                    base_url=config.base_url,
+                    logfile=config.logfile,
+                ),
             }
         time.sleep(0.2)
     return {
         "verb": "start",
         "running": True,
         "pid": proc.pid,
-        "output": f"spawned pid {proc.pid}, but health did not answer within {wait:.0f}s; see {config.logfile}",
+        "output": strings.t(
+            "cli.gateway.start.no-health",
+            pid=proc.pid,
+            wait=wait,
+            logfile=config.logfile,
+        ),
     }
 
 
@@ -167,7 +182,7 @@ def stop_gateway(
             "verb": "stop",
             "running": False,
             "pid": 0,
-            "output": "the gateway is not running",
+            "output": strings.t("cli.gateway.stop.not-running"),
         }
     pid = lock.holder()
     try:
@@ -179,13 +194,13 @@ def stop_gateway(
             "verb": "stop",
             "running": False,
             "pid": pid,
-            "output": f"stopped the gateway (pid {pid})",
+            "output": strings.t("cli.gateway.stop.stopped", pid=pid),
         }
     return {
         "verb": "stop",
         "running": True,
         "pid": pid,
-        "output": f"the gateway (pid {pid}) did not stop within {timeout:.0f}s",
+        "output": strings.t("cli.gateway.stop.did-not-stop", pid=pid, timeout=timeout),
     }
 
 
@@ -200,7 +215,17 @@ def _table(rows: List[List[str]]) -> str:
 
 
 def subjects_lines(doc: Dict[str, Any]) -> List[str]:
-    rows = [["subject", "claimants", "events", "held", "pending", "oldest", "dead"]]
+    rows = [
+        [
+            strings.t("cli.gateway.subjects.header.subject"),
+            strings.t("cli.gateway.subjects.header.claimants"),
+            strings.t("cli.gateway.subjects.header.events"),
+            strings.t("cli.gateway.subjects.header.held"),
+            strings.t("cli.gateway.subjects.header.pending"),
+            strings.t("cli.gateway.subjects.header.oldest"),
+            strings.t("cli.gateway.subjects.header.dead"),
+        ]
+    ]
     for row in doc.get("subjects", []):
         claimants = (
             ", ".join(
@@ -219,12 +244,24 @@ def subjects_lines(doc: Dict[str, Any]) -> List[str]:
                 str(row.get("dead", 0)),
             ]
         )
-    return _table(rows).splitlines() if len(rows) > 1 else ["no subjects yet"]
+    return (
+        _table(rows).splitlines()
+        if len(rows) > 1
+        else [strings.t("cli.gateway.subjects.none")]
+    )
 
 
 def instances_lines(doc: Dict[str, Any]) -> List[str]:
     rows = [
-        ["instance", "lease", "last fetch", "backlog", "committed", "actors", "claims"]
+        [
+            strings.t("cli.gateway.instances.header.instance"),
+            strings.t("cli.gateway.instances.header.lease"),
+            strings.t("cli.gateway.instances.header.last-fetch"),
+            strings.t("cli.gateway.instances.header.backlog"),
+            strings.t("cli.gateway.instances.header.committed"),
+            strings.t("cli.gateway.instances.header.actors"),
+            strings.t("cli.gateway.instances.header.claims"),
+        ]
     ]
     for row in doc.get("instances", []):
         actors = (
@@ -240,7 +277,9 @@ def instances_lines(doc: Dict[str, Any]) -> List[str]:
         rows.append(
             [
                 row["instance"],
-                "live" if row.get("leaseLive") else "expired",
+                strings.t("cli.gateway.instances.live")
+                if row.get("leaseLive")
+                else strings.t("cli.gateway.instances.expired"),
                 _age(row.get("lastFetchAt")),
                 str(row.get("backlog", 0)),
                 str(row.get("committed", 0)),
@@ -251,7 +290,7 @@ def instances_lines(doc: Dict[str, Any]) -> List[str]:
     return (
         _table(rows).splitlines()
         if len(rows) > 1
-        else ["no instances have fetched yet"]
+        else [strings.t("cli.gateway.instances.none")]
     )
 
 
@@ -268,51 +307,80 @@ def _age(iso: Optional[str]) -> str:
         return iso
     seconds = int((datetime.now(timezone.utc) - then).total_seconds())
     if seconds < 60:
-        return f"{seconds}s ago"
+        return strings.t("cli.gateway.age.seconds", seconds=seconds)
     if seconds < 3600:
-        return f"{seconds // 60}m ago"
-    return f"{seconds // 3600}h ago"
+        return strings.t("cli.gateway.age.minutes", minutes=seconds // 60)
+    return strings.t("cli.gateway.age.hours", hours=seconds // 3600)
 
 
 def status_lines(report: Dict[str, Any]) -> List[str]:
     lines = [
-        f"gateway: {'running' if report['running'] else 'stopped'}"
-        + (f" (pid {report['pid']})" if report["running"] else ""),
-        f"  listen:  {report['listen']}"
-        + ("" if report["reachable"] or not report["running"] else "  (not answering)")
+        strings.t(
+            "cli.gateway.status.gateway",
+            state=strings.t("cli.gateway.status.running")
+            if report["running"]
+            else strings.t("cli.gateway.status.stopped"),
+        )
         + (
-            f"  (the file says {report['listenInFile']} — restart to apply)"
+            strings.t("cli.gateway.status.pid", pid=report["pid"])
+            if report["running"]
+            else ""
+        ),
+        strings.t("cli.gateway.status.listen", listen=report["listen"])
+        + (
+            ""
+            if report["reachable"] or not report["running"]
+            else strings.t("cli.gateway.status.not-answering")
+        )
+        + (
+            strings.t(
+                "cli.gateway.status.listen-in-file",
+                listen_in_file=report["listenInFile"],
+            )
             if report.get("listenInFile") and report["listenInFile"] != report["listen"]
             else ""
         ),
-        f"  store:   {report['store']}",
-        f"  config:  {report['configPath']}",
-        f"  pidfile: {report['pidfile']}",
-        f"  log:     {report['logfile']}",
+        strings.t("cli.gateway.status.store", store=report["store"]),
+        strings.t("cli.gateway.status.config", config_path=report["configPath"]),
+        strings.t("cli.gateway.status.pidfile", pidfile=report["pidfile"]),
+        strings.t("cli.gateway.status.log", logfile=report["logfile"]),
     ]
     if report["running"] and report["reachable"]:
         ingresses = (
             ", ".join(f"{k}={v}" for k, v in sorted(report["ingresses"].items())) or "-"
         )
-        lines.append(f"  ingresses: {ingresses}")
-        lines.append(f"  slack socket: {report['slackSocket']}")
-        lines.append(f"  slack posting: {report.get('slackPosting', 'unknown')}")
+        lines.append(strings.t("cli.gateway.status.ingresses", ingresses=ingresses))
         lines.append(
-            "  instances (lease live): "
-            + (", ".join(report["instancesLive"]) or "none")
+            strings.t(
+                "cli.gateway.status.slack-socket", slack_socket=report["slackSocket"]
+            )
         )
-        lines.append(f"  held on unassigned: {report['held']}")
+        lines.append(
+            strings.t(
+                "cli.gateway.status.slack-posting",
+                slack_posting=report.get("slackPosting", "unknown"),
+            )
+        )
+        lines.append(
+            strings.t("cli.gateway.status.instances-live")
+            + (
+                ", ".join(report["instancesLive"])
+                or strings.t("cli.gateway.status.none")
+            )
+        )
+        lines.append(strings.t("cli.gateway.status.held", held=report["held"]))
         if report["restartRequired"]:
-            lines.append("  restart required: " + ", ".join(report["restartRequired"]))
+            lines.append(
+                strings.t("cli.gateway.status.restart-required")
+                + ", ".join(report["restartRequired"])
+            )
     return lines
 
 
 @register
 class GatewayCommand(Command):
     name = "gateway"
-    help = (
-        "Run and inspect the-loop gateway: one ingress for many instances (issue-496)"
-    )
+    help = strings.t("cli.gateway.help")
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         # `--config` and `--format` are accepted before AND after the verb
@@ -324,8 +392,7 @@ class GatewayCommand(Command):
             "-c",
             dest="config",
             default=None,
-            help="Path to gateway-config.yaml (default: $THE_LOOP_GATEWAY_CONFIG, "
-            "./.the-loop/gateway-config.yaml, ~/.the-loop/gateway-config.yaml)",
+            help=strings.t("cli.gateway.config.help"),
         )
         common.add_argument("--format", choices=["text", "json"], default="text")
         for action in common._actions:  # noqa: SLF001 — the same options on the parent
@@ -333,14 +400,14 @@ class GatewayCommand(Command):
         sub = parser.add_subparsers(dest="verb", metavar="<verb>")
         sub.required = True
         for verb, help_text in (
-            ("start", "spawn the gateway process and wait for its health"),
-            ("stop", "signal the gateway process and wait for its pidfile"),
-            ("restart", "stop, then start"),
-            ("status", "pid, ingresses, Socket Mode state, store, live instances"),
-            ("subjects", "every subject with its claimants, depth and oldest age"),
+            ("start", strings.t("cli.gateway.start.help")),
+            ("stop", strings.t("cli.gateway.stop.help")),
+            ("restart", strings.t("cli.gateway.restart.help")),
+            ("status", strings.t("cli.gateway.status.help")),
+            ("subjects", strings.t("cli.gateway.subjects.help")),
             (
                 "instances",
-                "every instance with its lease, last fetch, actors and backlog",
+                strings.t("cli.gateway.instances.help"),
             ),
         ):
             sub.add_parser(verb, help=help_text, parents=[common])
@@ -374,7 +441,10 @@ class GatewayCommand(Command):
             doc = _get(config, verb)
             if doc is None:
                 print(
-                    f"the gateway at {config.base_url} is not answering",
+                    strings.t(
+                        "cli.gateway.run.the-gateway-at-is-not",
+                        base_url=config.base_url,
+                    ),
                     file=sys.stderr,
                 )
                 return 1

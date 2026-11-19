@@ -84,6 +84,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+from . import strings
 from .authz import mark_self_authored
 from .collaborators import SLACK_TOKEN_PREFIX, parse_subjects
 from .ghapi import GitHubApiConfig
@@ -429,8 +430,12 @@ def _parse_channels(text: str) -> Tuple[List[str], str, str]:
             return (
                 [],
                 "",
-                f"`{LISTEN_FLAG}` takes one of {' | '.join(LISTEN_MODES)}"
-                + (f", not {mode!r}" if mode else ""),
+                strings.t(
+                    "control.listen.refusal",
+                    flag=LISTEN_FLAG,
+                    modes=" | ".join(LISTEN_MODES),
+                )
+                + (strings.t("control.listen.refusal-not", mode=mode) if mode else ""),
             )
         listen = mode
         del tokens[flag : flag + 2]
@@ -571,14 +576,11 @@ def command_comment(
         line = f"{line} {LISTEN_FLAG} {listen}"
     if address:
         line = f"{line} instance:{address}"
-    who = f" by `{actor}`" if actor else ""
+    who = strings.t("control.cli-mirror.by-actor", actor=actor) if actor else ""
     invocation = invocation or f"the-loop sessions {command}"
     return mark_self_authored(
-        f"{line}\n"
-        "\n"
-        f"_Issued from the-loop CLI{who} (`{invocation}`). "
-        "Recorded here so the work item's thread stays the full record of "
-        "every control action; the-loop has already applied it locally._\n"
+        f"{line}\n\n"
+        + strings.t("control.cli-mirror.footer", who=who, invocation=invocation)
     )
 
 

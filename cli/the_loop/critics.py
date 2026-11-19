@@ -44,6 +44,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
+from . import strings
 from .harness import Usage, build_adapters
 from .harness.base import output_text, parse_json_object, usage_from_output
 
@@ -263,7 +264,8 @@ def _critic_from_entry(entry: object, index: int) -> Critic:
     """One config entry → a :class:`Critic`, with its problems on ``error``."""
     if not isinstance(entry, dict):
         return Critic(
-            name=f"<entry #{index + 1}>", error="entry is not a mapping of keys"
+            name=f"<entry #{index + 1}>",
+            error=strings.t("critics.entry.not-a-mapping"),
         )
     name = str(entry.get("name") or "").strip()
     args = [str(a) for a in (entry.get("args") or [])]
@@ -307,41 +309,37 @@ def _validate(
 ) -> str:
     """Why this entry cannot be run, or "" when it can. Fail-closed, never spawns."""
     if not name:
-        return f"entry #{index + 1} has no 'name'; a critic is run by name"
+        return strings.t("critics.entry.no-name", number=index + 1)
     if not isinstance(entry.get("args") or [], list):
-        return "'args' must be a list of argv elements"
+        return strings.t("critics.entry.args-not-a-list")
     if not isinstance(entry.get("env") or {}, dict):
         # Silently dropping it would run the critic without the environment the
         # operator believes they configured.
-        return "'env' must be a mapping of NAME: value"
+        return strings.t("critics.entry.env-not-a-mapping")
     if output_format not in _OUTPUT_FORMATS:
-        return (
-            f"unknown outputFormat {output_format!r}; expected one of "
-            f"{', '.join(_OUTPUT_FORMATS)}"
+        return strings.t(
+            "critics.entry.output-format",
+            output_format=output_format,
+            known=", ".join(_OUTPUT_FORMATS),
         )
     if timeout <= 0:
-        return "'timeoutSeconds' must be a positive number"
+        return strings.t("critics.entry.timeout")
     for arg in args:
         for placeholder in _PLACEHOLDER_RE.findall(arg):
             if placeholder not in PLACEHOLDERS:
-                return (
-                    f"unknown placeholder {{{placeholder}}} in args; known "
-                    f"placeholders are {', '.join('{%s}' % p for p in PLACEHOLDERS)}"
+                return strings.t(
+                    "critics.entry.placeholder",
+                    placeholder=placeholder,
+                    known=", ".join("{%s}" % p for p in PLACEHOLDERS),
                 )
     command = str(entry.get("command") or "")
     harness = str(entry.get("harness") or "")
     if command:
         if not _mentions_prompt(args):
-            return (
-                "args must pass the review material to the critic — include "
-                "{prompt} or {promptFile}; without it the critic reviews nothing"
-            )
+            return strings.t("critics.entry.no-prompt")
     elif harness not in build_adapters():
         known = ", ".join(sorted(build_adapters()))
-        return (
-            f"harness {harness!r} has no built-in invocation (built-in: {known}); "
-            "set 'command' (and 'args') to say how to run this critic"
-        )
+        return strings.t("critics.entry.no-invocation", harness=harness, known=known)
     return ""
 
 
@@ -424,9 +422,8 @@ def run_critic(
     )
     binary = argv[0]
     if shutil.which(binary) is None:
-        result.error = (
-            f"critic CLI {binary!r} not found on PATH; install it or point "
-            f"critics[] entry {critic.name!r} at the right executable"
+        result.error = strings.t(
+            "critics.run.not-found", binary=binary, critic=critic.name
         )
         return result
 
@@ -458,20 +455,21 @@ def run_critic(
         # sees at a glance that the-loop's limit was not what fired.
         elapsed = result.duration_seconds
         cut_short = elapsed < limit * 0.9
-        result.error = (
-            f"{binary} did not finish (ran {elapsed:.0f}s, the-loop's limit {limit}s"
-            + (
-                "). It stopped well short of that limit, so the cap that fired is "
-                "the CALLER's tool timeout, not the-loop's — run the round as a "
-                "background process so a caller's timeout cannot cut it short"
-                if cut_short
-                else "). Raise it with `--timeout` or the critic's `timeoutSeconds`"
+        if cut_short:
+            result.error = strings.t(
+                "critics.run.timeout-caller",
+                binary=binary,
+                elapsed=elapsed,
+                limit=limit,
             )
-        )
+        else:
+            result.error = strings.t(
+                "critics.run.timeout-own", binary=binary, elapsed=elapsed, limit=limit
+            )
         return result
     except OSError as exc:
         result.duration_seconds = time.monotonic() - started
-        result.error = f"could not run {binary}: {exc}"
+        result.error = strings.t("critics.run.could-not-run", binary=binary, exc=exc)
         return result
 
     result.duration_seconds = time.monotonic() - started
@@ -479,9 +477,11 @@ def run_critic(
     result.output = _extract_output(proc.stdout, critic.output_format)
     result.usage = usage_from_output(proc.stdout)
     if proc.returncode != 0:
-        result.error = (
-            f"{binary} exited {proc.returncode}: "
-            f"{proc.stderr.strip() or proc.stdout.strip()}"
+        result.error = strings.t(
+            "critics.run.exited",
+            binary=binary,
+            code=proc.returncode,
+            output=proc.stderr.strip() or proc.stdout.strip(),
         )
         return result
     result.ok = True

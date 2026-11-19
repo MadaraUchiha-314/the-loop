@@ -14,6 +14,7 @@ import logging
 from typing import Any, Dict, List, Mapping, Sequence, Tuple, TypeVar
 
 from .. import eventlog
+from .. import strings
 from .contract import Context
 from .executors import Executor
 
@@ -106,7 +107,11 @@ class Runner:
             changed = ctx.apply(
                 {
                     "proceed": False,
-                    "reason": f"required hook {executor.name} failed: {error}",
+                    "reason": strings.t(
+                        "lifecycle.runner.required-failed",
+                        hook=executor.name,
+                        error=error,
+                    ),
                 }
             )
             if changed:

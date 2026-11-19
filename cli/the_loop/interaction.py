@@ -40,6 +40,8 @@ import logging
 from dataclasses import dataclass
 from typing import Tuple
 
+from . import prompts
+
 logger = logging.getLogger("the-loop.interaction")
 
 __all__ = [
@@ -65,53 +67,15 @@ PLACEHOLDER = "interaction_directive"
 # not a third setting (decision-051): a checked-in file's review surface is the
 # PR that carries it, in either mode. The skill carries the full rule — this is
 # the one-line restatement for a session whose first (and sometimes only)
-# instruction is this prompt.
-_ARTIFACT_RULE = """\
-Once an artifact of the chain exists (`brainstorm.md`, `requirements.md` /
-`bugfix.md`, `design.md`, `testing-plan.md`, `tasks.md`, `context.md`), iterate
-on it ONLY through pull-request review: commit and push it, open or update the
-PR that carries it, and take feedback as review comments and replies on that
-PR. Do not re-paste artifact contents into new ticket comments, and do not
-iterate on an artifact interactively — the file, the discussion and the
-approval belong in one place. `context.md` is appended to, never rewritten:
-each `context.added` record a channel hands you becomes one entry with its
-provenance, committed with the work item."""
+# instruction is this prompt. The prose lives in the_loop/prompts/interaction/
+# (issue-540); this module only composes it.
+_ARTIFACT_RULE = prompts.load("interaction/artifact-rule", inline=True)
 
-_WORK_ITEM_DIRECTIVE = f"""\
-## Where your answers come from (the-loop interaction mode: `work-item`)
+_WORK_ITEM_DIRECTIVE = (
+    prompts.load("interaction/work-item", inline=True) + "\n\n" + _ARTIFACT_RULE
+)
 
-Do NOT assume a human is watching this session's terminal. Anything you need
-from a person — a clarification, a decision, an approval, a review — MUST be
-asked as a comment on the work item or on its pull request, never as an
-interactive prompt here. Ask by running:
-
-    the-loop ask --work-item <your work item ref> --question '<the question>'
-
-(`--question-file <path>`, or `-` for stdin, for multi-line markdown). The verb
-posts the comment for you, stamps the loop-prevention marker centrally, and
-records the wait as a `session.awaiting_input` event so the control plane can
-see it and answer it. Then stop and wait: the reply reaches you as a new event
-in this same conversation. Only if the `the-loop` CLI is unavailable, post the
-comment yourself and mark it as your own (the loop-prevention marker).
-
-Never block on an interactive prompt, and never read silence as consent. If you
-are genuinely blocked, log the conflict, escalate once, and move on to the next
-available work — the-loop's normal rules.
-
-{_ARTIFACT_RULE}"""
-
-_CLI_DIRECTIVE = f"""\
-## Where your answers come from (the-loop interaction mode: `cli`)
-
-A human is attached to this session's terminal — that is where the operator
-chose to iterate. Ask your questions, clarifications and decisions here,
-interactively, rather than round-tripping through the work item.
-
-This does not waive the paper trail: record the OUTCOME of every human decision
-as a comment on the work item, marked as your own, so the reasoning survives
-this terminal.
-
-{_ARTIFACT_RULE}"""
+_CLI_DIRECTIVE = prompts.load("interaction/cli", inline=True) + "\n\n" + _ARTIFACT_RULE
 
 _DIRECTIVES = {
     "work-item": _WORK_ITEM_DIRECTIVE,

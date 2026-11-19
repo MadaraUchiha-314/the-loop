@@ -29,7 +29,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, List, Mapping, Optional, Sequence
 
-from .. import cli_config, eventlog, lifecycle
+from .. import cli_config, eventlog, lifecycle, strings
 from ..authz import resolve_authorized_users
 from ..channels.publishers import comment_publisher
 from ..ghhost import github_host
@@ -198,33 +198,36 @@ def age(timestamp: str) -> str:
         return ""
     seconds = int((datetime.now(timezone.utc) - then).total_seconds())
     if seconds < 0:
-        return "in the future"
+        return strings.t("poller.daemon.age.future")
     if seconds < 60:
-        return f"{seconds}s ago"
+        return strings.t("poller.daemon.age.seconds", n=seconds)
     if seconds < 3600:
-        return f"{seconds // 60}m ago"
+        return strings.t("poller.daemon.age.minutes", n=seconds // 60)
     if seconds < 86400:
-        return f"{seconds // 3600}h ago"
-    return f"{seconds // 86400}d ago"
+        return strings.t("poller.daemon.age.hours", n=seconds // 3600)
+    return strings.t("poller.daemon.age.days", n=seconds // 86400)
 
 
 def describe_cycle(counters: dict) -> str:
     """The last cycle's counters as one line, mentioning only what happened."""
     parts = [
-        f"{int(counters.get('itemsSeen') or 0)} item(s)",
-        f"{int(counters.get('spawns') or 0)} spawn(s)",
-        f"{int(counters.get('commentsForwarded') or 0)} comment(s) forwarded",
+        strings.t("poller.daemon.cycle.items", n=int(counters.get("itemsSeen") or 0)),
+        strings.t("poller.daemon.cycle.spawns", n=int(counters.get("spawns") or 0)),
+        strings.t(
+            "poller.daemon.cycle.comments-forwarded",
+            n=int(counters.get("commentsForwarded") or 0),
+        ),
     ]
     for key, label in (
-        ("closures", "closed"),
-        ("failures", "gave up"),
-        ("errors", "error(s)"),
+        ("closures", lambda n: strings.t("poller.daemon.cycle.closures", n=n)),
+        ("failures", lambda n: strings.t("poller.daemon.cycle.failures", n=n)),
+        ("errors", lambda n: strings.t("poller.daemon.cycle.errors", n=n)),
     ):
         value = int(counters.get(key) or 0)
         if value:
-            parts.append(f"{value} {label}")
+            parts.append(label(value))
     if counters.get("interrupted"):
-        parts.append("interrupted")
+        parts.append(strings.t("poller.daemon.cycle.interrupted"))
     return ", ".join(parts)
 
 
@@ -235,17 +238,28 @@ def heartbeat_lines(beat, running: bool) -> list:
     nothing more — liveness is the lock, reported by the caller.
     """
     if beat is None:
-        return ["last cycle: unknown — no heartbeat recorded"]
+        return [strings.t("poller.daemon.heartbeat.none")]
     lines = []
     if beat.started_at:
-        lines.append(f"started:    {beat.started_at} ({age(beat.started_at)})")
+        lines.append(
+            strings.t(
+                "poller.daemon.heartbeat.started",
+                started_at=beat.started_at,
+                age=age(beat.started_at),
+            )
+        )
     if not beat.last_cycle_at:
-        lines.append("last cycle: none recorded yet")
+        lines.append(strings.t("poller.daemon.heartbeat.no-cycle"))
         return lines
-    suffix = "" if running else ", before it stopped"
+    suffix = "" if running else strings.t("poller.daemon.heartbeat.stopped-suffix")
     lines.append(
-        f"last cycle: {beat.last_cycle_at} ({age(beat.last_cycle_at)}{suffix}) — "
-        f"{describe_cycle(beat.last_cycle)}"
+        strings.t(
+            "poller.daemon.heartbeat.last-cycle",
+            at=beat.last_cycle_at,
+            age=age(beat.last_cycle_at),
+            suffix=suffix,
+            cycle=describe_cycle(beat.last_cycle),
+        )
     )
     lines.extend(degraded_lines(beat.last_cycle))
     return lines
@@ -264,17 +278,29 @@ def degraded_lines(counters: dict) -> list:
     skipped = [s for s in (counters.get("scopesSkipped") or []) if isinstance(s, dict)]
     lines = []
     if (failed or skipped) and not int(counters.get("scopesPolled") or 0):
-        lines.append(
-            "degraded:   no repository was polled — every listing failed or was skipped"
-        )
+        lines.append(strings.t("poller.daemon.degraded.nothing-polled"))
     for entry in failed:
-        how = "permanent" if entry.get("permanent") else "retried next cycle"
+        how = (
+            strings.t("poller.daemon.degraded.permanent")
+            if entry.get("permanent")
+            else strings.t("poller.daemon.degraded.retried")
+        )
         lines.append(
-            f"degraded:   {entry.get('scope')} — listing failed, {how}: "
-            f"{entry.get('error')}"
+            strings.t(
+                "poller.daemon.degraded.listing-failed",
+                scope=entry.get("scope"),
+                how=how,
+                error=entry.get("error"),
+            )
         )
     for entry in skipped:
-        lines.append(f"degraded:   {entry.get('scope')} — {entry.get('error')}")
+        lines.append(
+            strings.t(
+                "poller.daemon.degraded.skipped",
+                scope=entry.get("scope"),
+                error=entry.get("error"),
+            )
+        )
     return lines
 
 

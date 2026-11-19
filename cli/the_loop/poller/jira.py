@@ -40,6 +40,7 @@ import re
 import uuid
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, TypeVar
 
+from .. import strings
 from ..authz import ORIGIN_RELAY, jira_comment_origin
 from ..jiraapi import (
     JiraApiConfig,
@@ -215,10 +216,12 @@ class JiraPollProvider(PollProvider):
         if not self.client.has_credentials():
             missing = self.client.config.missing_credentials()
             return [
-                "missing Jira credential: set "
-                + " and ".join(missing or ["the integrations.jira.api variables"])
-                + " — a dedicated service account (read:jira-work, write:jira-work, "
-                "read:jira-user on a scoped token)"
+                strings.t(
+                    "poller.jira.missing-credential",
+                    variables=" and ".join(
+                        missing or [strings.t("poller.jira.missing-credential-default")]
+                    ),
+                )
             ]
         return []
 

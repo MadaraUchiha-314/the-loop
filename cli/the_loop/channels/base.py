@@ -23,6 +23,7 @@ from typing import (
     runtime_checkable,
 )
 
+from .. import strings
 from ..identity import Principal
 
 logger = logging.getLogger("the-loop.channels")
@@ -205,7 +206,12 @@ def render(event: Event, verbosity: str) -> str:
     An unknown verbosity renders ``normal``: the safe middle, never silence.
     """
     link = f" — {event.url}" if event.url else ""
-    quiet = f"the-loop: {event.event_type} on {event.work_item}{link}"
+    quiet = strings.t(
+        "channels.base.render.quiet",
+        event_type=event.event_type,
+        work_item=event.work_item,
+        link=link,
+    )
     if verbosity == "quiet":
         return quiet
     normal = f"{quiet}\n\n{event.text}"
