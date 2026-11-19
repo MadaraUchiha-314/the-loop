@@ -8,7 +8,10 @@ workItem: issue-543
 > Testing-plan row T11, run at commit `08fba802` on 2026-11-19 from the repository root.
 > Paths are shown relative to the checkout.
 
-## Outcome: partial, and why
+## Outcome: partial, accepted as run
+
+@MadaraUchiha-314 accepted this outcome on
+[#543](https://github.com/MadaraUchiha-314/the-loop/issues/543#issuecomment-7023255344).
 
 issue-543 is delivered by **one** pull request, #546. By R1.2 a single-PR work item needs
 no PR spec. So the verb records `required: false, reason: single-pr`, no PR spec is

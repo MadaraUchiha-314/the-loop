@@ -101,14 +101,14 @@ them. They are verified at review: R6 by reading `/the-loop:derive-pr-spec` and
 - [x] T6 — `cd cli && uv run python -m pytest -q tests/test_graph_loops.py tests/test_manifest_schemas.py tests/test_writing_parity.py`
 - [x] T8 — `cd cli && uv run python -m pytest -q tests/test_pr_spec.py -k "abuse or forged"`
 - [x] T10 — `cd cli && uv run python -m pytest -q tests/test_graph_skips.py tests/test_graph_loops.py tests/test_graph_multirepo_integration.py`
-- [ ] T11 — dogfood the verb and the stale report on PR #546
+- [x] T11 — dogfood the verb and the stale report on PR #546 (accepted as run, partial: see Verification results)
 - [x] T12 — `make check`
 
 ## Verification results
 
 Run on 2026-11-19 at commit `08fba802` (T11's record refreshed after it). Seven of eight
-activities passed. T11 ran only in part and stays unticked, pending the owner's decision
-on the rescope below.
+activities passed. T11 ran only in part. @MadaraUchiha-314 accepted it as run on
+[#543](https://github.com/MadaraUchiha-314/the-loop/issues/543#issuecomment-7023255344).
 
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
@@ -118,7 +118,7 @@ on the rescope below.
 | T6 | `cd cli && uv run python -m pytest -q tests/test_graph_loops.py tests/test_manifest_schemas.py tests/test_writing_parity.py` | pass — 85 passed | [contract-and-snapshot.md](evidence/contract-and-snapshot.md) |
 | T8 | `cd cli && uv run python -m pytest -q tests/test_pr_spec.py -k "abuse or forged"` | pass — 49 passed | [unit.md](evidence/unit.md) |
 | T10 | `cd cli && uv run python -m pytest -q tests/test_graph_skips.py tests/test_graph_loops.py tests/test_graph_multirepo_integration.py` | pass — 138 passed | [unit.md](evidence/unit.md) |
-| T11 | `the-loop graph pr-spec issue-543 --pr 546 --checkout .`, then `pr-spec-current` before and after a discarded `design.md` edit | **partial** — recorded `single-pr`, and the gate passes as `not-required` at both placements. No PR spec was written and no stale report shown: issue-543 has one PR, and R1.2 says it needs none. T2's second scenario shows the stale path. Dogfooding found and fixed a ref-case bug. | [dogfood.md](evidence/dogfood.md) |
+| T11 | `the-loop graph pr-spec issue-543 --pr 546 --checkout .`, then `pr-spec-current` before and after a discarded `design.md` edit | **partial** — recorded `single-pr`, and the gate passes as `not-required` at both placements. No PR spec was written and no stale report shown: issue-543 has one PR, and R1.2 says it needs none. T2's second scenario shows the stale path. Dogfooding found and fixed a ref-case bug. Accepted as run by the owner. | [dogfood.md](evidence/dogfood.md) |
 | T12 | `make check` | pass — exit 0; 7176 passed, pyright 0 errors, markdownlint 0 errors | [ci-parity.md](evidence/ci-parity.md) |
 
 ## Review comments
