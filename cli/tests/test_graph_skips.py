@@ -301,9 +301,11 @@ def test_every_skippable_node_routes_forward_on_skipped():
         assert skipped == expected, f"{node.id}: {skipped} != {expected}"
 
 
-def test_shipped_pr_loop_declares_no_skippable_node():
+def test_shipped_pr_loop_declares_only_pr_spec_skippable():
+    """issue-543 R1.5: the PR-spec step is the inner loop's one skippable node,
+    declared with `the-loop graph skip <id> --pr N --node pr-spec`."""
     graph = load_graph(name=PDLC_PR_LOOP)
-    assert not any(n.skippable for n in graph.ordered())
+    assert [n.id for n in graph.ordered() if n.skippable] == ["pr-spec"]
     assert not graph.skip_sets
 
 

@@ -132,7 +132,7 @@ All code lands in this repository, so no repository is declared beyond the origi
 
 ### Layer 3 — graph, templates, command
 
-- [ ] 9. Graph wiring
+- [x] 9. Graph wiring
   - In `pdlc-pr-loop.yaml`, add a new start node `pr-spec`: an agent with
     `skippable: true`, `command: /the-loop:derive-pr-spec`, exit hook
     `pr-spec-current`, and edges to `implementation` (including `on: skipped`).

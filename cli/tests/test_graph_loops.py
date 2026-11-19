@@ -42,7 +42,8 @@ def test_both_loops_ship_compiled_and_named():
     outer = load_graph()
     inner = load_graph(name=PDLC_PR_LOOP)
     assert outer.name == PDLC_WORK_ITEM_LOOP and outer.start == "phase-selection"
-    assert inner.name == PDLC_PR_LOOP and inner.start == "implementation"
+    # issue-543: a delivery PR first derives its PR spec, then implements.
+    assert inner.name == PDLC_PR_LOOP and inner.start == "pr-spec"
     # The inner loop is the same loop with steps skipped: nothing before
     # implementation — those are the work item's, decided once at the outer
     # level — and a human gate plus terminal of its own.
@@ -56,6 +57,47 @@ def test_both_loops_ship_compiled_and_named():
 def test_the_outer_implementation_node_awaits_the_inner_loops():
     outer = load_graph()
     assert "await-inner-loops" in outer.node("implementation").exit
+
+
+def _hook_names(chain):
+    return [spec if isinstance(spec, str) else spec.get("hook") for spec in chain]
+
+
+def test_the_inner_loop_derives_a_pr_spec_first():
+    """issue-543 R4.1, R1.5: `pr-spec` is the start node, skippable, gated by
+    `pr-spec-current`, and routes to `implementation` on a pass or a skip."""
+    inner = load_graph(name=PDLC_PR_LOOP)
+    node = inner.node("pr-spec")
+    assert node.skippable and not node.required
+    assert node.command == "derive-pr-spec"
+    assert _hook_names(node.exit) == ["pr-spec-current"]
+    edges = {(e.source, e.target, e.on) for e in inner.edges}
+    assert ("pr-spec", "implementation", "pass") in edges
+    assert ("pr-spec", "implementation", "skipped") in edges
+
+
+def test_pr_spec_current_gates_review_and_the_outer_implementation():
+    """issue-543 R5.1, R1.4: staleness is caught before review, and the outer
+    implementation holds for PRs that walk no inner loop."""
+    inner = load_graph(name=PDLC_PR_LOOP)
+    assert "pr-spec-current" in _hook_names(inner.node("reviewer-briefing").exit)
+    outer = _hook_names(load_graph().node("implementation").exit)
+    assert outer.index("pr-spec-current") > outer.index("await-inner-loops")
+
+
+def test_an_inner_state_written_before_pr_spec_loads_unchanged(tmp_path):
+    """issue-543 T10: an inner loop already past `pr-spec` is never moved back."""
+    repo = tmp_path
+    spec = repo / "docs" / "specs" / "issue-15"
+    state_dir = inner_loop_state_dir(spec, 7, "octo/infra")
+    state_dir.mkdir(parents=True)
+    (state_dir / STATE_FILENAME).write_text(
+        json.dumps({"workItem": "github:octo/infra#7", "currentNode": "verification"})
+    )
+    runtime = build_runtime(repo, pr_number=7, pr_repo="octo/infra")
+    item = runtime.work_item("issue-15")
+    state = WorkItemState.load(runtime.state_dir(item), "issue-15")
+    assert state.current_node == "verification"
 
 
 # -- the seam: await-inner-loops over checked-in state --------------------------
@@ -354,10 +396,12 @@ def test_starting_an_inner_loop_leaves_the_outer_pointer_untouched(repo):
     spec = repo / "docs" / "specs" / "issue-15"
     inner = build_runtime(repo, pr_number=16)
     report = inner.start("issue-15", PR.ref)
-    assert report is not None and report.node == "implementation"
+    assert (
+        report is not None and report.node == "pr-spec"
+    )  # the inner start (issue-543)
 
     inner_state = WorkItemState.load(inner_loop_state_dir(spec, 16), "issue-15")
-    assert inner_state.current_node == "implementation"
+    assert inner_state.current_node == "pr-spec"
     outer_state = WorkItemState.load(spec, "issue-15")
     assert outer_state.current_node == ""  # the work item never entered here
 
@@ -419,7 +463,7 @@ def test_on_pr_spawn_enters_the_inner_loop_only(checkout):
 
     spec = checkout / "docs" / "specs" / "issue-15"
     inner = WorkItemState.load(inner_loop_state_dir(spec, 16), "issue-15")
-    assert inner.current_node == "implementation"
+    assert inner.current_node == "pr-spec"
     # No session handle in the checked-in state (issue-368, R3.1): the inner
     # loop's conversation is a handle to this machine, held by the registry.
     assert "s-1" not in (
@@ -464,7 +508,7 @@ def test_an_unmerged_close_leaves_the_inner_loop_where_it_was(checkout):
 
     spec = checkout / "docs" / "specs" / "issue-15"
     inner = WorkItemState.load(inner_loop_state_dir(spec, 16), "issue-15")
-    assert inner.current_node == "implementation"
+    assert inner.current_node == "pr-spec"
     assert await_inner_loops(_ctx_for(spec)).status == "wait"
 
 
@@ -477,7 +521,7 @@ def test_an_inner_loop_prompt_claims_with_pr(checkout):
     link = _real_link()
     link.on_pr_spawn(WI, PR, str(checkout), session_id="s-1", runner="tmux")
     ctx = link.pr_context(WI, PR, str(checkout))
-    assert ctx is not None and ctx.current_node == "implementation"
+    assert ctx is not None and ctx.current_node == "pr-spec"
 
     block = render_graph_context(ctx, "issue-15", pr_number=16)
     assert "the-loop graph complete issue-15 --pr 16" in block
@@ -687,7 +731,7 @@ def test_the_graph_assigns_on_entering_the_inner_loop(checkout):
     assert len(pushed) == 1
     ref, pr_number, text = pushed[0]
     assert (ref, pr_number) == (WI.ref, 16)
-    assert "you are now at node: implementation" in text
+    assert "you are now at node: pr-spec" in text
     assert "the-loop graph complete issue-15 --pr 16" in text
 
 

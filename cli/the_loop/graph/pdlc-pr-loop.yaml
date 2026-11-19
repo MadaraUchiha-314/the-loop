@@ -37,9 +37,26 @@
 
 version: 1
 name: pdlc-pr-loop
-start: implementation
+start: pr-spec
 
 nodes:
+  # The PR spec (issue-543, decision-153): when the work item is delivered by
+  # several pull requests, this PR first carries a scoped, derived copy of the
+  # chain in its own branch (docs/specs/<key>/pr-<n>/), so a maintainer can
+  # review it from its diff. The session writes the four files, then runs
+  # `the-loop graph pr-spec`, which verifies them and writes pr-spec.json beside
+  # this loop's state. `pr-spec-current` passes vacuously for a single-PR work
+  # item. Skippable — the inner loop's one skippable node — so an operator may
+  # declare it away for a trivially scoped PR (`graph skip --pr N --node pr-spec`).
+  - id: pr-spec
+    actor: agent
+    skippable: true
+    command: derive-pr-spec
+    stage: pr-spec
+    entry: [deliver-assignment]
+    exit:
+      - pr-spec-current
+
   # The PR's implementation: the component-scoped slice of the work item's task
   # DAG. It deliberately does NOT gate tasks.md checkmarks — those are the
   # whole work item's, and one PR delivers a subset; the outer implementation
@@ -96,6 +113,9 @@ nodes:
     entry: [deliver-assignment]
     exit:
       - {hook: validate-artifacts, with: {validates: evidence/pull-requests.md, sections: ["Pull requests"]}}
+      # issue-543 R5.1: a PR spec whose work-item chain changed since it was
+      # recorded is stale; the PR goes to review only once it is current again.
+      - pr-spec-current
 
   # The PR's own human gate: its review on GitHub. `session: inherit` for the
   # same reason as the outer approvals — feedback reaches the conversation that
@@ -124,6 +144,8 @@ nodes:
     exit: []
 
 edges:
+  - {from: pr-spec, to: implementation, on: pass}
+  - {from: pr-spec, to: implementation, on: skipped}
   - {from: implementation, to: verification, on: pass}
   - {from: verification, to: self-review, on: pass}
   - {from: self-review, to: critic-review, on: pass}
