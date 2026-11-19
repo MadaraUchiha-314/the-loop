@@ -38,7 +38,7 @@ from typing import (
     TypeVar,
 )
 
-from .. import eventlog
+from .. import eventlog, strings
 
 from ..ghapi import (  # noqa: F401 — re-exported for the poller package
     KIND_CONVERSATION,
@@ -99,10 +99,8 @@ READ_TIMEOUT = 60.0
 # retried, isolated, visible — never to silence.
 _ISSUES_DISABLED = "issues are disabled"
 _ISSUES_DISABLED_STATUS = 410
-_ISSUES_OFF_REASON = (
-    "issues are disabled on this repository; its issues are skipped and "
-    f"re-probed every {REPROBE_EVERY_CYCLES} cycles, its pull requests are "
-    "still polled"
+_ISSUES_OFF_REASON = strings.t(
+    "poller.github.issues-off-reason", cycles=REPROBE_EVERY_CYCLES
 )
 
 
@@ -123,9 +121,7 @@ def check_github_credentials(api: Optional[GitHubApiConfig] = None) -> List[str]
     if api.token():
         return []
     return [
-        f"missing credential: {api.missing_token_reason} — the daemon reads GitHub "
-        "with a token now (issue-442); a fine-grained token needs Issues: read and "
-        "write, Pull requests: read, Metadata: read on every polled repository"
+        strings.t("poller.github.missing-credential", reason=api.missing_token_reason)
     ]
 
 

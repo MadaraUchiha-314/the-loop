@@ -53,14 +53,17 @@ condition. The words live in the files.
 `prnotice/`, `cimonitor/`, `attachments/`, `sessions/`, `standing/`, `selfdiagnosis/`,
 `mcp/`, `modelprobe/`, `codex/`.
 
-**Left inline, on purpose:**
+- MCP tool descriptions SHALL be `prompts/mcp/tools/<tool>.md`, passed explicitly to the
+  MCP SDK's `add_tool`.
+- The plugin's stop hook (`hooks/the-loop-gate.py`) SHALL read its feedback text from
+  `hooks/prompts/gate-feedback.md`, beside the script, because it runs without the package.
 
-- MCP tool docstrings in `api/mcp.py`. They double as the Python API docs and are
-  pinned by the API/SDK parity tests.
-- `hooks/the-loop-gate.py`. It runs without the package installed.
+**Left in code, on purpose:**
+
 - `codex_support.conversation_marker`. A machine token, matched back against Codex
   rollouts.
-- Graph hook messages and CLI envelopes. The agent reads them as CLI output.
+- Graph hook messages and CLI envelopes. The agent reads them as CLI output, and they
+  carry machine vocabulary.
 - Prompts the caller supplies: critic prompts, standing-session briefs, API `prompt`
   fields.
 
@@ -82,15 +85,21 @@ condition. The words live in the files.
 - Tests SHALL verify that every key the code looks up exists in `en.json`, that every
   catalog entry is used, and that each `t` call passes exactly the fields its text uses.
 
-**Catalogued today:** `dispatcher.refusal.*`, `slack.kickoff-refusal.*`,
-`slack.command-description.*`, `slack.command-button.*`, `slack.button.*`,
-`slack.title.*`, `attachments.reason.*`, `bodies.mirror.*`, `digest.pointer.*`,
-`quiz.title.*`.
+**What is catalogued:** every human-facing string of the application:
 
-**Not catalogued yet:** free-form f-strings in comment builders, CLI stdout and
-`argparse` help, and the UI. These migrate module by module onto this catalog in
-follow-up work. Log lines and exception messages stay in English: they are for
-operators and are grepped.
+- every comment, reply, notice, checklist and message body the-loop posts to GitHub,
+  Slack or Jira;
+- every user-facing CLI message (`print` and stderr output, `argparse`
+  help/description/epilog, `parser.error` and `SystemExit` text);
+- every UI string (`ui.*` keys, read by `ui/src/i18n.ts` from the same file at build time).
+
+**What stays in code:** machine vocabulary (markers, keywords, labels, event names, JSON
+field names, regexes, URLs), `logger` lines, and messages of exceptions raised for
+operators and developers. These are diagnostics, and they stay greppable.
+
+- The UI's `t(key, vars)` SHALL behave like `strings.t`: single-pass `{name}`
+  substitution, and a missing key throws. `ui/src/i18n.test.ts` SHALL verify that every key
+  the UI uses exists and that every `ui.*` key is used.
 
 ### Adding things
 
@@ -111,4 +120,4 @@ operators and are grepped.
 
 | Work item | What changed | Links |
 |---|---|---|
-| issue-540 | Created: prompts moved to Markdown files; the string catalog and its first keyed dictionaries | [spec](../specs/issue-540/requirements.md) · [#541](https://github.com/MadaraUchiha-314/the-loop/pull/541) |
+| issue-540 | Created: every prompt moved to Markdown files; every human-facing string of the CLI and the UI moved to the one string catalog | [spec](../specs/issue-540/requirements.md) · [#541](https://github.com/MadaraUchiha-314/the-loop/pull/541) |

@@ -24,6 +24,7 @@ import { useState } from "react";
 
 import { rowFlag, sessionTree, type SessionNode, type WorkItemView } from "../api/model.ts";
 import type { DaemonStatus, InstancesDocument } from "../api/types.ts";
+import { t } from "../i18n.ts";
 import { hrefFor, itemHref, type Surface } from "../state/route.ts";
 import type { StreamState } from "../state/useStream.ts";
 import { byActivity, filterViews, itemStatus, minimalGroup, repoOf, SIDEBAR_GROUPS_MINIMAL } from "../views/grouping.ts";
@@ -62,8 +63,8 @@ export function showsFleet(instances: InstancesDocument | undefined): boolean {
 
 /** The `<option>` text for one instance: its name, plus why it is worth knowing. */
 export function instanceOption(row: InstancesDocument["instances"][number], own: boolean): string {
-  if (own) return `${row.name} · this instance`;
-  return row.state === "live" ? row.name : `${row.name} · ${row.state}`;
+  if (own) return t("ui.sidebar.option.own", { name: row.name });
+  return row.state === "live" ? row.name : t("ui.sidebar.option.state", { name: row.name, state: row.state });
 }
 
 export function Sidebar({
@@ -105,29 +106,29 @@ export function Sidebar({
   return (
     <aside
       className="flex h-full w-[19rem] shrink-0 flex-col border-r border-border bg-surface max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:z-20"
-      aria-label="Work items"
+      aria-label={t("ui.sidebar.label")}
     >
       <div className="flex items-center justify-between px-4 pt-4">
         <a href={hrefFor({ name: "work" })} className="flex items-center gap-2">
           <span className="grid h-6 w-6 place-items-center rounded-md bg-primary text-primary-foreground">
             <RadioIcon className="h-3.5 w-3.5" />
           </span>
-          <span className="font-display text-sm font-semibold tracking-tight">the-loop</span>
+          <span className="font-display text-sm font-semibold tracking-tight">{t("ui.sidebar.brand")}</span>
         </a>
         <div className="flex items-center gap-1">
-          <IconButton label="Search and filter" expanded={finderOpen} active={finderOpen} onClick={() => setFinderOpen((value) => !value)}>
+          <IconButton label={t("ui.sidebar.finder.toggle")} expanded={finderOpen} active={finderOpen} onClick={() => setFinderOpen((value) => !value)}>
             <SearchIcon className="h-4 w-4" />
           </IconButton>
-          <IconButton label="Collapse sidebar" onClick={onCollapse}>
+          <IconButton label={t("ui.sidebar.collapse")} onClick={onCollapse}>
             <PanelLeftCloseIcon className="h-4 w-4" />
           </IconButton>
         </div>
       </div>
 
-      <nav className="flex items-center gap-1 px-3 pt-3" aria-label="Surfaces">
-        {navLink("work", hrefFor({ name: "work" }), "Work")}
-        {navLink("standing", hrefFor({ name: "standing" }), "Standing")}
-        {navLink("instances", hrefFor({ name: "instances" }), "Instances")}
+      <nav className="flex items-center gap-1 px-3 pt-3" aria-label={t("ui.sidebar.nav.label")}>
+        {navLink("work", hrefFor({ name: "work" }), t("ui.sidebar.nav.work"))}
+        {navLink("standing", hrefFor({ name: "standing" }), t("ui.sidebar.nav.standing"))}
+        {navLink("instances", hrefFor({ name: "instances" }), t("ui.sidebar.nav.instances"))}
       </nav>
 
       {finderOpen ? (
@@ -138,8 +139,8 @@ export function Sidebar({
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search work items"
-              aria-label="Search work items"
+              placeholder={t("ui.sidebar.finder.search")}
+              aria-label={t("ui.sidebar.finder.search")}
               autoComplete="off"
               className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
             />
@@ -149,12 +150,12 @@ export function Sidebar({
               a fleet to filter (R2.6), so a worker's finder is the search box. */}
           {fleet && instances ? (
             <select
-              aria-label="Instance filter"
+              aria-label={t("ui.sidebar.finder.instance-filter")}
               value={instanceFilter}
               onChange={(event) => onInstanceFilter?.(event.target.value)}
               className="w-full rounded-lg border border-border bg-background px-2 py-1.5 font-mono text-[0.72rem] text-foreground outline-none focus:border-border-strong"
             >
-              <option value="">All instances ({instances.instances.length})</option>
+              <option value="">{t("ui.sidebar.finder.all-instances", { count: instances.instances.length })}</option>
               {instances.instances.map((row) => (
                 <option key={row.name} value={row.name}>
                   {instanceOption(row, row.name === instances.name)}
@@ -165,19 +166,21 @@ export function Sidebar({
         </div>
       ) : null}
 
-      <nav className="scroll-thin mt-4 flex-1 overflow-y-auto px-2 pb-4" aria-label="Board">
-        {loading && views.length === 0 ? <p className="px-2 py-4 text-xs text-muted-foreground">Loading…</p> : null}
+      <nav className="scroll-thin mt-4 flex-1 overflow-y-auto px-2 pb-4" aria-label={t("ui.sidebar.board")}>
+        {loading && views.length === 0 ? <p className="px-2 py-4 text-xs text-muted-foreground">{t("ui.sidebar.loading")}</p> : null}
         {!loading && views.length === 0 ? (
           <p className="px-2 py-4 text-xs leading-relaxed text-muted-foreground">
-            Nothing is tracked on this machine yet. A work item appears once the poller or webhook receiver sees a control
-            keyword on its ticket, or after <code className="ref-chip">the-loop sessions register</code>.
+            {t("ui.sidebar.empty")}
+            <code className="ref-chip">the-loop sessions register</code>.
           </p>
         ) : null}
         {views.length > 0 && shown.length === 0 ? (
           <p className="px-2 py-4 text-xs text-muted-foreground">
             {query
-              ? `No work item matches “${query}”${fleet && instanceFilter ? ` on ${instanceFilter}` : ""}.`
-              : `No work item on ${instanceFilter}.`}
+              ? fleet && instanceFilter
+                ? t("ui.sidebar.no-match-on", { query, instance: instanceFilter })
+                : t("ui.sidebar.no-match", { query })
+              : t("ui.sidebar.none-on", { instance: instanceFilter })}
           </p>
         ) : null}
 
@@ -203,7 +206,7 @@ export function Sidebar({
                       {/* PR rows nest under the selected item only (row 13): the
                           tab bar lists them once the item is open. */}
                       {inner.length > 0 && (selected || owner) ? (
-                        <ul className="mt-0.5 space-y-0.5 pl-[1.1rem]" aria-label={`Pull requests for ${view.shortRef}`}>
+                        <ul className="mt-0.5 space-y-0.5 pl-[1.1rem]" aria-label={t("ui.sidebar.pull-requests", { ref: view.shortRef })}>
                           {inner.map((pr) => (
                             <li key={pr.ref}>
                               <PullRequestRow
@@ -225,12 +228,12 @@ export function Sidebar({
       </nav>
 
       <div className="flex items-center gap-2 border-t border-border px-4 py-3">
-        <IconButton label="Settings" href={hrefFor({ name: "settings" })} active={surface === "settings"}>
+        <IconButton label={t("ui.sidebar.settings")} href={hrefFor({ name: "settings" })} active={surface === "settings"}>
           <SettingsIcon className="h-4 w-4" />
         </IconButton>
         <div className="min-w-0 flex-1 leading-tight">
           <a href={hrefFor({ name: "settings" })} className="block truncate text-xs hover:text-foreground">
-            Settings
+            {t("ui.sidebar.settings")}
           </a>
           <div className="truncate font-mono text-[0.65rem] text-muted-foreground" title={serviceLabel}>
             {serviceLabel}
@@ -262,7 +265,8 @@ function ItemRow({
   const flag = rowFlag(view);
   const urgent = flag?.urgent ? flag : null;
   const status = itemStatus(view);
-  const name = `${view.shortRef}${title ? ` — ${title}` : ""}${urgent ? ` — ${urgent.label}` : ""}${view.instance ? ` on ${view.instance}` : ""}`;
+  const named = `${view.shortRef}${title ? ` — ${title}` : ""}${urgent ? ` — ${urgent.label}` : ""}`;
+  const name = view.instance ? t("ui.sidebar.row.on-instance", { name: named, instance: view.instance }) : named;
   return (
     <a
       href={itemHref(view.ref, view.instance)}

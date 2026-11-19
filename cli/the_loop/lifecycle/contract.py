@@ -41,6 +41,7 @@ from typing import (
     Union,
 )
 
+from .. import strings
 from ..sessions.registry import WorkItemRef
 
 __all__ = [
@@ -311,10 +312,7 @@ class WorkItemStart(Context):
     """
 
     POINT: ClassVar[str] = "work_item_start"
-    FIRES: ClassVar[str] = (
-        "once per arming, when a start is accepted and before the workspace is "
-        "prepared or any session exists"
-    )
+    FIRES: ClassVar[str] = strings.t("lifecycle.contract.fires.work-item-start")
 
     #: The loop the item will walk (``pdlc-work-item-loop``, ``pdlc-adhoc-loop``, one
     #: of the operator's own); ``""`` when the daemon could not resolve it.
@@ -344,10 +342,7 @@ class SessionSpawn(Context):
     """
 
     POINT: ClassVar[str] = "session_spawn"
-    FIRES: ClassVar[str] = (
-        "before every harness launch — a first spawn, a pull request's own session, a "
-        "respawn — with the prompt rendered"
-    )
+    FIRES: ClassVar[str] = strings.t("lifecycle.contract.fires.session-spawn")
 
     #: The conversation being launched: the work item itself, or one of its pull requests.
     endpoint: WorkItem = field(default_factory=WorkItem)
@@ -376,9 +371,7 @@ class SessionSpawned(Context):
     """
 
     POINT: ClassVar[str] = "session_spawned"
-    FIRES: ClassVar[str] = (
-        "after the session is registered and before the-loop announces it on the ticket"
-    )
+    FIRES: ClassVar[str] = strings.t("lifecycle.contract.fires.session-spawned")
 
     endpoint: WorkItem = field(default_factory=WorkItem)
     harness: str = ""
@@ -403,9 +396,7 @@ class WaitingForInput(Context):
     """
 
     POINT: ClassVar[str] = "waiting_for_input"
-    FIRES: ClassVar[str] = (
-        "before an agent's question is posted, and when a human gate is entered"
-    )
+    FIRES: ClassVar[str] = strings.t("lifecycle.contract.fires.waiting-for-input")
 
     #: ``question`` (an agent's ``the-loop ask``) or ``gate`` (a human node entered).
     kind: str = ""
@@ -434,10 +425,7 @@ class InputReceived(Context):
     """
 
     POINT: ClassVar[str] = "input_received"
-    FIRES: ClassVar[str] = (
-        "when a person's input reaches the loop — an answer, a comment or review to "
-        "deliver, a control command — before the-loop acts on it"
-    )
+    FIRES: ClassVar[str] = strings.t("lifecycle.contract.fires.input-received")
 
     #: ``answer`` (a reply to the session) | ``comment`` (a comment or review to deliver)
     #: | ``command`` (a control word).
@@ -470,10 +458,7 @@ class PhaseChanged(Context):
     """
 
     POINT: ClassVar[str] = "phase_changed"
-    FIRES: ClassVar[str] = (
-        "when the phase label changes or a terminal node is reached, before the "
-        "channels are told"
-    )
+    FIRES: ClassVar[str] = strings.t("lifecycle.contract.fires.phase-changed")
 
     loop: str = ""
     from_node: str = ""
@@ -498,10 +483,7 @@ class WorkItemComplete(Context):
     """
 
     POINT: ClassVar[str] = "work_item_complete"
-    FIRES: ClassVar[str] = (
-        "when the ticket or pull request that is the work item closes, before the "
-        "closure is announced"
-    )
+    FIRES: ClassVar[str] = strings.t("lifecycle.contract.fires.work-item-complete")
 
     #: ``merged`` | ``closed``.
     state: str = ""

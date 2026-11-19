@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, FrozenSet, List, Mapping, Optional, Tuple
 
-from .. import eventlog, lifecycle
+from .. import eventlog, lifecycle, strings
 from ..lifecycle import PhaseChanged, WaitingForInput
 from ..lifecycle import WorkItem as LifecycleWorkItem
 from .chain import ChainOutcome, run_chain
@@ -469,19 +469,32 @@ class Runtime:
             actor = ""
         loop = self.graph.name or ""
         if event_type == "phase.started":
-            text = f"the-loop: {item.id} started phase *{phase}* ({node_id})."
+            text = strings.t(
+                "graph.runtime.lifecycle.started",
+                work_item=item.id,
+                phase=phase,
+                node=node_id,
+            )
             if actor == "human":
-                text += " — waiting on a person"
+                text += strings.t("graph.runtime.lifecycle.waiting-on-person")
         elif event_type == "phase.progress":
             # A within-phase step (issue-393 R6.3): names the node reached, so the
             # room's edited-in-place progress line can say where the phase is now
             # (the classic rendering shows it as an ordinary lifecycle line).
-            text = f"the-loop: {item.id} — *{phase}* reached {node_id}."
+            text = strings.t(
+                "graph.runtime.lifecycle.progress",
+                work_item=item.id,
+                phase=phase,
+                node=node_id,
+            )
         else:
             outcome = str(detail.get("outcome") or "")
-            text = (
-                f"the-loop: {item.id} completed phase *{phase}* "
-                f"({node_id}{': ' + outcome if outcome else ''})."
+            text = strings.t(
+                "graph.runtime.lifecycle.completed",
+                work_item=item.id,
+                phase=phase,
+                node=node_id,
+                outcome=": " + outcome if outcome else "",
             )
         fields = {"node": node_id, "phase": phase, "loop": loop, "actor": actor}
         fields.update({k: v for k, v in detail.items() if v})
@@ -1568,11 +1581,14 @@ def _announce_force(runtime: "Runtime", item: WorkItem, record: Dict[str, Any]) 
 
     warnings = "".join(f"\n- ⚠️ {w}" for w in record.get("warnings") or [])
     body = mark_self_authored(
-        "🤖 _the-loop_ — **forced transition**\n\n"
-        f"`{record['from']}` → `{record['to']}` by {record['actor']}\n\n"
-        f"**Reason:** {record['reason']}{warnings}\n\n"
-        "This moved the pointer only. The bypassed gate keeps its real verdict, "
-        "so `the-loop check --recompute` will still report it as unmet."
+        strings.t(
+            "graph.runtime.force-comment",
+            from_node=record["from"],
+            to_node=record["to"],
+            actor=record["actor"],
+            reason=record["reason"],
+            warnings=warnings,
+        )
     )
     try:
         integration_for(item.ref, runtime.config).call(
@@ -1613,14 +1629,12 @@ def _announce_skips(
     from .integrations import IntegrationError, integration_for
 
     body = mark_self_authored(
-        "🤖 _the-loop_ — **declared skips**\n\n"
-        f"{', '.join(f'`{n}`' for n in declared)} declared skipped by "
-        f"{record['by']}\n\n"
-        f"**Reason:** {record['reason']}\n\n"
-        "These are declarations, not verdicts: `the-loop check` reports each "
-        "node as *skipped by declaration*, the never-skippable gates still "
-        "run, and the pointer routes around the named nodes when it reaches "
-        "them."
+        strings.t(
+            "graph.runtime.skips-comment",
+            nodes=", ".join(f"`{n}`" for n in declared),
+            by=record["by"],
+            reason=record["reason"],
+        )
     )
     try:
         integration_for(item.ref, runtime.config).call(

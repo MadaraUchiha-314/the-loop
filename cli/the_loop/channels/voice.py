@@ -18,6 +18,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
+from .. import strings
+
 __all__ = [
     "EMOJI",
     "emoji_for",
@@ -103,12 +105,22 @@ def _fallback_lead(event: Any) -> str:
     detail = getattr(event, "detail", None) or {}
     node = str(detail.get("node") or detail.get("phase") or "")
     known = {
-        "phase.started": f"Starting {node}." if node else "Starting the next phase.",
-        "phase.completed": f"Finished {node}." if node else "Phase done.",
-        "work-item-complete": "All done — merged and closed.",
-        "work-item.closed": "Closed.",
-        "session.awaiting_input": "I have a question for you.",
-        "phase-approval-pending": "This is ready for your approval.",
-        "pr-review-pending": "The pull request is ready for review.",
+        "phase.started": (
+            strings.t("channels.voice.lead.phase-started", node=node)
+            if node
+            else strings.t("channels.voice.lead.phase-started-next")
+        ),
+        "phase.completed": (
+            strings.t("channels.voice.lead.phase-completed", node=node)
+            if node
+            else strings.t("channels.voice.lead.phase-completed-plain")
+        ),
+        "work-item-complete": strings.t("channels.voice.lead.work-item-complete"),
+        "work-item.closed": strings.t("channels.voice.lead.work-item-closed"),
+        "session.awaiting_input": strings.t("channels.voice.lead.awaiting-input"),
+        "phase-approval-pending": strings.t(
+            "channels.voice.lead.phase-approval-pending"
+        ),
+        "pr-review-pending": strings.t("channels.voice.lead.pr-review-pending"),
     }
-    return known.get(event_type, "Update on this work item.")
+    return known.get(event_type) or strings.t("channels.voice.lead.default")

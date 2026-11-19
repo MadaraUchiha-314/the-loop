@@ -29,6 +29,7 @@
     "docs/specs/*/design/**",
     // prompts sent to agents are byte-for-byte contracts (issue-540) — a lint
     // fix would change what the agent reads
-    "cli/the_loop/prompts/**"
+    "cli/the_loop/prompts/**",
+    "hooks/prompts/**"
   ]
 }

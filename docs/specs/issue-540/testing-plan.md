@@ -78,9 +78,9 @@ overrides: {}
 - [x] T2 — `cd cli && uv run python -m pytest -q` (full suite)
 - [x] T5 — `uv build --wheel cli -o <tmp>` then `unzip -l <wheel> | grep -E 'the_loop/(prompts|strings)/'` and a smoke import from a fresh venv
 - [x] T7 — `make check`
-- [ ] T2 (scope extension) — `cd cli && uv run python -m pytest -q`, full suite after the whole-application migration, CI-equivalent env
-- [ ] T10 — `cd ui && npm ci && npm test && npm run typecheck && npm run lint && npm run build`
-- [ ] T7 (scope extension) — `make check` after the migration
+- [x] T2 (scope extension) — `cd cli && uv run python -m pytest -q`, full suite after the whole-application migration, CI-equivalent env
+- [x] T10 — `cd ui && npm ci && npm test && npm run typecheck && npm run lint && npm run build`
+- [x] T7 (scope extension) — `make check` after the migration
 
 ## Verification results
 
@@ -92,5 +92,8 @@ Executed 2026-11-18 at `d0470779`. Raw output: [`evidence/verification.md`](evid
 | T2 | full suite, daemon env vars unset as in CI | 6992 passed. Old-vs-new render hashes identical over 66,174 cases | [V2](evidence/verification.md#v2--full-suite-t2-existing-tests-pin-todays-text) |
 | T5 | `uv build --wheel cli`; `unzip -l`; fresh-venv smoke import | 101 prompt files + `en.json` ship; installed wheel renders | [V3](evidence/verification.md#v3--packaging-t5) |
 | T7 | ruff format/check, pyright, markdownlint, `validate_config.py` | all green; dependencies unchanged | [V4](evidence/verification.md#v4--static-checks-t7) |
+| T2 (scope extension) | full suite after the whole-application migration, daemon env vars unset | 6998 passed | [V5](evidence/verification.md#v5--scope-extension-the-whole-application) |
+| T10 | `npm test`, `typecheck`, `lint`, `build` in `ui/` | 379 passed (23 files); typecheck, lint and build clean; bundle holds only `ui.*` keys | [V5](evidence/verification.md#v5--scope-extension-the-whole-application) |
+| T7 (scope extension), T16 | ruff, pyright, markdownlint, `validate_config.py`; catalog, prompt, guard and stop-hook tests | all green; 80 passed | [V5](evidence/verification.md#v5--scope-extension-the-whole-application) |
 
 ## Review comments

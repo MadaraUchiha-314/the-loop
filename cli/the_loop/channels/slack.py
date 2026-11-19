@@ -199,11 +199,17 @@ class ConversationKind:
 #: The four kinds, keyed as ``conversations.info`` distinguishes them.
 CONVERSATION_KINDS: Dict[str, ConversationKind] = {
     "public": ConversationKind(
-        "public channel", "channels:history", "message.channels"
+        strings.t("channels.slack.kind.public"), "channels:history", "message.channels"
     ),
-    "private": ConversationKind("private channel", "groups:history", "message.groups"),
-    "im": ConversationKind("direct message", "im:history", "message.im"),
-    "mpim": ConversationKind("group direct message", "mpim:history", "message.mpim"),
+    "private": ConversationKind(
+        strings.t("channels.slack.kind.private"), "groups:history", "message.groups"
+    ),
+    "im": ConversationKind(
+        strings.t("channels.slack.kind.im"), "im:history", "message.im"
+    ),
+    "mpim": ConversationKind(
+        strings.t("channels.slack.kind.mpim"), "mpim:history", "message.mpim"
+    ),
 }
 
 #: The snapshot `record-context` takes of a thread (issue-389 R4.5): the first
@@ -238,7 +244,7 @@ class Snapshot:
 #: input. Measured by the same probe the kinds are, so a missing scope is a
 #: finding rather than a silent channel.
 MENTION = ConversationKind(
-    "a mention in any channel", "app_mentions:read", "app_mention"
+    strings.t("channels.slack.kind.mention"), "app_mentions:read", "app_mention"
 )
 
 #: The two message shortcuts the manifest declares (issue-389 R6.1), keyed by
@@ -289,11 +295,16 @@ def kind_summary(channel_id: str) -> str:
     """One line for ``channels status``: what this id is, and what it needs."""
     kinds = kinds_from_id(channel_id)
     if not kinds:
-        return "unrecognised — not a Slack conversation id (C…, G… or D…)"
+        return strings.t("channels.slack.kind-summary.unrecognised")
     labels = " or ".join(CONVERSATION_KINDS[kind].label for kind in kinds)
     scopes = " / ".join(CONVERSATION_KINDS[kind].scope for kind in kinds)
     events = " / ".join(CONVERSATION_KINDS[kind].event for kind in kinds)
-    return f"{labels} — needs bot scope {scopes} and bot event {events}"
+    return strings.t(
+        "channels.slack.kind-summary.needs",
+        labels=labels,
+        scopes=scopes,
+        events=events,
+    )
 
 
 def unchecked_advice(channel_id: str) -> Tuple[str, ...]:
@@ -309,11 +320,13 @@ def unchecked_advice(channel_id: str) -> Tuple[str, ...]:
         return ()
     entry = CONVERSATION_KINDS["im"]
     return (
-        f"channel {channel_id} is a {entry.label}: it needs the bot scope "
-        f"{entry.scope} and the bot event {entry.event}, which the-loop's app "
-        "manifest did not always carry — a message there is then only read when "
-        "the listener starts or reconciles. Run `the-loop channels status "
-        "--probe` to check the installed app.",
+        strings.t(
+            "channels.slack.finding.unchecked-dm",
+            channel_id=channel_id,
+            label=entry.label,
+            scope=entry.scope,
+            event=entry.event,
+        ),
     )
 
 
@@ -344,11 +357,13 @@ def subscription_findings(
     missing_scopes = " / ".join(entry.scope for entry in entries)
     missing_events = " / ".join(entry.event for entry in entries)
     return (
-        f"channel {channel_id} is a {labels} and the app lacks the bot scope "
-        f"{missing_scopes} — Slack never delivers {missing_events}, so replies and "
-        "kickoffs are only read when the listener starts or reconciles. Add the "
-        "scope and the event to the Slack app (`the-loop channels manifest` prints "
-        "the manifest that carries them, then Reinstall).",
+        strings.t(
+            "channels.slack.finding.subscription",
+            channel_id=channel_id,
+            labels=labels,
+            missing_scopes=missing_scopes,
+            missing_events=missing_events,
+        ),
     )
 
 
@@ -365,11 +380,9 @@ def mention_findings(scopes: Optional[Sequence[str]]) -> Tuple[str, ...]:
     if MENTION.scope in granted:
         return ()
     return (
-        f"the app lacks the bot scope {MENTION.scope} — Slack never delivers "
-        f"{MENTION.event}, and since the mention is the address (issue-389) "
-        "nothing typed reaches the-loop until it is added: re-import the manifest "
-        "(`the-loop channels manifest`), then Reinstall. A direct message with "
-        "the bot and a room declared `--listen all` still work.",
+        strings.t(
+            "channels.slack.finding.mention", scope=MENTION.scope, event=MENTION.event
+        ),
     )
 
 
@@ -391,12 +404,7 @@ def attachment_findings(scopes: Optional[Sequence[str]]) -> Tuple[str, ...]:
     granted = {str(scope).strip() for scope in scopes}
     if FILES_SCOPE in granted:
         return ()
-    return (
-        f"the app lacks the bot scope {FILES_SCOPE} — a screenshot or a voice note "
-        "attached to a message is named and linked for the session, never fetched, "
-        "so it cannot read the image or Slack's transcript: re-import the manifest "
-        "(`the-loop channels manifest`), then Reinstall.",
-    )
+    return (strings.t("channels.slack.finding.attachments", scope=FILES_SCOPE),)
 
 
 def _granted_scopes(response: Any) -> Optional[Tuple[str, ...]]:
@@ -425,13 +433,7 @@ def _granted_scopes(response: Any) -> Optional[Tuple[str, ...]]:
 #: installed app asked for. So an app imported from an older manifest — scopes
 #: complete, `app_mention` never subscribed — reads as healthy on every probe
 #: while hearing nothing. One fixed sentence, printed beside the scope probe.
-EVENTS_UNVERIFIABLE_CAVEAT = (
-    "not verifiable through the API — Slack exposes no method that lists an "
-    "app's event subscriptions, so an app imported from an older manifest reads "
-    "as healthy here while hearing nothing. Test them: send the bot a mention "
-    "(@the-loop) in the channel and watch the listener answer; if it does not, "
-    "re-import the manifest (`the-loop channels manifest`) and Reinstall."
-)
+EVENTS_UNVERIFIABLE_CAVEAT = strings.t("channels.slack.probe.events-unverifiable")
 
 
 def expected_bot_events() -> Tuple[str, ...]:
@@ -468,9 +470,7 @@ _HEARTBEAT_NONCE_RE = re.compile(r"^[a-f0-9]{8,32}$")
 
 #: The caveat every split report carries, word for word. A shortfall is a
 #: measurement of an absence, and the absence has innocent causes.
-SPLIT_CAVEAT = (
-    "Evidence, not proof: Slack exposes no API that lists an app's connections."
-)
+SPLIT_CAVEAT = strings.t("channels.slack.split.caveat")
 
 #: The remedy, in the order an operator should try it — the same sentence in the
 #: event, in `status`, in `channels status` and in `doctor slack`, so it is read
@@ -478,14 +478,7 @@ SPLIT_CAVEAT = (
 #: incident actually needed: the phantom consumer's host was never found, and
 #: restarting the healthy service changed nothing — only rotating the app-level
 #: token fenced the other consumer out.
-SPLIT_REMEDY = (
-    "Stop every other process connected with this app-level token — a second "
-    "the-loop instance, a stale `channels listen`, a host nobody remembers. When "
-    "the holder cannot be found, rotate the token instead: revoke it under the "
-    "Slack app's Basic Information, generate a new one with `connections:write`, "
-    "update the env file and restart. Rotation fences out every holder without "
-    "finding any of them; restarting this instance alone does not."
-)
+SPLIT_REMEDY = strings.t("channels.slack.split.remedy")
 
 
 def heartbeat_text(nonce: str) -> str:
@@ -532,10 +525,14 @@ def probe_subscription(
     the cache resolves against the working directory (issue-422).
     """
     if not config.channel:
-        return {"skipped": "no channel is configured"}
+        return {"skipped": strings.t("channels.slack.probe.no-channel")}
     token = os.environ.get(config.bot_token_env) or ""
     if not token:
-        return {"skipped": f"no bot token — {config.bot_token_env} is unset"}
+        return {
+            "skipped": strings.t(
+                "channels.slack.probe.no-bot-token", env=config.bot_token_env
+            )
+        }
     factory = client_factory or build_client
     # `conversations.info` takes an id; the operator may have declared a NAME
     # (PR #376 review). Resolved here so the diagnostic reports on the channel
@@ -549,9 +546,8 @@ def probe_subscription(
         ).conversation_id(channel_id)
         if not channel_id:
             return {
-                "skipped": (
-                    f"channels.slack.channel is {config.channel!r}, which resolves "
-                    "to no channel this bot can see (channels:read / groups:read?)"
+                "skipped": strings.t(
+                    "channels.slack.probe.unresolved-channel", channel=config.channel
                 )
             }
     try:
@@ -799,7 +795,9 @@ def _checkbox_option(number: int, row: SelectionRow) -> Dict[str, Any]:
         "text": _mrkdwn(f"{number}. `{row.token}`"[:_OPTION_TEXT_LIMIT]),
         "value": row.token,
     }
-    about = row.about or ("" if row.ticked else "optional — runs only if ticked")
+    about = row.about or (
+        "" if row.ticked else strings.t("channels.slack.selection.optional")
+    )
     if about:
         option["description"] = _mrkdwn(about[:_OPTION_TEXT_LIMIT])
     return option
@@ -815,17 +813,19 @@ def selection_control_blocks(rows: SelectionRows, keyword: str) -> List[Dict[str
     """
     opt_in = any(not row.ticked for row in rows.phases)
     lead = (
-        f"{_SELECTION_EMOJI} *Which phases does this work item need?* Untick what "
-        "it does not need"
-        + (", tick anything optional it does want" if opt_in else "")
-        + ", then press *Execute*. The boxes as they stand at that moment are the "
-        "graph this item walks."
+        strings.t("channels.slack.selection.lead", emoji=_SELECTION_EMOJI)
+        + (strings.t("channels.slack.selection.lead-opt-in") if opt_in else "")
+        + strings.t("channels.slack.selection.lead-end")
     )
     blocks: List[Dict[str, Any]] = [{"type": "section", "text": _mrkdwn(lead)}]
     for index in range(0, len(rows.phases), CHECKBOX_LIMIT):
         chunk = rows.phases[index : index + CHECKBOX_LIMIT]
         group = index // CHECKBOX_LIMIT
-        label = "*Phases* — ticked ones run" if group == 0 else "*Phases* (continued)"
+        label = (
+            strings.t("channels.slack.selection.phases-label")
+            if group == 0
+            else strings.t("channels.slack.selection.phases-label-continued")
+        )
         options = [
             _checkbox_option(index + offset + 1, row)
             for offset, row in enumerate(chunk)
@@ -854,7 +854,7 @@ def selection_control_blocks(rows: SelectionRows, keyword: str) -> List[Dict[str
         )
     if rows.surface is not None:
         option = {
-            "text": _mrkdwn("On a pull request in this repository instead"),
+            "text": _mrkdwn(strings.t("channels.slack.selection.surface-option")),
             "value": SURFACE_TOKEN,
         }
         element = {
@@ -868,11 +868,7 @@ def selection_control_blocks(rows: SelectionRows, keyword: str) -> List[Dict[str
             {
                 "type": "section",
                 "block_id": f"{SELECTION_BLOCK}:surface-label",
-                "text": _mrkdwn(
-                    "*Where does the outer loop happen?* Ticked (the default), the "
-                    "requirements, design, testing plan and task list are iterated "
-                    "on a pull request; unticked, on the work item itself."
-                ),
+                "text": _mrkdwn(strings.t("channels.slack.selection.surface-question")),
             }
         )
         blocks.append(
@@ -885,15 +881,12 @@ def selection_control_blocks(rows: SelectionRows, keyword: str) -> List[Dict[str
     notes: List[str] = []
     if rows.always:
         notes.append(
-            "Always run: " + ", ".join(f"`{node}`" for node in rows.always) + "."
+            strings.t(
+                "channels.slack.selection.always-run",
+                nodes=", ".join(f"`{node}`" for node in rows.always),
+            )
         )
-    notes.append(
-        "Sessions per pull request, harness, model, effort and the Claude artifact "
-        "or doc "
-        "keep this deployment's defaults from here — to choose them, tick them on "
-        "GitHub and reply "
-        f"`{keyword}` there instead."
-    )
+    notes.append(strings.t("channels.slack.selection.defaults-note", keyword=keyword))
     blocks.append({"type": "context", "elements": [_mrkdwn(" ".join(notes))]})
     return blocks
 
@@ -901,13 +894,14 @@ def selection_control_blocks(rows: SelectionRows, keyword: str) -> List[Dict[str
 def github_checklist_line(url: str, keyword: str) -> str:
     """What a room that cannot carry the control is told instead (R9.4): the
     checklist is edited on GitHub — linked — and the reply is said there."""
-    where = f"<{url}|on GitHub>" if url else "on GitHub"
+    on_github = strings.t("channels.slack.checklist.on-github")
+    where = f"<{url}|{on_github}>" if url else on_github
     say = (
-        f"reply `{keyword}` there"
+        strings.t("channels.slack.checklist.reply-keyword", keyword=keyword)
         if keyword
-        else "reply with the execute keyword there"
+        else strings.t("channels.slack.checklist.reply-execute")
     )
-    return f"✍️ This checklist is edited {where}: tick the boxes there, then {say}."
+    return strings.t("channels.slack.checklist.edited-on-github", where=where, say=say)
 
 
 def _control_groups(
@@ -1051,7 +1045,9 @@ def _is_name(item: str) -> bool:
 def _safe_name(item: str) -> str:
     """``item`` as a refusal may echo it: a token, in backticks — anything else
     (prose, markup, a broadcast) is named as *that*, never repeated."""
-    return f"`{item}`" if _is_name(item) else "that name"
+    return (
+        f"`{item}`" if _is_name(item) else strings.t("channels.slack.without.that-name")
+    )
 
 
 def read_summary(items: Sequence[str]) -> List[str]:
@@ -1065,10 +1061,7 @@ def read_summary(items: Sequence[str]) -> List[str]:
 
 def _offered(rows: SelectionRows) -> str:
     listed = ", ".join(f"{n}. `{row.token}`" for n, row in enumerate(rows.phases, 1))
-    return (
-        f"The phases you may leave out: {listed} — say `execute without 2, 5` or "
-        "`skip <phase>`."
-    )
+    return strings.t("channels.slack.without.offered", listed=listed)
 
 
 def apply_without(
@@ -1091,7 +1084,7 @@ def apply_without(
     if not items:
         return (
             "",
-            f"`{WITHOUT}` needs the phases to leave out. " + _offered(rows),
+            strings.t("channels.slack.without.empty", without=WITHOUT) + _offered(rows),
             EMPTY_CLAUSE,
         )
     drop: set = set()
@@ -1101,8 +1094,8 @@ def apply_without(
             if not 1 <= number <= len(rows.phases):
                 return (
                     "",
-                    f"There is no phase {number} on this checklist, so nothing was "
-                    "recorded. " + _offered(rows),
+                    strings.t("channels.slack.without.no-such-number", number=number)
+                    + _offered(rows),
                     UNKNOWN_PHASE,
                 )
             drop.add(rows.phases[number - 1].token)
@@ -1110,9 +1103,11 @@ def apply_without(
         if not _is_name(item):
             return (
                 "",
-                f"that name (word {position} after `{WITHOUT}`) reads as markup, a "
-                "mention or prose, not a phase name, so nothing was recorded. Put "
-                f"only phase names or numbers on the `{WITHOUT}` line. "
+                strings.t(
+                    "channels.slack.without.not-a-name",
+                    position=position,
+                    without=WITHOUT,
+                )
                 + _offered(rows),
                 UNKNOWN_PHASE,
             )
@@ -1121,14 +1116,16 @@ def apply_without(
             if item.lower() in {node.lower() for node in rows.always}:
                 return (
                     "",
-                    f"{_safe_name(item)} always runs on this work item and cannot be "
-                    "skipped, so nothing was recorded. " + _offered(rows),
+                    strings.t(
+                        "channels.slack.without.unskippable", name=_safe_name(item)
+                    )
+                    + _offered(rows),
                     UNSKIPPABLE_PHASE,
                 )
             return (
                 "",
-                f"{_safe_name(item)} is not a phase this checklist offers, so nothing "
-                "was recorded. " + _offered(rows),
+                strings.t("channels.slack.without.unknown", name=_safe_name(item))
+                + _offered(rows),
                 UNKNOWN_PHASE,
             )
         drop.add(row.token)
@@ -1179,14 +1176,18 @@ def posting_path(
     if block is None:
         return PostingPath(
             "none",
-            f"{config.bot_token_env} is unset and no gateway block is configured",
+            strings.t("channels.slack.posting.no-gateway", env=config.bot_token_env),
         )
     if gateway_posting in (None, "on", "unknown"):
         return PostingPath("gateway", block.url)
     return PostingPath(
         "none",
-        f"{config.bot_token_env} is unset and the gateway at {block.url} reports "
-        f"posting {gateway_posting}",
+        strings.t(
+            "channels.slack.posting.gateway-off",
+            env=config.bot_token_env,
+            url=block.url,
+            posting=gateway_posting,
+        ),
     )
 
 
@@ -1847,7 +1848,10 @@ def render_blocks(
         actions.append(
             {
                 "type": "button",
-                "text": {"type": "plain_text", "text": "Open on GitHub"},
+                "text": {
+                    "type": "plain_text",
+                    "text": strings.t("channels.slack.button.open-on-github"),
+                },
                 "url": event.url,
                 "action_id": f"{ACTION_PREFIX}open",
             }
@@ -1863,7 +1867,10 @@ def render_blocks(
         actions.append(
             {
                 "type": "button",
-                "text": {"type": "plain_text", "text": "Defaults are fine"},
+                "text": {
+                    "type": "plain_text",
+                    "text": strings.t("channels.slack.button.defaults"),
+                },
                 "style": "primary",
                 "action_id": f"{ACTION_PREFIX}default",
                 "value": default_answer[:_BUTTON_VALUE_LIMIT],
@@ -1873,7 +1880,10 @@ def render_blocks(
         actions.append(
             {
                 "type": "button",
-                "text": {"type": "plain_text", "text": "Approve"},
+                "text": {
+                    "type": "plain_text",
+                    "text": strings.t("slack.button.approve"),
+                },
                 "style": "primary",
                 "action_id": f"{ACTION_PREFIX}approve",
                 "value": APPROVE_VALUE,
@@ -1882,7 +1892,10 @@ def render_blocks(
         actions.append(
             {
                 "type": "button",
-                "text": {"type": "plain_text", "text": "Request changes"},
+                "text": {
+                    "type": "plain_text",
+                    "text": strings.t("slack.button.changes"),
+                },
                 "style": "danger",
                 "action_id": f"{ACTION_PREFIX}changes",
                 "value": CHANGES_VALUE,
@@ -1983,14 +1996,26 @@ def decision_view(text: str, private_metadata: str) -> Dict[str, Any]:
         "type": "modal",
         "callback_id": DECISION_VIEW_CALLBACK,
         "private_metadata": private_metadata,
-        "title": {"type": "plain_text", "text": "Record a decision"},
-        "submit": {"type": "plain_text", "text": "Record"},
-        "close": {"type": "plain_text", "text": "Cancel"},
+        "title": {
+            "type": "plain_text",
+            "text": strings.t("channels.slack.decision-view.title"),
+        },
+        "submit": {
+            "type": "plain_text",
+            "text": strings.t("channels.slack.decision-view.submit"),
+        },
+        "close": {
+            "type": "plain_text",
+            "text": strings.t("channels.slack.decision-view.close"),
+        },
         "blocks": [
             {
                 "type": "input",
                 "block_id": "decision",
-                "label": {"type": "plain_text", "text": "What was decided"},
+                "label": {
+                    "type": "plain_text",
+                    "text": strings.t("channels.slack.decision-view.decision-label"),
+                },
                 "element": {
                     "type": "plain_text_input",
                     "action_id": "text",
@@ -2002,13 +2027,18 @@ def decision_view(text: str, private_metadata: str) -> Dict[str, Any]:
                 "type": "input",
                 "block_id": "kind",
                 "optional": True,
-                "label": {"type": "plain_text", "text": "Kind"},
+                "label": {
+                    "type": "plain_text",
+                    "text": strings.t("channels.slack.decision-view.kind-label"),
+                },
                 "element": {
                     "type": "static_select",
                     "action_id": "select",
                     "placeholder": {
                         "type": "plain_text",
-                        "text": "product, design or tech",
+                        "text": strings.t(
+                            "channels.slack.decision-view.kind-placeholder"
+                        ),
                     },
                     "options": [
                         {"text": {"type": "plain_text", "text": kind}, "value": kind}
@@ -2020,7 +2050,10 @@ def decision_view(text: str, private_metadata: str) -> Dict[str, Any]:
                 "type": "input",
                 "block_id": "rationale",
                 "optional": True,
-                "label": {"type": "plain_text", "text": "Why"},
+                "label": {
+                    "type": "plain_text",
+                    "text": strings.t("channels.slack.decision-view.rationale-label"),
+                },
                 "element": {
                     "type": "plain_text_input",
                     "action_id": "text",
@@ -2051,9 +2084,8 @@ def render_kickoff_question(text: str, options: Sequence[str]) -> List[Dict[str,
     body = text
     extra = len(options) - len(shown)
     if extra > 0:
-        body = (
-            f"{text}\n_Showing {len(shown)} of {len(options)} — for the rest, start "
-            "your message with `<repo>: `._"
+        body = f"{text}\n" + strings.t(
+            "channels.slack.kickoff.showing", shown=len(shown), total=len(options)
         )
     blocks: List[Dict[str, Any]] = [
         {"type": "section", "text": {"type": "mrkdwn", "text": body}}
@@ -2077,7 +2109,10 @@ def render_kickoff_question(text: str, options: Sequence[str]) -> List[Dict[str,
         elements = [
             {
                 "type": "static_select",
-                "placeholder": {"type": "plain_text", "text": "Choose a repository"},
+                "placeholder": {
+                    "type": "plain_text",
+                    "text": strings.t("channels.slack.kickoff.choose-repository"),
+                },
                 "action_id": KICKOFF_REPO_ACTION,
                 "options": [
                     {
@@ -2113,7 +2148,7 @@ def _button_name(action_id: str) -> str:
     picker's numbered buttons all answer to its one entry."""
     if is_kickoff_repo_action(action_id):
         return BUTTON_NAMES[KICKOFF_REPO_ACTION]
-    return BUTTON_NAMES.get(action_id, "the button")
+    return BUTTON_NAMES.get(action_id, strings.t("channels.slack.press.the-button"))
 
 
 def action_value(action: Mapping[str, Any]) -> str:
@@ -2153,18 +2188,17 @@ def render_root(
     so the root promises only what the configuration delivers.
     """
     name = f"<{url}|{work_item}>" if url else f"`{work_item}`"
-    lines = [
-        f"This thread carries every message about {name} — questions, "
-        "approvals, comments — each as a reply."
-    ]
+    lines = [strings.t("channels.slack.root.body", name=name)]
     if reading:
-        lines.append("Replies here from an authorized member reach it.")
+        lines.append(strings.t("channels.slack.root.reading"))
     blocks: List[Dict[str, Any]] = [
         {
             "type": "header",
             "text": {
                 "type": "plain_text",
-                "text": f"the-loop · {work_item}"[:_HEADER_LIMIT],
+                "text": strings.t("channels.slack.root.header", work_item=work_item)[
+                    :_HEADER_LIMIT
+                ],
             },
         },
         {"type": "section", "text": {"type": "mrkdwn", "text": " ".join(lines)}},
@@ -2176,7 +2210,10 @@ def render_root(
                 "elements": [
                     {
                         "type": "button",
-                        "text": {"type": "plain_text", "text": "Open on GitHub"},
+                        "text": {
+                            "type": "plain_text",
+                            "text": strings.t("channels.slack.button.open-on-github"),
+                        },
                         "url": url,
                         "action_id": f"{ACTION_PREFIX}open",
                     }
@@ -2184,7 +2221,10 @@ def render_root(
             }
         )
     link = f" — {url}" if url else ""
-    return f"the-loop: conversation for {work_item}{link}", blocks
+    return (
+        strings.t("channels.slack.root.fallback", work_item=work_item, link=link),
+        blocks,
+    )
 
 
 def render_room(
@@ -2194,18 +2234,17 @@ def render_room(
     ``(text, blocks)`` from the ref alone, like :func:`render_root`: the room is
     the work item's own, so it says every update lands here as a message."""
     name = f"<{url}|{work_item}>" if url else f"`{work_item}`"
-    lines = [
-        f"Every update about {name} — questions, approvals, phases, comments — "
-        "is posted in this channel as a message."
-    ]
+    lines = [strings.t("channels.slack.room.body", name=name)]
     if reading:
-        lines.append("Messages here from an authorized member reach it.")
+        lines.append(strings.t("channels.slack.room.reading"))
     blocks: List[Dict[str, Any]] = [
         {
             "type": "header",
             "text": {
                 "type": "plain_text",
-                "text": f"the-loop · {work_item}"[:_HEADER_LIMIT],
+                "text": strings.t("channels.slack.root.header", work_item=work_item)[
+                    :_HEADER_LIMIT
+                ],
             },
         },
         {"type": "section", "text": {"type": "mrkdwn", "text": " ".join(lines)}},
@@ -2217,7 +2256,10 @@ def render_room(
                 "elements": [
                     {
                         "type": "button",
-                        "text": {"type": "plain_text", "text": "Open on GitHub"},
+                        "text": {
+                            "type": "plain_text",
+                            "text": strings.t("channels.slack.button.open-on-github"),
+                        },
                         "url": url,
                         "action_id": f"{ACTION_PREFIX}open",
                     }
@@ -2226,7 +2268,7 @@ def render_room(
         )
     link = f" — {url}" if url else ""
     return (
-        f"the-loop: every update about {work_item} is posted in this channel{link}",
+        strings.t("channels.slack.room.fallback", work_item=work_item, link=link),
         blocks,
     )
 
@@ -2463,9 +2505,7 @@ class SlackBotChannel:
         """
         self.say(
             old[1],
-            f"the-loop: {work_item}'s conversation has moved to its declared "
-            f"collaboration channel (<#{new[0]}>). Replies here no longer reach "
-            "it — continue there.",
+            strings.t("channels.slack.moved", work_item=work_item, channel=new[0]),
             old[0],
         )
 
@@ -3147,7 +3187,9 @@ class SlackBotChannel:
         if truncated or more:
             left = len(messages) - count
             rest = (
-                f"_+{left} more in the thread_" if not more else "_more in the thread_"
+                strings.t("channels.slack.snapshot.more-left", left=left)
+                if not more
+                else strings.t("channels.slack.snapshot.more")
             )
             lines.append(rest + (f": {permalink}" if permalink else ""))
         return Snapshot(
@@ -3397,21 +3439,22 @@ def _press_line(
     delivered = bool(outcome.get("delivered"))
     error = str(outcome.get("error") or "").strip()
     url = str(outcome.get("url") or "")
-    ref = reply.work_item or "the work item"
+    ref = reply.work_item or strings.t("channels.slack.press.the-work-item")
     where = f"<{url}|{ref}>" if url else f"`{ref}`"
+    refused_comment = error or strings.t("channels.slack.press.ledger-refused-comment")
     if event_type == "control.command":
         landed = mirrored
         what = (
-            f"recorded on {where} — the loop runs it on its next ingress"
+            strings.t("channels.slack.press.command-recorded", where=where)
             if landed
-            else f"not recorded: {error or 'the ledger refused the comment'}"
+            else strings.t("channels.slack.press.not-recorded", error=refused_comment)
         )
     elif event_type == "gate.feedback":
         landed = mirrored
         what = (
-            f"recorded on {where} as the answer of record — the gate reads it there"
+            strings.t("channels.slack.press.feedback-recorded", where=where)
             if landed
-            else f"not recorded: {error or 'the ledger refused the comment'}"
+            else strings.t("channels.slack.press.not-recorded", error=refused_comment)
         )
     else:  # work-item.reply — a standing session has no record to make
         from ..standing import parse_standing_ref
@@ -3419,16 +3462,30 @@ def _press_line(
         standing = bool(parse_standing_ref(reply.work_item))
         landed = delivered and (mirrored or standing)
         if landed:
-            what = "delivered to the session" + (
-                f" (recorded on {where})" if mirrored else ""
+            what = strings.t("channels.slack.press.delivered") + (
+                strings.t("channels.slack.press.delivered-recorded", where=where)
+                if mirrored
+                else ""
             )
         elif not delivered:
-            what = f"not delivered: {error or 'no session could take it'}"
+            what = strings.t(
+                "channels.slack.press.not-delivered",
+                error=error or strings.t("channels.slack.press.no-session"),
+            )
         else:
-            what = f"delivered, not recorded: {error or 'the ledger refused it'}"
+            what = strings.t(
+                "channels.slack.press.delivered-not-recorded",
+                error=error or strings.t("channels.slack.press.ledger-refused"),
+            )
     name = _button_name(action_id)
     icon = "✅" if landed else "⚠️"
-    return landed, f"{icon} *{name}* — pressed by <@{reply.author}> · {what}"
+    return landed, strings.t(
+        "channels.slack.press.line",
+        icon=icon,
+        name=name,
+        author=reply.author,
+        what=what,
+    )
 
 
 #: Why a repository pick did nothing — fixed words per drop reason (R2.6), and
@@ -3452,19 +3509,27 @@ def _kickoff_press_line(
     if what == "created" and opened:
         url = str(outcome.get("url") or "")
         where = f"<{url}|{opened}>" if url else f"`{opened}`"
-        said = f"opened {where} — this thread is now its conversation"
+        said = strings.t("channels.slack.press.opened", where=where)
         landed = True
     elif what in KICKOFF_REFUSALS:
         said = KICKOFF_REFUSALS[what]
         landed = False
     else:
         problem = str(outcome.get("error") or "").strip()
-        said = f"nothing was opened: {problem or 'the ledger refused it'}"
+        said = strings.t(
+            "channels.slack.press.nothing-opened",
+            problem=problem or strings.t("channels.slack.press.ledger-refused"),
+        )
         landed = False
     return (
         landed,
-        f"{'✅' if landed else '⚠️'} *{_button_name(action_id)}* — "
-        f"pressed by <@{reply.author}> · {said}",
+        strings.t(
+            "channels.slack.press.line",
+            icon="✅" if landed else "⚠️",
+            name=_button_name(action_id),
+            author=reply.author,
+            what=said,
+        ),
     )
 
 

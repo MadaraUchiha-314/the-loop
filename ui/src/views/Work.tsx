@@ -22,6 +22,7 @@ import type { Chrome } from "../components/HeaderBar.tsx";
 import { HeaderBar } from "../components/HeaderBar.tsx";
 import { Empty } from "../components/primitives.tsx";
 import { Sidebar } from "../components/Sidebar.tsx";
+import { t } from "../i18n.ts";
 import { useApi } from "../state/ApiContext.tsx";
 import { hrefFor, type Surface } from "../state/route.ts";
 import { useAsync } from "../state/useAsync.ts";
@@ -144,25 +145,26 @@ export function Work({
           />
         ) : (
           <>
-            <HeaderBar chrome={chrome} title="the-loop" meta={<span>control plane</span>} />
+            <HeaderBar chrome={chrome} title={t("ui.work.title")} meta={<span>{t("ui.work.meta")}</span>} />
             <div className="px-6 py-6">
               {selectedRef && !loading ? (
                 <Empty>
-                  No work item <code className="ref-chip">{selectedRef}</code>
+                  {t("ui.work.missing.before")}
+                  <code className="ref-chip">{selectedRef}</code>
                   {selectedInstance ? (
                     <>
-                      {" "}
-                      on <code className="ref-chip">{selectedInstance}</code>
+                      {t("ui.work.missing.on")}
+                      <code className="ref-chip">{selectedInstance}</code>
                     </>
-                  ) : null}{" "}
-                  on this service.{" "}
+                  ) : null}
+                  {t("ui.work.missing.after")}
                   <a href={hrefFor({ name: "work" })} className="text-foreground underline-offset-2 hover:underline">
-                    Back to the board
+                    {t("ui.work.missing.back")}
                   </a>
                   .
                 </Empty>
               ) : (
-                <Empty>{loading ? "Loading…" : "Nothing to show yet — the column fills once a work item is tracked."}</Empty>
+                <Empty>{loading ? t("ui.work.loading") : t("ui.work.empty")}</Empty>
               )}
             </div>
           </>

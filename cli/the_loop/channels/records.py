@@ -18,6 +18,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence
 
+from .. import strings
 from ..authz import is_self_authored
 from .envelope import parse as parse_envelope
 
@@ -137,20 +138,24 @@ def render(records: Sequence[Record], work_item: str) -> str:
     """The markdown form: one section per record, the facts as a list, the
     text quoted back — pasteable into ``context.md`` or a decision record."""
     if not records:
-        return f"no records on {work_item}\n"
-    parts = [f"# Records on {work_item}", ""]
+        return strings.t("channels.records.none", work_item=work_item)
+    parts = [strings.t("channels.records.heading", work_item=work_item), ""]
     for n, record in enumerate(records, 1):
         who = ", ".join(f"{k}:{v}" for k, v in sorted(record.actor.items())) or "?"
         parts.append(f"## {n}. {record.type} — {who} — {record.ts or '?'}")
         parts.append("")
         if record.url:
-            parts.append(f"- url: {record.url}")
+            parts.append(strings.t("channels.records.url", url=record.url))
         if record.author:
-            parts.append(f"- posted by: {record.author}")
+            parts.append(strings.t("channels.records.posted-by", author=record.author))
         if record.why:
-            parts.append(f"- why: {record.why}")
+            parts.append(strings.t("channels.records.why", why=record.why))
         if record.discussed_at:
-            parts.append(f"- discussed at: {record.discussed_at}")
+            parts.append(
+                strings.t(
+                    "channels.records.discussed-at", discussed_at=record.discussed_at
+                )
+            )
         if record.summary:
             parts.append(f"- {record.summary}")
         parts.append("")

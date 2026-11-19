@@ -7,6 +7,7 @@
  */
 
 import type { NodeVisualState, SessionState } from "../api/model.ts";
+import { t } from "../i18n.ts";
 
 export type DotStatus = "done" | "active" | "blocked" | "skipped" | "pending";
 
@@ -43,14 +44,14 @@ export function sessionDot(state: SessionState): DotStatus {
 }
 
 const LABEL: Record<SessionState, string> = {
-  active: "active",
-  paused: "paused",
-  closed: "closed",
-  none: "no session",
+  active: t("ui.session-state.active"),
+  paused: t("ui.session-state.paused"),
+  closed: t("ui.session-state.closed"),
+  none: t("ui.session-state.none"),
 };
 
 /** The words for a session state, with the harness when known. */
 export function sessionLabel(state: SessionState, harness?: string): string {
   if (state === "none") return LABEL.none;
-  return harness ? `${LABEL[state]} · ${harness}` : LABEL[state];
+  return harness ? t("ui.session-state.with-harness", { state: LABEL[state], harness }) : LABEL[state];
 }

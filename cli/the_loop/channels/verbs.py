@@ -20,6 +20,7 @@ import re
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
+from .. import strings
 from ..control import COLLABORATOR_COMMANDS, EXECUTE, ControlConfig
 
 __all__ = [
@@ -215,24 +216,10 @@ def help_text(config) -> str:
     """The grammar, taught (R3.2): every verb, the keyword rule, the fallthrough,
     and which of the two act grants this channel holds. ``config`` is the parsed
     ``channels.slack`` section (its ``publish`` list is read)."""
+    granted = strings.t("channels.verbs.help.granted")
+    not_granted = strings.t("channels.verbs.help.not-granted")
     grants = "\n".join(
-        f"• {grant}: {'granted' if grant in config.publish else 'not granted'}"
+        f"• {grant}: {granted if grant in config.publish else not_granted}"
         for grant in ("context.added", "decision.recorded", "control.command")
     )
-    return (
-        "*Addressing the-loop* — mention it, then one of:\n"
-        "• `record-context` (in a thread) — snapshot this thread onto the work "
-        "item as context\n"
-        "• `record-decision [product|design|tech:] <text> [— why: <rationale>]` "
-        "— record a decision (authorized users only)\n"
-        "• `add-collaborator @login` or `slack:U…` — let that person feed this "
-        "work item (authorized users only)\n"
-        "• `start`, `execute`, … — any control keyword's last word "
-        "(authorized users only)\n"
-        "• `execute without 1, 3` or `skip <phase>` — execute with those phases "
-        "of the checklist unticked (authorized users only)\n"
-        "• `help` — this text, shown only to you; `help public` — the same as "
-        "a reply everyone here can see\n"
-        "• anything else — a reply, delivered to the session as input\n"
-        f"What this channel may do here:\n{grants}"
-    )
+    return strings.t("channels.verbs.help", grants=grants)

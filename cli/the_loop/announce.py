@@ -33,7 +33,7 @@ import logging
 from dataclasses import dataclass
 from typing import Callable, Optional
 
-from . import eventlog
+from . import eventlog, strings
 from .authz import mark_self_authored
 from .comments import post_issue_comment
 from .ghapi import GitHubApiConfig, GitHubClient
@@ -75,30 +75,33 @@ def announcement_body(session: Session, instance: str = "") -> str:
     """
     target = session.tmux_target
     ref = session.work_item.ref
-    instance_row = f"| instance | `{instance}` |\n" if instance else ""
-    note = (
-        "The session is kept after the work completes, so this transcript "
-        "stays readable. A respawn reuses this same tmux session name, so "
-        "these commands keep working."
-    )
+    tmux_label = strings.t("announce.body.row.tmux-session")
+    harness_label = strings.t("announce.body.row.harness")
+    instance_label = strings.t("announce.body.row.instance")
+    instance_row = f"| {instance_label} | `{instance}` |\n" if instance else ""
     return mark_self_authored(
-        f"🖥️ **the-loop** started an interactive session for `{ref}`.\n"
-        "\n"
-        "| | |\n"
-        "|---|---|\n"
-        f"| tmux session | `{target}` |\n"
-        f"| harness | `{session.harness}` |\n"
-        f"{instance_row}"
-        "\n"
-        "Attach from the machine running the-loop:\n"
-        "\n"
-        "```sh\n"
-        f"tmux attach -t {target}\n"
-        "# or, without a keyboard:\n"
-        f"the-loop sessions attach --work-item {ref} --read-only\n"
-        "```\n"
-        "\n"
-        f"{note}\n"
+        "".join(
+            [
+                strings.t("announce.body.heading", ref=ref),
+                "\n",
+                "| | |\n",
+                "|---|---|\n",
+                f"| {tmux_label} | `{target}` |\n",
+                f"| {harness_label} | `{session.harness}` |\n",
+                instance_row,
+                "\n",
+                strings.t("announce.body.attach"),
+                "\n",
+                "```sh\n",
+                f"tmux attach -t {target}\n",
+                strings.t("announce.body.no-keyboard"),
+                f"the-loop sessions attach --work-item {ref} --read-only\n",
+                "```\n",
+                "\n",
+                strings.t("announce.body.note"),
+                "\n",
+            ]
+        )
     )
 
 

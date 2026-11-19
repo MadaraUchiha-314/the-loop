@@ -9,6 +9,7 @@
  * markup to the views. That is also what makes it testable without a service.
  */
 
+import { t } from "../i18n.ts";
 import type {
   AttentionItem,
   ControlRecord,
@@ -317,7 +318,7 @@ export function transcriptThread(entries: TranscriptEntry[]): ThreadRow[] {
     }
 
     for (const orphan of orphanResults) {
-      rows.push(row({ kind: "tool result", time, text: orphan.text || "(no output)" }));
+      rows.push(row({ kind: "tool result", time, text: orphan.text || t("ui.model.no-output") }));
     }
     if (texts.length === 0 && thinking.length === 0 && tools.length === 0) {
       if (orphanResults.length === 0) {
@@ -462,7 +463,7 @@ export function railFromFrozen(item: WorkItemRecord): RailNode[] {
     id: node.id,
     label: node.id,
     state: node.skipped ? ("skipped" as const) : ("pending" as const),
-    detail: node.phase ? `phase: ${node.phase}` : "",
+    detail: node.phase ? t("ui.model.rail.phase", { phase: node.phase }) : "",
   }));
 }
 
@@ -850,19 +851,19 @@ export function sessionTree(views: WorkItemView[]): SessionTreeItem[] {
 export function rowFlag(view: WorkItemView): { label: string; urgent: boolean } | null {
   // Ended outranks everything (issue-329): the item asks for nothing, and the
   // one fact worth the slot is how it ended.
-  if (view.ended) return { label: view.ended.state === "merged" ? "merged" : "closed", urgent: false };
+  if (view.ended) return { label: view.ended.state === "merged" ? t("ui.model.flag.merged") : t("ui.model.flag.closed"), urgent: false };
   // A PR loop's question used to raise the chip on the PR's own top-level row.
   // That row is gone (issue-302) and a nested row carries no chip by design
   // (issue-300 R2.4), so the question surfaces on the item that owns it —
   // restoring what the removed row showed, and nothing more.
   if (view.question || view.pullRequests.some((pr) => pr.question)) {
-    return { label: "needs input", urgent: true };
+    return { label: t("ui.model.flag.needs-input"), urgent: true };
   }
-  if (view.parked) return { label: "human gate", urgent: true };
-  if (view.rail.some((node) => node.state === "blocked")) return { label: "blocked", urgent: true };
-  if (view.attention.some((a) => a.kind === "recent-error")) return { label: "error", urgent: false };
-  if (view.attention.some((a) => a.kind === "armed-without-session")) return { label: "no session", urgent: false };
-  if (view.sessionState === "paused") return { label: "paused", urgent: false };
+  if (view.parked) return { label: t("ui.model.flag.human-gate"), urgent: true };
+  if (view.rail.some((node) => node.state === "blocked")) return { label: t("ui.model.flag.blocked"), urgent: true };
+  if (view.attention.some((a) => a.kind === "recent-error")) return { label: t("ui.model.flag.error"), urgent: false };
+  if (view.attention.some((a) => a.kind === "armed-without-session")) return { label: t("ui.model.flag.no-session"), urgent: false };
+  if (view.sessionState === "paused") return { label: t("ui.model.flag.paused"), urgent: false };
   return null;
 }
 
@@ -1152,12 +1153,12 @@ export function relativeTime(ts: string, now: number = Date.now()): string {
   const then = new Date(ts).getTime();
   if (Number.isNaN(then)) return ts;
   const seconds = Math.max(0, Math.round((now - then) / 1000));
-  if (seconds < 60) return `${seconds}s ago`;
+  if (seconds < 60) return t("ui.model.ago.seconds", { n: seconds });
   const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 60) return t("ui.model.ago.minutes", { n: minutes });
   const hours = Math.round(minutes / 60);
-  if (hours < 48) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
+  if (hours < 48) return t("ui.model.ago.hours", { n: hours });
+  return t("ui.model.ago.days", { n: Math.round(hours / 24) });
 }
 
 /** The work item an event belongs to — the log carries one field or the other. */

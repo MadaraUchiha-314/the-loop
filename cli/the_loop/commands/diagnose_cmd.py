@@ -31,7 +31,7 @@ import argparse
 import os
 import sys
 
-from .. import cli_config, eventlog
+from .. import cli_config, eventlog, strings
 from ..channels.doctor import (
     DEFAULT_BEATS,
     DEFAULT_WINDOW_SECONDS,
@@ -50,20 +50,13 @@ from .channels_cmd import _subscription_lines
 @register
 class DiagnoseCommand(Command):
     name = "diagnose"
-    help = (
-        "scan the-loop's own event log for harness failures and file "
-        "self-diagnosed issues (opt-in; --dry-run to preview)"
-    )
+    help = strings.t("cli.diagnose.help")
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
             "--dry-run",
             action="store_true",
-            help=(
-                "build and print the redacted report(s) without posting; works "
-                "while selfDiagnosis is disabled, so you can preview before "
-                "opting in"
-            ),
+            help=strings.t("cli.diagnose.dry-run.help"),
         )
 
     def run(self, args: argparse.Namespace) -> int:
@@ -74,9 +67,10 @@ class DiagnoseCommand(Command):
         dry_run = bool(getattr(args, "dry_run", False))
         if not config.enabled and not dry_run:
             print(
-                "self-diagnosis is off — set selfDiagnosis.enabled: true in "
-                f"{config_path} to let the-loop file issues for its own "
-                "failures, or preview with --dry-run",
+                strings.t(
+                    "cli.diagnose.run.self-diagnosis-is-off-set",
+                    config_path=config_path,
+                ),
                 file=sys.stderr,
             )
             return 2
@@ -90,7 +84,7 @@ class DiagnoseCommand(Command):
             dry_run=dry_run,
         )
         if not outcomes:
-            print("nothing to diagnose — no new failure fingerprints in the log")
+            print(strings.t("cli.diagnose.run.nothing-to-diagnose-no-new"))
             return 0
         for outcome in outcomes:
             self._print(outcome, config)
@@ -101,26 +95,41 @@ class DiagnoseCommand(Command):
         action = outcome.get("action")
         if action == "dry-run":
             if outcome.get("body"):
-                print(f"--- would file on {config.repo} ---")
+                print(strings.t("cli.diagnose.print.would-file-on", repo=config.repo))
                 print(outcome.get("title", ""))
                 print()
                 print(outcome["body"])
             else:
                 print(
-                    "--- would diagnose (agent unavailable: "
-                    f"{outcome.get('error', '')}) ---"
+                    strings.t(
+                        "cli.diagnose.print.would-diagnose-agent-unavailable",
+                        error=outcome.get("error", ""),
+                    )
                 )
                 print(outcome.get("dossier", ""))
         elif action == "posted":
-            print(f"filed {outcome.get('url')} — {outcome.get('title')}")
+            print(
+                strings.t(
+                    "cli.diagnose.print.filed",
+                    url=outcome.get("url"),
+                    title=outcome.get("title"),
+                )
+            )
         elif action == "deferred":
             print(
-                f"deferred {outcome.get('fingerprint')} — daily cap "
-                f"(maxIssuesPerDay: {config.max_issues_per_day}) reached"
+                strings.t(
+                    "cli.diagnose.print.deferred-daily-cap-maxissuesperday-reached",
+                    fingerprint=outcome.get("fingerprint"),
+                    max_issues_per_day=config.max_issues_per_day,
+                )
             )
         else:
             print(
-                f"failed {outcome.get('fingerprint')} — {outcome.get('error')}",
+                strings.t(
+                    "cli.diagnose.print.failed",
+                    fingerprint=outcome.get("fingerprint"),
+                    error=outcome.get("error"),
+                ),
                 file=sys.stderr,
             )
 
@@ -134,32 +143,21 @@ _OK, _FINDING, _UNKNOWN = "[ok]", "[!]", "[?]"
 @register
 class DoctorCommand(Command):
     name = "doctor"
-    help = (
-        "Deployment-wide diagnosis of one integration — `doctor slack`: the "
-        "app's scopes and expected events, every declared channel against the "
-        "bot's directory, and a heartbeat probe for a second Socket Mode "
-        "consumer (evidence, not proof; ids only, never tokens); `doctor jira`: "
-        "whether the configured Jira block is usable (variable names, never values)"
-    )
+    help = strings.t("cli.diagnose.doctor.help")
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         sub = parser.add_subparsers(dest="doctor_command", required=True)
         slack = sub.add_parser(
             "slack",
-            help=(
-                "Diagnose the Slack deployment: scopes + expected events, "
-                "declared channels resolved in the bot's directory, and whether a "
-                "second Socket Mode consumer may be splitting inbound events"
-            ),
+            help=strings.t("cli.diagnose.doctor.slack.help"),
         )
         slack.add_argument(
             "--beats",
             type=int,
             default=DEFAULT_BEATS,
             metavar="N",
-            help=(
-                f"Heartbeat messages to post (default {DEFAULT_BEATS}); with two "
-                "consumers sharing the token a split hides one time in 2^N"
+            help=strings.t(
+                "cli.diagnose.doctor.slack.beats.help", default_beats=DEFAULT_BEATS
             ),
         )
         slack.add_argument(
@@ -167,23 +165,19 @@ class DoctorCommand(Command):
             type=float,
             default=DEFAULT_WINDOW_SECONDS,
             metavar="SECONDS",
-            help=(
-                f"How long to wait for the heartbeats to come back (default "
-                f"{DEFAULT_WINDOW_SECONDS:g})"
+            help=strings.t(
+                "cli.diagnose.doctor.slack.window.help",
+                default_window_seconds=DEFAULT_WINDOW_SECONDS,
             ),
         )
         slack.add_argument(
             "--no-heartbeat",
             action="store_true",
-            help="Skip the second-consumer probe — the doctor then posts nothing to Slack",
+            help=strings.t("cli.diagnose.doctor.slack.no-heartbeat.help"),
         )
         sub.add_parser(
             "jira",
-            help=(
-                "Check the integrations.jira block: the site and deployment, each "
-                "credential variable set or not (names only), and the project map. "
-                "Offline — nothing is sent to Jira"
-            ),
+            help=strings.t("cli.diagnose.doctor.jira.help"),
         )
 
     def run(self, args: argparse.Namespace) -> int:
@@ -210,39 +204,64 @@ def _doctor_jira(config: dict) -> int:
     that would refuse. Variable names only; no value is read into the output.
     """
     api = JiraApiConfig.from_cli_config(config)
-    print("jira doctor — variable names only, never values; nothing is sent to Jira")
+    print(strings.t("cli.diagnose.doctor-jira.jira-doctor-variable-names-only"))
     if not api.configured:
-        print(f"  {_UNKNOWN} integrations.jira is not configured — Jira is off")
+        print(
+            strings.t(
+                "cli.diagnose.doctor-jira.integrations-jira-is-not-configured",
+                unknown=_UNKNOWN,
+            )
+        )
         return 0
     findings = 0
     try:
         server = api.server()
         print(
-            f"  {_OK} {api.site} ({api.deployment}) → {server}, REST v{api.rest_version}"
+            strings.t(
+                "cli.diagnose.doctor-jira.rest-v",
+                ok=_OK,
+                site=api.site,
+                deployment=api.deployment,
+                server=server,
+                rest_version=api.rest_version,
+            )
         )
     except JiraApiError as exc:
         findings += 1
         print(f"  {_FINDING} {exc}")
-    print("credentials:")
+    print(strings.t("cli.diagnose.doctor-jira.credentials"))
     needed = [("email", api.email_env)] if api.cloud else []
     needed.append(("token", api.token_env))
     missing = set(api.missing_credentials())
     for what, names in needed:
-        label = " or ".join(names) if names else f"(no {what} variable named)"
+        label = (
+            " or ".join(names)
+            if names
+            else strings.t("cli.diagnose.doctor-jira.no-variable-named", what=what)
+        )
         if label in missing or not names:
             findings += 1
             print(
-                f"  {_FINDING} {label} is not set — the daemon's Jira calls are "
-                f"refused until the {what} is in its environment"
+                strings.t(
+                    "cli.diagnose.doctor-jira.is-not-set-the-daemon",
+                    finding=_FINDING,
+                    label=label,
+                    what=what,
+                )
             )
         else:
-            print(f"  {_OK} {label} is set")
-    print("projects:")
+            print(strings.t("cli.diagnose.doctor-jira.is-set", ok=_OK, label=label))
+    print(strings.t("cli.diagnose.doctor-jira.projects"))
     section = ((config.get("integrations") or {}).get("jira")) or {}
     projects = section.get("projects") if isinstance(section, dict) else None
     if not isinstance(projects, dict) or not projects:
         findings += 1
-        print(f"  {_FINDING} integrations.jira.projects lists no project")
+        print(
+            strings.t(
+                "cli.diagnose.doctor-jira.integrations-jira-projects-lists-no",
+                finding=_FINDING,
+            )
+        )
     else:
         for key in sorted(projects):
             entry = projects[key] if isinstance(projects[key], dict) else {}
@@ -250,7 +269,13 @@ def _doctor_jira(config: dict) -> int:
             if repository:
                 print(f"  {_OK} {key} → {repository}")
             else:
-                print(f"  {_OK} {key} — mirror-only (a room, never a work-item source)")
+                print(
+                    strings.t(
+                        "cli.diagnose.doctor-jira.mirror-only-a-room-never",
+                        ok=_OK,
+                        key=key,
+                    )
+                )
     return 1 if findings else 0
 
 
@@ -259,42 +284,58 @@ def _doctor_slack(config: dict, *, beats: int, window: float, heartbeat: bool) -
     prints why and the others still run. Exit 1 when any ``[!]`` was printed."""
     slack = SlackChannelConfig.from_mapping(config)
     findings = 0
-    print(
-        "slack doctor — ids and channel names only, never tokens; where a line "
-        "says evidence it is not proof"
-    )
-    print("app:")
+    print(strings.t("cli.diagnose.doctor-slack.slack-doctor-ids-and-channel"))
+    print(strings.t("cli.diagnose.doctor-slack.app"))
     if not slack.enabled:
-        print(f"  {_UNKNOWN} channels.slack is not enabled — nothing here is in use")
+        print(
+            strings.t(
+                "cli.diagnose.doctor-slack.channels-slack-is-not-enabled",
+                unknown=_UNKNOWN,
+            )
+        )
     try:
         lines = _subscription_lines(slack, probe=True, cli_config=config)
     except Exception as exc:  # noqa: BLE001 — a diagnostic never crashes
-        lines = [f"  {_UNKNOWN} the scope probe raised {type(exc).__name__}: {exc}"]
+        lines = [
+            strings.t(
+                "cli.diagnose.doctor-slack.scope-probe-raised",
+                unknown=_UNKNOWN,
+                exc_type=type(exc).__name__,
+                exc=exc,
+            )
+        ]
     if not lines:
-        lines = [f"  {_UNKNOWN} no channels.slack.channel — the scope probe needs one"]
+        lines = [
+            strings.t(
+                "cli.diagnose.doctor-slack.no-channel-for-probe", unknown=_UNKNOWN
+            )
+        ]
     for line in lines:
         print(line)
         findings += line.strip().startswith(_FINDING)
-    print("channels:")
+    print(strings.t("cli.diagnose.doctor-slack.channels"))
     findings += _print_channels(check_declared_channels(config))
     gateway = _gateway_lines(config)
     if gateway is not None:
-        print("gateway:")
+        print(strings.t("cli.diagnose.doctor-slack.gateway"))
         for line in gateway:
             print(line)
             findings += line.strip().startswith(_FINDING)
-    print("consumers:")
+    print(strings.t("cli.diagnose.doctor-slack.consumers"))
     if gateway is not None:
         print(
-            f"  {_UNKNOWN} this instance reads Slack through the gateway — the "
-            "gateway's Socket Mode connection is the app's one listener; a local "
-            "listener is not expected and the heartbeat probe is not run here"
+            strings.t(
+                "cli.diagnose.doctor-slack.this-instance-reads-slack-through",
+                unknown=_UNKNOWN,
+            )
         )
         return 1 if findings else 0
     if not heartbeat:
         print(
-            f"  {_UNKNOWN} skipped (--no-heartbeat) — whether a second Socket Mode "
-            "consumer shares this app token was not probed"
+            strings.t(
+                "cli.diagnose.doctor-slack.skipped-no-heartbeat-whether-a",
+                unknown=_UNKNOWN,
+            )
         )
     else:
         result = probe_second_consumer(config, beats=beats, window_seconds=window)
@@ -319,25 +360,39 @@ def _gateway_lines(config: dict) -> Optional[List[str]]:
     health = doc.get("health") or {}
     if state == "connected":
         lines.append(
-            f"  {_OK} gateway reachable at {doc.get('url')} — client {core_lifecycle.gateway_line(doc)}"
+            strings.t(
+                "cli.diagnose.gateway-lines.reachable",
+                ok=_OK,
+                url=doc.get("url"),
+                gateway_line=core_lifecycle.gateway_line(doc),
+            )
         )
     elif state == "unknown":
         lines.append(
-            f"  {_UNKNOWN} the service is not running here, so the client's state is "
-            f"unknown — `the-loop start`, then `the-loop status`"
+            strings.t(
+                "cli.diagnose.gateway-lines.service-not-running", unknown=_UNKNOWN
+            )
         )
     else:
-        lines.append(f"  {_FINDING} gateway client {core_lifecycle.gateway_line(doc)}")
+        lines.append(
+            strings.t(
+                "cli.diagnose.gateway-lines.client",
+                finding=_FINDING,
+                gateway_line=core_lifecycle.gateway_line(doc),
+            )
+        )
     socket = (
         (health.get("slack") or {}).get("socket") if isinstance(health, dict) else None
     )
     if socket == "up":
-        lines.append(
-            f"  {_OK} the gateway's Socket Mode connection is up — the app's one listener"
-        )
+        lines.append(strings.t("cli.diagnose.gateway-lines.socket-up", ok=_OK))
     elif socket in ("down", "off"):
         lines.append(
-            f"  {_FINDING} the gateway's Socket Mode connection is {socket} — no Slack event reaches any instance"
+            strings.t(
+                "cli.diagnose.gateway-lines.socket-down",
+                finding=_FINDING,
+                socket=socket,
+            )
         )
     # outbound (issue-519, R1.3): who posts to Slack for this instance
     slack = SlackChannelConfig.from_mapping(config)
@@ -349,21 +404,30 @@ def _gateway_lines(config: dict) -> Optional[List[str]]:
         )
         if os.environ.get(slack.bot_token_env):
             lines.append(
-                f"  {_OK} outbound Slack uses this instance's own token ({slack.bot_token_env})"
+                strings.t(
+                    "cli.diagnose.gateway-lines.own-token",
+                    ok=_OK,
+                    bot_token_env=slack.bot_token_env,
+                )
             )
         elif posting == "on":
-            lines.append(
-                f"  {_OK} the gateway posts to Slack for this instance (slack.post.enabled) — no token needed here"
-            )
+            lines.append(strings.t("cli.diagnose.gateway-lines.gateway-posts", ok=_OK))
         elif posting in ("disabled", "no-token", "socket-unconfigured"):
             lines.append(
-                f"  {_FINDING} outbound Slack needs {slack.bot_token_env} on this instance — "
-                f"the gateway reports posting {posting}; a failed post waits in the outbox"
+                strings.t(
+                    "cli.diagnose.gateway-lines.needs-token",
+                    finding=_FINDING,
+                    bot_token_env=slack.bot_token_env,
+                    posting=posting,
+                )
             )
         else:
             lines.append(
-                f"  {_UNKNOWN} whether the gateway posts for this instance is unknown — "
-                f"its health was not read; without {slack.bot_token_env} here, posting depends on it"
+                strings.t(
+                    "cli.diagnose.gateway-lines.posting-unknown",
+                    unknown=_UNKNOWN,
+                    bot_token_env=slack.bot_token_env,
+                )
             )
     return lines
 
@@ -384,39 +448,55 @@ def _print_channels(report: dict) -> int:
             what = (
                 f"{declared} → {ident}"
                 if ident and ident != declared
-                else f"{declared} — listed in the bot's directory"
+                else strings.t(
+                    "cli.diagnose.print-channels.listed-in-directory", declared=declared
+                )
             )
             print(f"  {_OK} {what} ({owner})")
         elif status == "miss":
             findings += 1
             print(
-                f"  {_FINDING} {declared} → resolves to no channel this bot can see "
-                f"({owner}) — check the spelling, invite the bot, or declare the "
-                "conversation id"
+                strings.t(
+                    "cli.diagnose.print-channels.resolves-to-no-channel-this",
+                    finding=_FINDING,
+                    declared=declared,
+                    owner=owner,
+                )
             )
         elif status == "absent":
             findings += 1
             print(
-                f"  {_FINDING} {declared} — declared by id but absent from the bot's "
-                f"directory (its memberships and the workspace listing) ({owner}) — "
-                "invite the bot, or every post there is refused"
+                strings.t(
+                    "cli.diagnose.print-channels.declared-by-id-but-absent",
+                    finding=_FINDING,
+                    declared=declared,
+                    owner=owner,
+                )
             )
         elif status == "invalid":
             findings += 1
             print(
-                f"  {_FINDING} {declared!r} is neither a conversation id nor a channel "
-                f"name ({owner})"
+                strings.t(
+                    "cli.diagnose.print-channels.is-neither-a-conversation-id",
+                    finding=_FINDING,
+                    declared=declared,
+                    owner=owner,
+                )
             )
         else:
             print(
-                f"  {_UNKNOWN} {declared} — unverifiable: the directory could not be "
-                f"read ({owner}) — no token, a missing channels:read / groups:read "
-                "scope, or a transport error"
+                strings.t(
+                    "cli.diagnose.print-channels.unverifiable-the-directory-could-not",
+                    unknown=_UNKNOWN,
+                    declared=declared,
+                    owner=owner,
+                )
             )
     if report.get("truncated"):
         print(
-            f"  {_FINDING} the workspace listing was cut at the page cap — a miss "
-            "above may exist beyond it; declare the conversation id instead of "
-            "the name"
+            strings.t(
+                "cli.diagnose.print-channels.the-workspace-listing-was-cut",
+                finding=_FINDING,
+            )
         )
     return findings

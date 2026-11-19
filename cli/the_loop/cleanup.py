@@ -58,7 +58,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Callable, List, Optional, Tuple, Union
 
-from . import eventlog
+from . import eventlog, strings
 from .sessions import Session, SessionRegistry, WorkItemRef
 
 logger = logging.getLogger("the-loop.cleanup")
@@ -184,7 +184,11 @@ def cleanup_work_item(
             except Exception as exc:  # noqa: BLE001 — one stuck pane must not
                 # strand the checkout and the record behind it.
                 errors.append(
-                    f"could not end the session for {endpoint.work_item.ref}: {exc}"
+                    strings.t(
+                        "cleanup.error.end-session",
+                        ref=endpoint.work_item.ref,
+                        exc=exc,
+                    )
                 )
         if dry_run and endpoints:
             _note(removed, TMUX)
@@ -197,7 +201,7 @@ def cleanup_work_item(
                 _note(removed, WORKSPACE)
         except Exception as exc:  # noqa: BLE001 — advisory, as every workspace
             # teardown in the-loop is: report it and keep going.
-            errors.append(f"could not remove the workspace checkout: {exc}")
+            errors.append(strings.t("cleanup.error.remove-checkout", exc=exc))
 
     if record is not None:
         if dry_run:
@@ -208,7 +212,7 @@ def cleanup_work_item(
                 if registry.forget(ref):
                     _note(removed, SESSION)
             except OSError as exc:
-                errors.append(f"could not remove the session record: {exc}")
+                errors.append(strings.t("cleanup.error.remove-session-record", exc=exc))
 
     outcome = CleanupOutcome(
         ref=ref.ref,

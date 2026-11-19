@@ -23,6 +23,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { ApiError, StreamQuery, TheLoopApi } from "../api/client.ts";
+import { t } from "../i18n.ts";
 import { emptyInvalidation, invalidationFor, isEmpty, mergeInvalidation, type Invalidation } from "./stream.ts";
 
 /**
@@ -44,8 +45,7 @@ export type StreamState =
   | { name: "reconnecting"; attempt: number }
   | { name: "fallback"; advice: string };
 
-const CANNOT_STREAM =
-  "This browser has no EventSource, so the stream cannot be opened — polling instead.";
+const CANNOT_STREAM = t("ui.stream.no-event-source");
 
 export function useStream(
   api: TheLoopApi,

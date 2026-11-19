@@ -418,9 +418,9 @@ def _render(block: _Block) -> List[str]:
 
 def _footer(url: str) -> str:
     return (
-        f"_… full text: <{url}|GitHub>_"
+        strings.t("channels.digest.footer.link", url=url)
         if url
-        else "_… the full text is on the ticket_"
+        else strings.t("channels.digest.footer.ticket")
     )
 
 
@@ -514,7 +514,7 @@ def truncate(text: str, limit: int) -> str:
     if len(text) <= limit:
         return text
     rest = len(text) - limit
-    return text[:limit].rstrip() + f"\n… ({rest} more characters — see the link)"
+    return text[:limit].rstrip() + strings.t("channels.digest.truncate.note", rest=rest)
 
 
 def sanitize_summary(summary: str, limit: int = SUMMARY_MAX_CHARS) -> str:

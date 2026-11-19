@@ -15,7 +15,7 @@ import json
 from typing import Any, Dict, List, Sequence
 
 from .base import Command, register
-from .. import cli_config
+from .. import cli_config, strings
 from ..lifecycle import CONFIG_KEY, HooksConfigError, read_declaration
 from ..lifecycle.contract import describe
 
@@ -42,7 +42,12 @@ def declared() -> Dict[str, Any]:
         return {
             "config": str(path),
             "hooks": [],
-            "error": f"could not read {path}: {exc.__class__.__name__}: {exc}",
+            "error": strings.t(
+                "cli.hooks.read-report.could-not-read",
+                path=path,
+                exc_type=exc.__class__.__name__,
+                exc=exc,
+            ),
         }
     return {
         "config": str(path),
@@ -54,65 +59,82 @@ def _on(entry: Dict[str, Any]) -> str:
     if entry["on"]:
         return ", ".join(entry["on"])
     if entry["kind"] == "url":
-        return "every point"
-    return "the points the class overrides"
+        return strings.t("cli.hooks.on.every-point")
+    return strings.t("cli.hooks.on.class-points")
 
 
 def render_list(report: Dict[str, Any]) -> List[str]:
     if report.get("error"):
-        return [f"error: {report['error']}"]
+        return [strings.t("cli.hooks.render-list.error", error=report["error"])]
     hooks = report["hooks"]
     if not hooks:
         return [
-            f"no lifecycle hooks declared (top-level `{CONFIG_KEY}` in {report['config']})",
-            "`the-loop hooks points` lists the points a hook can attach to.",
+            strings.t(
+                "cli.hooks.render-list.none-declared",
+                config_key=CONFIG_KEY,
+                config=report["config"],
+            ),
+            strings.t("cli.hooks.render-list.points-hint"),
         ]
     lines = [
-        f"lifecycle hooks ({len(hooks)} declared in {report['config']}) — nothing here "
-        "has been imported or contacted:"
+        strings.t(
+            "cli.hooks.render-list.heading", n_hooks=len(hooks), config=report["config"]
+        )
     ]
     width = max(len(h["name"]) for h in hooks)
     for h in hooks:
-        parts = [f"{h['kind']} {h['target']}", f"on: {_on(h)}"]
+        parts = [
+            f"{h['kind']} {h['target']}",
+            strings.t("cli.hooks.render-list.on", on=_on(h)),
+        ]
         if h["kind"] == "url":
-            parts.append(f"timeout {h['timeoutSeconds']:g}s")
+            parts.append(
+                strings.t(
+                    "cli.hooks.render-list.timeout", timeout_seconds=h["timeoutSeconds"]
+                )
+            )
             if h.get("tokenEnv"):
-                parts.append(f"token ${h['tokenEnv']}")
+                parts.append(
+                    strings.t("cli.hooks.render-list.token", token_env=h["tokenEnv"])
+                )
         else:
             if h.get("executor"):
-                parts.append(f"executor {h['executor']}")
+                parts.append(
+                    strings.t("cli.hooks.render-list.executor", executor=h["executor"])
+                )
             if h.get("with"):
-                parts.append(f"with: {h['with']}")
+                parts.append(strings.t("cli.hooks.render-list.with", with_=h["with"]))
         if h["required"]:
-            parts.append("required")
+            parts.append(strings.t("cli.hooks.render-list.required"))
         if not h["enabled"]:
-            parts.append("DISABLED")
+            parts.append(strings.t("cli.hooks.render-list.disabled"))
         lines.append(f"  {h['name'].ljust(width)}  " + "   ".join(parts))
-    lines.append(
-        "\na daemon loads the declaration at start and refuses to start on one it "
-        "cannot load; a one-shot command loads it on first use and runs hookless, "
-        "recording `hooks.load_failed`, when it cannot."
-    )
+    lines.append(strings.t("cli.hooks.render-list.load-note"))
     return lines
 
 
 def render_points(rows: Sequence[Dict[str, Any]]) -> List[str]:
-    lines = [f"lifecycle points ({len(rows)}):"]
+    lines = [strings.t("cli.hooks.render-points.heading", n_rows=len(rows))]
     for row in rows:
         lines.append(f"\n  {row['point']}  ({row['context']})")
-        lines.append(f"    fires:     {row['fires']}")
-        lines.append(f"    facts:     {', '.join(row['facts'])}")
-        lines.append(f"    decisions: {', '.join(row['decisions']) or '(none)'}")
+        lines.append(strings.t("cli.hooks.render-points.fires", fires=row["fires"]))
+        lines.append(
+            strings.t("cli.hooks.render-points.facts", facts=", ".join(row["facts"]))
+        )
+        lines.append(
+            strings.t(
+                "cli.hooks.render-points.decisions",
+                decisions=", ".join(row["decisions"])
+                or strings.t("cli.hooks.render-points.none"),
+            )
+        )
     return lines
 
 
 @register
 class HooksCommand(Command):
     name = "hooks"
-    help = (
-        "Report the lifecycle hooks the CLI config declares (importing nothing), or "
-        "the points they can attach to"
-    )
+    help = strings.t("cli.hooks.help")
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
@@ -120,10 +142,13 @@ class HooksCommand(Command):
             nargs="?",
             choices=("list", "points"),
             default="list",
-            help="list (default): the declaration; points: the catalog of hook points",
+            help=strings.t("cli.hooks.action.help"),
         )
         parser.add_argument(
-            "--format", choices=("text", "json"), default="text", help="output format"
+            "--format",
+            choices=("text", "json"),
+            default="text",
+            help=strings.t("cli.hooks.format.help"),
         )
 
     def run(self, args: argparse.Namespace) -> int:

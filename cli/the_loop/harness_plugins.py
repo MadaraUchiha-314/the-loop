@@ -50,6 +50,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from . import strings
 from .trust import ClaudeTrustStore, TrustResult, update_json
 
 __all__ = [
@@ -142,10 +143,10 @@ class ClaudePluginStore:
         if repo and not _REPO_RE.match(repo):
             return TrustResult(
                 ok=False,
-                error=(
-                    f"harnessPlugins.marketplaceRepo {repo!r} is not of the form "
-                    "owner/repo; not writing it to "
-                    f"{self.settings_path()}"
+                error=strings.t(
+                    "harness-plugins.error.bad-repo",
+                    repo=repo,
+                    path=self.settings_path(),
                 ),
             )
         path = self.settings_path()
@@ -157,9 +158,10 @@ class ClaudePluginStore:
             if repo:
                 markets = data.get(_MARKETPLACES_KEY, {})
                 if not isinstance(markets, dict):
-                    problem = (
-                        f"{path}: {_MARKETPLACES_KEY} is not a JSON object; "
-                        "leaving it untouched"
+                    problem = strings.t(
+                        "harness-plugins.error.not-an-object",
+                        path=path,
+                        key=_MARKETPLACES_KEY,
                     )
                     return False
                 if MARKETPLACE_NAME not in markets:
@@ -170,8 +172,8 @@ class ClaudePluginStore:
                     changed = True
             plugins = data.get(_PLUGINS_KEY, {})
             if not isinstance(plugins, dict):
-                problem = (
-                    f"{path}: {_PLUGINS_KEY} is not a JSON object; leaving it untouched"
+                problem = strings.t(
+                    "harness-plugins.error.not-an-object", path=path, key=_PLUGINS_KEY
                 )
                 return False
             if PLUGIN_KEY not in plugins:
@@ -185,5 +187,11 @@ class ClaudePluginStore:
         if problem:
             return TrustResult(ok=False, error=problem)
         if result.applied:
-            result = TrustResult(applied=[f"enabled the {PLUGIN_KEY} plugin in {path}"])
+            result = TrustResult(
+                applied=[
+                    strings.t(
+                        "harness-plugins.applied.enabled", plugin=PLUGIN_KEY, path=path
+                    )
+                ]
+            )
         return result

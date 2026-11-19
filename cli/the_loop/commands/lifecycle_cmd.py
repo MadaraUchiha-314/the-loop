@@ -24,7 +24,7 @@ import sys
 from typing import Optional
 
 from .base import Command, register
-from .. import __version__, cli_config, eventlog
+from .. import __version__, cli_config, eventlog, strings
 from ..core import lifecycle
 from ..core.daemons import SLACK_LISTENER
 from ..poller.heartbeat import PollHeartbeat
@@ -53,7 +53,12 @@ def _config_or_error() -> Optional[dict]:
     try:
         return _load_config()
     except Exception as exc:  # noqa: BLE001 — every load failure renders the same way
-        print(f"error: cannot load the CLI config: {exc}", file=sys.stderr)
+        print(
+            strings.t(
+                "cli.lifecycle.config-or-error.cannot-load-the-cli-config", exc=exc
+            ),
+            file=sys.stderr,
+        )
         return None
 
 
@@ -62,7 +67,11 @@ def _print_rows(rows) -> None:
         return
     width = max(len(row["service"]) for row in rows)
     for row in rows:
-        flag = "enabled" if row["enabled"] else "disabled"
+        flag = (
+            strings.t("cli.lifecycle.enabled")
+            if row["enabled"]
+            else strings.t("cli.lifecycle.disabled")
+        )
         print(
             f"{row['service'].ljust(width)}  {row['outcome']:<15} [{flag}]"
             + (f"  {row['detail']}" if row.get("detail") else "")
@@ -79,7 +88,7 @@ def _print_standing(rows) -> None:
     """
     if not rows:
         return
-    print("standing sessions:")
+    print(strings.t("cli.lifecycle.print-standing.standing-sessions"))
     width = max(len(row["name"]) for row in rows)
     for row in rows:
         print(
@@ -91,7 +100,7 @@ def _print_standing(rows) -> None:
 @register
 class StartCommand(Command):
     name = "start"
-    help = "Start every service the CLI config enables (service, webhook, poller)"
+    help = strings.t("cli.lifecycle.start.help")
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         pass
@@ -101,7 +110,7 @@ class StartCommand(Command):
         if config is None:
             return 2
         eventlog.configure_from_file("cli")
-        print(f"the-loop {__version__}")
+        print(strings.t("cli.lifecycle.start.run.the-loop", version=__version__))
         report = lifecycle.start_all(config)
         _print_rows(report["services"])
         _print_standing(report.get("standingSessions") or [])
@@ -111,7 +120,7 @@ class StartCommand(Command):
 @register
 class StopCommand(Command):
     name = "stop"
-    help = "Stop every running the-loop service (poller, webhook, service)"
+    help = strings.t("cli.lifecycle.stop.help")
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         pass
@@ -137,13 +146,25 @@ def _print_provenance(report: dict) -> None:
     operator's call — and it does not move the exit code (R4.3).
     """
     if report.get("configPath"):
-        print(f"{'config':<11} {report['configPath']}")
+        print(
+            strings.t(
+                "cli.lifecycle.print-provenance.config",
+                config_path=report["configPath"],
+            )
+        )
     if report.get("stateRoot"):
-        print(f"{'state':<11} {report['stateRoot']}")
+        print(
+            strings.t(
+                "cli.lifecycle.print-provenance.state", state_root=report["stateRoot"]
+            )
+        )
     for rival in report.get("conflictingRoots") or []:
         print(
-            f"{'conflict':<11} {rival} also holds a poller heartbeat — "
-            f"reporting on {report.get('stateRoot')}"
+            strings.t(
+                "cli.lifecycle.print-provenance.conflict-also-holds-a-poller",
+                rival=rival,
+                state_root=report.get("stateRoot"),
+            )
         )
 
 
@@ -155,9 +176,13 @@ def _print_instance(instance: dict) -> None:
     managed = instance.get("managed") or []
     declared = len(scope.get("workItems") or [])
     print(
-        f"{'instance':<11} {instance.get('name') or '(unnamed)'} "
-        f"[{scope.get('mode') or 'open'}] — {declared} declared, "
-        f"{len(managed)} managed"
+        strings.t(
+            "cli.lifecycle.print-instance.instance-declared-managed",
+            name=instance.get("name") or strings.t("cli.lifecycle.unnamed"),
+            mode=scope.get("mode") or "open",
+            declared=declared,
+            n_managed=len(managed),
+        )
     )
 
 
@@ -175,8 +200,12 @@ def _print_instances(doc: dict) -> None:
     members = rows[1:]
     live = sum(1 for row in members if row.get("state") == "live")
     print(
-        f"{'instances':<11} {doc.get('name') or '(unnamed)'} [manager] — "
-        f"this instance + {len(members)} registered, {live} of {len(members)} live"
+        strings.t(
+            "cli.lifecycle.print-instances.instances-manager-this-instance-registered",
+            name=doc.get("name") or strings.t("cli.lifecycle.unnamed"),
+            n_members=len(members),
+            live=live,
+        )
     )
     for line in instance_lines(doc):
         print(f"  {line}")
@@ -185,7 +214,7 @@ def _print_instances(doc: dict) -> None:
 @register
 class StatusCommand(Command):
     name = "status"
-    help = "Report each service's state; exit 0 iff every enabled one is running"
+    help = strings.t("cli.lifecycle.status.help")
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         parser.add_argument("--format", choices=["text", "json"], default="text")
@@ -201,33 +230,41 @@ class StatusCommand(Command):
         if args.format == "json":
             print(json.dumps(report, indent=2))
             return 0 if report["ok"] else 1
-        print(f"{'version':<11} {__version__}")
+        print(strings.t("cli.lifecycle.status.run.version", version=__version__))
         _print_provenance(report)
         _print_instance(report.get("instance") or {})
         _print_instances(report.get("instances") or {})
         for row in report["services"]:
-            flag = "enabled" if row["enabled"] else "disabled"
+            flag = (
+                strings.t("cli.lifecycle.enabled")
+                if row["enabled"]
+                else strings.t("cli.lifecycle.disabled")
+            )
             liveness = (
-                f"running (pid {row['pid']})" if row["running"] else "not running"
+                strings.t("cli.lifecycle.status.running-pid", pid=row["pid"])
+                if row["running"]
+                else strings.t("cli.lifecycle.status.not-running")
             )
             if row.get("hosted"):
-                liveness = f"running (hosted in the service, pid {row['pid']})"
+                liveness = strings.t(
+                    "cli.lifecycle.status.running-hosted", pid=row["pid"]
+                )
             if row["running"] and not row["enabled"]:
                 # Never `running … [disabled]` (issue-395, B5): the two facts are both
                 # true, so say what reconciles them. A hosted row is the service's to
                 # stop — its supervisor does so on its next config check; anything
                 # else (a standalone daemon, a foreground `channels listen`) ends
                 # with `the-loop stop`, which ignores `enabled` on purpose.
-                flag = "disabled in config — still running; " + (
-                    "the service stops it on its next config check"
+                flag = strings.t("cli.lifecycle.status.disabled-still-running") + (
+                    strings.t("cli.lifecycle.status.service-stops-it")
                     if row.get("hosted")
-                    else "`the-loop stop` ends it"
+                    else strings.t("cli.lifecycle.status.stop-ends-it")
                 )
             extra = ""
             if row["service"] == "service" and row["running"]:
-                extra = f" — {row['url']}, {'healthy' if row['healthy'] else 'unresponsive'}"
+                extra = f" — {row['url']}, {strings.t('cli.lifecycle.status.healthy') if row['healthy'] else strings.t('cli.lifecycle.status.unresponsive')}"
                 if not row["mcp"]["enabled"]:
-                    extra += ", MCP disabled"
+                    extra += strings.t("cli.lifecycle.status.mcp-disabled")
             if row.get("detail") and row["service"] != "service":
                 # issue-496: `off · gateway configured` on the three local ingresses, and
                 # the client's `connected · polling …` line
@@ -254,30 +291,36 @@ class StatusCommand(Command):
             # One line, and only when something is queued (issue-409, R3.1). The
             # operator learns that deliveries are behind from the command they
             # already type, instead of from a ticket three days later.
-            print(f"{'channels':<11} {undelivered}")
+            print(
+                strings.t("cli.lifecycle.status.run.channels", undelivered=undelivered)
+            )
         drift = lifecycle.environment_line(report)
         if drift:
             # One line, and only when there is drift (issue-410, R3.2). It names
             # the fixing command because the operator reading it has just been
             # told something is wrong and should not have to go and look up what
             # to do about it.
-            print(f"{'sessions':<11} {drift}")
+            print(strings.t("cli.lifecycle.status.run.sessions", drift=drift))
         held = lifecycle.credentials_line(report)
         if held:
             # Names only, and only when a session holds one (issue-533, R7.1).
-            print(f"{'credentials':<11} {held}")
+            print(strings.t("cli.lifecycle.status.run.credentials", held=held))
         standing = report.get("standingSessions") or []
         if standing:
-            print("standing sessions:")
+            print(strings.t("cli.lifecycle.status.run.standing-sessions"))
             for row in standing:
-                liveness = "running" if row.get("running") else "not running"
+                liveness = (
+                    strings.t("cli.lifecycle.status.running")
+                    if row.get("running")
+                    else strings.t("cli.lifecycle.status.not-running")
+                )
                 where = (
-                    "declared"
+                    strings.t("cli.lifecycle.status.declared")
                     if row.get("declared")
-                    else "recorded, no longer declared"
+                    else strings.t("cli.lifecycle.status.standing-undeclared")
                 )
                 if row.get("declared") and not row.get("autoStart"):
-                    where += ", not auto-started"
+                    where += strings.t("cli.lifecycle.status.standing-not-auto-started")
                 print(f"{row['name']:<11} {liveness} [{where}]")
         return 0 if report["ok"] else 1
 
@@ -285,18 +328,13 @@ class StatusCommand(Command):
 @register
 class RestartCommand(Command):
     name = "restart"
-    help = "Stop every running service, then start every enabled one"
+    help = strings.t("cli.lifecycle.restart.help")
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
             "--with-upgrade",
             action="store_true",
-            help=(
-                "Upgrade the-loop's CLI between stop and start (the issue-152 "
-                "installer plan for the cli component). A failed upgrade is "
-                "reported but never leaves the system down: the start half "
-                "still runs on the current version."
-            ),
+            help=strings.t("cli.lifecycle.restart.with-upgrade.help"),
         )
 
     def run(self, args: argparse.Namespace) -> int:
@@ -304,7 +342,7 @@ class RestartCommand(Command):
         if config is None:
             return 2
         eventlog.configure_from_file("cli")
-        print("stopping:")
+        print(strings.t("cli.lifecycle.restart.run.stopping"))
         stop_report = lifecycle.stop_all(config)
         _print_rows(stop_report["services"])
         _print_standing(stop_report.get("standingSessions") or [])
@@ -313,7 +351,7 @@ class RestartCommand(Command):
         if args.with_upgrade:
             upgrade_ok = self._upgrade()
 
-        print("starting:")
+        print(strings.t("cli.lifecycle.restart.run.starting"))
         start_report = lifecycle.start_all(config)
         _print_rows(start_report["services"])
         _print_standing(start_report.get("standingSessions") or [])
@@ -332,12 +370,15 @@ class RestartCommand(Command):
         from .. import install as install_mod
         from .install_cmd import render_table
 
-        print("upgrading the CLI:")
+        print(strings.t("cli.lifecycle.restart.upgrade.upgrading-the-cli"))
         try:
             steps = install_mod.plan(["cli"], upgrade=True)
             results = install_mod.execute(steps, dry_run=False)
         except Exception as exc:  # noqa: BLE001 — a failed upgrade must not stop the start half
-            print(f"upgrade failed: {exc}", file=sys.stderr)
+            print(
+                strings.t("cli.lifecycle.restart.upgrade.upgrade-failed", exc=exc),
+                file=sys.stderr,
+            )
             return False
         print(render_table(results))
         return install_mod.exit_code(results) == 0

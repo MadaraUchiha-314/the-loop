@@ -36,12 +36,13 @@ import {
 } from "../api/model.ts";
 import type { EventRecord, TranscriptEntry } from "../api/types.ts";
 import { describeEvent } from "../api/model.ts";
+import { t } from "../i18n.ts";
 import { useApi } from "../state/ApiContext.tsx";
 import { BotIcon, BrainIcon, ChevronRightIcon, CircleArrowRightIcon, FileTextIcon, SendHorizontalIcon, TerminalIcon, WrenchIcon } from "./Icons.tsx";
 import { renderInline } from "./primitives.tsx";
 
 /** The name of the one switch that sets the trace's verbosity, in every place it is spoken. */
-export const VERBOSE_LABEL = "Verbose";
+export const VERBOSE_LABEL = t("ui.transcript.verbose");
 
 /** How many rows of the fallback trail the panel draws. */
 const TRAIL_LIMIT = 40;
@@ -81,7 +82,7 @@ export function EventTrail({
   limit?: number;
 }) {
   const kept = verbose ? events : events.filter((event) => !isBookkeeping(event));
-  if (kept.length === 0) return <HiddenNote hidden={events.length} noun="bookkeeping event" />;
+  if (kept.length === 0) return <HiddenNote hidden={events.length} noun="event" />;
   return (
     <>
       {kept.slice(0, limit).map((event, index) => (
@@ -97,12 +98,17 @@ export function EventTrail({
  * state owns that case, so "nothing happened" stays distinct from "nothing
  * survived the filter".
  */
-function HiddenNote({ hidden, noun }: { hidden: number; noun: string }) {
+function HiddenNote({ hidden, noun }: { hidden: number; noun: "row" | "event" }) {
   if (hidden === 0) return null;
+  const vars = { count: hidden, verbose: VERBOSE_LABEL };
   const line =
-    hidden === 1
-      ? `1 ${noun} hidden — turn on ${VERBOSE_LABEL} to see it`
-      : `${hidden} ${noun}s hidden — turn on ${VERBOSE_LABEL} to see them`;
+    noun === "row"
+      ? hidden === 1
+        ? t("ui.transcript.hidden.row-one", vars)
+        : t("ui.transcript.hidden.row-other", vars)
+      : hidden === 1
+        ? t("ui.transcript.hidden.event-one", vars)
+        : t("ui.transcript.hidden.event-other", vars);
   return <p className="text-center font-mono text-[0.68rem] text-muted-foreground">{line}</p>;
 }
 
@@ -154,7 +160,7 @@ function ThreadRowView({ row, showTools }: { row: ThreadRow; showTools: boolean 
   if (row.kind === "tool result") {
     return (
       <div className="text-xs" data-entry="tool-result">
-        <FoldGroup icon={<FileTextIcon className="h-3.5 w-3.5" />} label="output" detail={firstLine(row.text)}>
+        <FoldGroup icon={<FileTextIcon className="h-3.5 w-3.5" />} label={t("ui.transcript.output")} detail={firstLine(row.text)} data="output">
           <pre className="mt-1.5 ml-1 overflow-x-auto whitespace-pre-wrap border-l border-border pl-3 font-mono text-[0.7rem] text-foreground/80">
             {row.text}
           </pre>
@@ -164,10 +170,11 @@ function ThreadRowView({ row, showTools }: { row: ThreadRow; showTools: boolean 
   }
 
   if (row.kind === "meta" || row.kind === "malformed") {
-    const label = row.kind === "malformed" ? "malformed" : row.label || "entry";
-    const detail = row.text || (row.kind === "meta" ? `(${row.label || "entry"})` : "");
+    const tag = row.kind === "malformed" ? "malformed" : row.label || "entry";
+    const label = row.kind === "malformed" ? t("ui.transcript.malformed") : row.label || t("ui.transcript.entry");
+    const detail = row.text || (row.kind === "meta" ? `(${row.label || t("ui.transcript.entry")})` : "");
     return (
-      <div data-entry={row.kind} data-label={label} className="space-y-1">
+      <div data-entry={row.kind} data-label={tag} className="space-y-1">
         <MetaLine
           icon={<CircleArrowRightIcon className={`h-3.5 w-3.5 ${row.kind === "malformed" ? "text-state-blocked" : "text-state-skipped"}`} />}
           label={label}
@@ -182,10 +189,10 @@ function ThreadRowView({ row, showTools }: { row: ThreadRow; showTools: boolean 
   // assistant
   return (
     <div className="space-y-2" data-entry="assistant">
-      <MetaLine icon={<BotIcon className="h-3.5 w-3.5 text-muted-foreground" />} label="the-loop" time={time} />
+      <MetaLine icon={<BotIcon className="h-3.5 w-3.5 text-muted-foreground" />} label={t("ui.transcript.assistant")} time={time} />
       {row.thinking ? (
         <div className="text-xs">
-          <FoldGroup icon={<BrainIcon className="h-3.5 w-3.5" />} label="thinking" detail={firstLine(row.thinking)}>
+          <FoldGroup icon={<BrainIcon className="h-3.5 w-3.5" />} label={t("ui.transcript.thinking")} detail={firstLine(row.thinking)} data="thinking">
             <pre className="mt-1.5 ml-1 overflow-x-auto whitespace-pre-wrap border-l border-border pl-3 font-mono text-[0.7rem] text-foreground/80">
               {row.thinking}
             </pre>
@@ -251,7 +258,7 @@ function ToolGroup({ tools }: { tools: ToolCallView[] }) {
     <div className="text-xs" data-tools>
       <FoldGroup
         icon={<WrenchIcon className="h-3.5 w-3.5" />}
-        label={`Used ${tools.length} ${tools.length === 1 ? "tool" : "tools"}`}
+        label={tools.length === 1 ? t("ui.transcript.tools-one", { count: tools.length }) : t("ui.transcript.tools-other", { count: tools.length })}
         data="tools"
       >
         <ul className="mt-1.5 ml-1 space-y-1 border-l border-border pl-3">
@@ -274,7 +281,7 @@ function ToolCall({ tool }: { tool: ToolCallView }) {
         <span className="shrink-0 font-mono text-foreground/80">{tool.name}</span>
         <span className="min-w-0 truncate font-mono text-muted-foreground" title={tool.summary}>{firstLine(tool.summary)}</span>
         {tool.isError ? (
-          <span className="ml-auto shrink-0 rounded-md border border-state-blocked/40 px-1.5 font-mono text-[0.65rem] text-state-blocked">error</span>
+          <span className="ml-auto shrink-0 rounded-md border border-state-blocked/40 px-1.5 font-mono text-[0.65rem] text-state-blocked">{t("ui.transcript.tool-error")}</span>
         ) : null}
       </summary>
       <div className="ml-1 mt-1 space-y-1 border-l border-border pl-3">
@@ -282,7 +289,7 @@ function ToolCall({ tool }: { tool: ToolCallView }) {
           <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-[0.7rem] text-foreground/80">{tool.input}</pre>
         ) : null}
         <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-[0.7rem] text-muted-foreground">
-          {tool.result || "(no result in the served tail)"}
+          {tool.result || t("ui.transcript.no-result")}
         </pre>
       </div>
     </details>
@@ -315,9 +322,9 @@ function firstLine(text: string): string {
 /** Why the bar is disabled, per session state — `""` means it can send. */
 export function chatBlocked(state: SessionState): string {
   if (state === "active") return "";
-  if (state === "paused") return "The session is paused — resume it first; delivery is held.";
-  if (state === "closed") return "The session is closed; there is no pane to deliver into.";
-  return "No session is registered for this ref on the service's machine.";
+  if (state === "paused") return t("ui.chat.blocked.paused");
+  if (state === "closed") return t("ui.chat.blocked.closed");
+  return t("ui.chat.blocked.none");
 }
 
 /**
@@ -388,15 +395,15 @@ export function ChatBar({
               event.target.style.height = `${Math.min(event.target.scrollHeight, 128)}px`;
             }}
             onKeyDown={onKeyDown}
-            placeholder={blocked || "Reply into the session"}
-            aria-label={`Message the session for ${refFor}`}
+            placeholder={blocked || t("ui.chat.placeholder")}
+            aria-label={t("ui.chat.label", { ref: refFor })}
             disabled={busy || blocked !== ""}
             className="max-h-32 flex-1 resize-none bg-transparent py-1 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
           />
           <button
             type="button"
-            aria-label="Send"
-            title={blocked || (busy ? "Sending…" : "Send (⌘⏎)")}
+            aria-label={t("ui.chat.send")}
+            title={blocked || (busy ? t("ui.chat.sending") : t("ui.chat.send-hint"))}
             disabled={!canSend}
             onClick={() => void send()}
             className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"

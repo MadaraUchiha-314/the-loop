@@ -42,7 +42,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Tuple, Union
 
-from . import eventlog
+from . import eventlog, strings
 from .pollclocks import PollClockStore
 from .sessions import Session, SessionRegistry, WorkItemRef
 from .workitem import (
@@ -167,7 +167,7 @@ def reset_work_item(
                     removed.append(WORKSPACE)
             except Exception as exc:  # noqa: BLE001 — a teardown failure must not
                 # leave the item both running AND remembered: report it, keep going.
-                errors.append(f"could not end the session: {exc}")
+                errors.append(strings.t("reset.error.end-session", exc=exc))
         if dry_run:
             removed.append(SESSION)
         else:
@@ -175,7 +175,7 @@ def reset_work_item(
                 if registry.forget(ref):
                     removed.append(SESSION)
             except OSError as exc:
-                errors.append(f"could not remove the session record: {exc}")
+                errors.append(strings.t("reset.error.remove-session-record", exc=exc))
 
     # The collaborator roster goes with them (issue-307): a reset is "forget what
     # this machine holds about this work item so it starts over", and a grant that
@@ -204,7 +204,9 @@ def reset_work_item(
                 store.write_section(ref, section, None)
             removed.append(section)
         except OSError as exc:
-            errors.append(f"could not remove the {section} record: {exc}")
+            errors.append(
+                strings.t("reset.error.remove-section", section=section, exc=exc)
+            )
 
     # The poll clocks go with the poll section (issue-382): they are the same
     # ledger, split across a tracked file and a local one. Unconditional rather

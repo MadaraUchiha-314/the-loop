@@ -673,9 +673,14 @@ def record_lines(attachments: Sequence[Attachment]) -> str:
     for item in attachments:
         line = f"📎 {item.name}{_type_and_size(item)} — {item.link}".rstrip(" —")
         if not item.path and item.error:
-            line += f" (not fetched: {_REASONS.get(item.error, item.error)})"
+            line += strings.t(
+                "channels.attachments.record.not-fetched",
+                reason=_REASONS.get(item.error, item.error),
+            )
         lines.append(line)
         if item.transcript:
             for text_line in item.transcript.splitlines() or [""]:
-                lines.append(f"> Slack's transcript: {text_line}")
+                lines.append(
+                    strings.t("channels.attachments.record.transcript", line=text_line)
+                )
     return "\n".join(lines)

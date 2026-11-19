@@ -14,6 +14,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
+from .. import strings
 from . import events as core_events
 from . import sessions as core_sessions
 from . import workitems as core_workitems
@@ -53,7 +54,7 @@ def list_attention(config: Optional[dict] = None) -> List[Dict[str, Any]]:
                 {
                     "workItem": session["ref"],
                     "kind": "session-paused",
-                    "detail": f"session paused (last control: {last})",
+                    "detail": strings.t("core.attention.session-paused", last=last),
                 }
             )
 
@@ -80,7 +81,7 @@ def list_attention(config: Optional[dict] = None) -> List[Dict[str, Any]]:
                 {
                     "workItem": record["ref"],
                     "kind": "armed-without-session",
-                    "detail": "start recorded but no live session on this machine",
+                    "detail": strings.t("core.attention.armed-without-session"),
                 }
             )
 
@@ -118,9 +119,11 @@ def list_attention(config: Optional[dict] = None) -> List[Dict[str, Any]]:
                 "workItem": ref,
                 "kind": "awaiting-input",
                 "detail": (
-                    f"agent is waiting for input: {question}"
+                    strings.t(
+                        "core.attention.awaiting-input-question", question=question
+                    )
                     if question
-                    else "agent is waiting for input"
+                    else strings.t("core.attention.awaiting-input")
                 ),
             }
         )
@@ -159,7 +162,11 @@ def list_attention(config: Optional[dict] = None) -> List[Dict[str, Any]]:
             {
                 "workItem": ref or "",
                 "kind": "recent-error",
-                "detail": f"{event.get('event')} at {event.get('ts')}",
+                "detail": strings.t(
+                    "core.attention.recent-error",
+                    event=event.get("event"),
+                    ts=event.get("ts"),
+                ),
                 "at": ts,
             }
         )

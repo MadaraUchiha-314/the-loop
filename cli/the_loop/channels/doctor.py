@@ -47,7 +47,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Set, Tuple
 
-from .. import eventlog
+from .. import eventlog, strings
 from . import slack as _slack
 from .base import ChannelError
 from .directory import SlackDirectory, is_conversation_id, normalize_name
@@ -163,7 +163,7 @@ def _probe(
     nonce_factory,
 ) -> Dict[str, Any]:
     if not config.enabled:
-        return _unverifiable(result, "channels.slack is not enabled")
+        return _unverifiable(result, strings.t("channels.doctor.reason.not-enabled"))
     # the posting path (issue-519, R1.3): the local token, else the gateway's client;
     # neither is `unverifiable` with the reason every other surface prints
     try:
@@ -174,11 +174,10 @@ def _probe(
     if not channel:
         return _unverifiable(
             result,
-            "no channel to post the heartbeat into — channels.slack.channel is "
-            + (
-                "unset"
-                if not config.channel
-                else f"{config.channel!r}, which resolves to no channel this bot can see"
+            strings.t("channels.doctor.reason.no-channel-unset")
+            if not config.channel
+            else strings.t(
+                "channels.doctor.reason.no-channel-unresolved", channel=config.channel
             ),
         )
     result["channel"] = channel
@@ -193,9 +192,7 @@ def _probe(
         if not enabled:
             return _unverifiable(
                 result,
-                "a listener is running here but eventLog.enabled is false, so "
-                "its receipts cannot be read — enable the event log, or stop the "
-                "listener so the doctor can listen itself",
+                strings.t("channels.doctor.reason.event-log-disabled"),
             )
         receiver = _LogReceiver(path)
         result["receiver"] = "listener"
@@ -204,9 +201,9 @@ def _probe(
         if not app_token:
             return _unverifiable(
                 result,
-                "no listener is running here and no app-level token — "
-                f"{config.app_token_env} is unset — so nothing can receive the "
-                "heartbeat",
+                strings.t(
+                    "channels.doctor.reason.no-app-token", env=config.app_token_env
+                ),
             )
         receiver = _SocketReceiver(
             (socket_client_factory or _default_socket_client)(app_token, client)
@@ -421,31 +418,36 @@ def consumer_verdict_text(result: Mapping[str, Any]) -> str:
     beats = result.get("beats", 0)
     echoed = result.get("echoed", 0)
     window = float(result.get("window_seconds") or 0)
-    where = {
-        "listener": "the running listener (read back from its event log)",
-        "doctor": "the doctor's own Socket Mode connection",
-    }.get(str(result.get("receiver") or ""), "the receiver")
+    receiver = str(result.get("receiver") or "")
+    if receiver == "listener":
+        where = strings.t("channels.doctor.receiver.listener")
+    elif receiver == "doctor":
+        where = strings.t("channels.doctor.receiver.doctor")
+    else:
+        where = strings.t("channels.doctor.receiver.unknown")
     if verdict == "ok":
-        return (
-            f"{echoed}/{beats} heartbeats reached {where} within {window:g}s — no "
-            "second Socket Mode consumer observed. Evidence, not proof: Slack "
-            "exposes no API that lists an app's connections, so a consumer that "
-            "was idle or reconnecting during the window would not show."
+        return strings.t(
+            "channels.doctor.verdict.ok",
+            echoed=echoed,
+            beats=beats,
+            where=where,
+            window=window,
         )
     if verdict == "split-suspected":
-        text = (
-            f"{echoed}/{beats} heartbeats reached {where} within {window:g}s — "
-            "another Socket Mode consumer may hold this app's connection: Slack "
-            "splits Socket Mode events across an app's connections, halving "
-            f"inbound for both. {SPLIT_CAVEAT} {SPLIT_REMEDY}"
+        text = strings.t(
+            "channels.doctor.verdict.split-suspected",
+            echoed=echoed,
+            beats=beats,
+            where=where,
+            window=window,
+            caveat=SPLIT_CAVEAT,
+            remedy=SPLIT_REMEDY,
         )
         if result.get("receiver") == "listener":
-            text += (
-                " A listener started on a build older than this one records no "
-                "heartbeat at all — `the-loop restart` on this build first."
-            )
+            text += strings.t("channels.doctor.verdict.old-listener")
         return text
-    return f"unverifiable — {result.get('reason') or 'the probe could not run'}"
+    reason = result.get("reason") or strings.t("channels.doctor.verdict.no-reason")
+    return strings.t("channels.doctor.verdict.unverifiable", reason=reason)
 
 
 # -- R2.3: every declared channel against the bot's own directory --------------------
@@ -476,16 +478,20 @@ def check_declared_channels(
             entries.append((config.channel, "channels.slack.channel"))
         targets = ChannelStores.beside(path).declared_targets()
         for target, work_item in sorted(targets.items()):
-            entries.append((target, f"declared by {work_item}"))
-        if not entries:
-            result["reason"] = (
-                "nothing declared — channels.slack.channel is unset and no work "
-                "item declares a room"
+            entries.append(
+                (
+                    target,
+                    strings.t("channels.doctor.declared.owner", work_item=work_item),
+                )
             )
+        if not entries:
+            result["reason"] = strings.t("channels.doctor.declared.nothing")
             return result
         path = _slack.posting_path(config, cli_config)
         if path.kind == "none":
-            result["reason"] = f"{path.detail}, so nothing can be resolved"
+            result["reason"] = strings.t(
+                "channels.doctor.declared.no-path", detail=path.detail
+            )
             result["channels"] = [
                 {
                     "declared": declared,

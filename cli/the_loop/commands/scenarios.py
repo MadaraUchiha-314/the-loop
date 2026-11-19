@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, List, Mapping, Sequence
 
 from .base import Command, register
+from .. import strings
 from ..client.routing import routed, service_error
 from ..core import repo as core_repo
 
@@ -47,7 +48,13 @@ def _rows(scenarios: Sequence[Mapping[str, Any]]) -> List[List[str]]:
     return rows
 
 
-_HEADERS = ["#", "Feature", "Scenario", "Requirement", "Location"]
+_HEADERS = [
+    "#",
+    strings.t("cli.scenarios.table.header.feature"),
+    strings.t("cli.scenarios.table.header.scenario"),
+    strings.t("cli.scenarios.table.header.requirement"),
+    strings.t("cli.scenarios.table.header.location"),
+]
 
 
 def render_table(scenarios: Sequence[Mapping[str, Any]]) -> str:
@@ -91,26 +98,26 @@ _RENDERERS = {
 @register
 class ScenariosCommand(Command):
     name = "scenarios"
-    help = "List Gherkin scenarios covered by integration tests (table/markdown/json)"
+    help = strings.t("cli.scenarios.help")
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
             "--root",
             default=".",
-            help="Project root to scan (default: current directory).",
+            help=strings.t("cli.scenarios.root.help"),
         )
         parser.add_argument(
             "--glob",
             action="append",
             dest="globs",
             metavar="PATTERN",
-            help="Glob for integration-test files (repeatable). Default: the built-in set.",
+            help=strings.t("cli.scenarios.glob.help"),
         )
         parser.add_argument(
             "--format",
             choices=sorted(_RENDERERS),
             default="table",
-            help="Output format (default: table).",
+            help=strings.t("cli.scenarios.format.help"),
         )
 
     def run(self, args: argparse.Namespace) -> int:
@@ -126,7 +133,7 @@ class ScenariosCommand(Command):
         except Exception as exc:  # noqa: BLE001 — mapped, or re-raised below
             mapped = service_error(exc)
             if mapped is None:
-                mapped = (f"error: {exc}", 2)
+                mapped = (strings.t("cli.scenarios.run.error", exc=exc), 2)
             print(mapped[0], file=sys.stderr)
             return mapped[1]
         scenarios = report["scenarios"]

@@ -74,11 +74,14 @@ def _quoted(text: str) -> str:
 def _who(event: Event) -> str:
     """The visible attribution: the person's label, and the channel-native id."""
     native = event.actor.id_on(event.source) if event.actor else ""
-    label = event.actor.label if event.actor else "(unknown)"
+    unknown = strings.t("channels.bodies.who.unknown-label")
+    label = event.actor.label if event.actor else unknown
     if native and native != label:
         return f"`{label}` (`{event.source}:{native}`)"
     return (
-        f"`{label}`" if label != "(unknown)" else f"an unknown `{event.source}` member"
+        f"`{label}`"
+        if label != unknown
+        else strings.t("channels.bodies.who.unknown-member", source=event.source)
     )
 
 
@@ -121,15 +124,19 @@ def mirror_body(event: Event, cli_config: Optional[Mapping]) -> str:
         who=_who(event),
         source=event.source,
         count=str(detail.get("count") or "?"),
-        thread=f"<{thread}>" if thread else "a thread",
-        kind=f" (kind: {kind})" if kind else "",
+        thread=f"<{thread}>"
+        if thread
+        else strings.t("channels.bodies.mirror.a-thread"),
+        kind=strings.t("channels.bodies.mirror.kind", kind=kind) if kind else "",
     )
-    body = f"🗣️ **the-loop** — {line}:\n\n" + _quoted(safe)
+    body = strings.t("channels.bodies.mirror.head", line=line) + _quoted(safe)
     rationale = str(detail.get("rationale") or "").strip()
     if rationale:
-        body += "\n\n_why:_ " + scrub(rationale).replace("\n", " ")
+        body += strings.t("channels.bodies.mirror.why") + scrub(rationale).replace(
+            "\n", " "
+        )
     if event.event_type == "decision.recorded" and thread:
-        body += f"\n\n_discussed at:_ <{thread}>"
+        body += strings.t("channels.bodies.mirror.discussed-at", thread=thread)
     return stamp(mark_self_authored(body), _envelope(event))
 
 
@@ -142,18 +149,18 @@ def relay_body(event: Event) -> str:
     control keyword counts only where a comment opens with it, so a header line
     above the words would turn every relayed command into prose."""
     if event.event_type != "gate.feedback":
-        what = "control command"
+        what = strings.t("channels.bodies.relay.what.control-command")
     elif str(event.detail.get("gate") or "") == "unknown":
         # The pipeline could not read the gate (issue-321): the record is a reply
         # the ledger's ingress judges, and must not claim an answer it never saw.
-        what = "reply"
+        what = strings.t("channels.bodies.relay.what.reply")
     else:
-        what = "answer to the open gate"
-    body = (
-        scrub(event.text).strip()
-        + f"\n\n🗣️ _the-loop — {what} from {_who(event)} on the "
-        f"**{event.source}** channel, recorded here so the loop reads it from the "
-        "work item._"
+        what = strings.t("channels.bodies.relay.what.gate-answer")
+    body = scrub(event.text).strip() + strings.t(
+        "channels.bodies.relay.attribution",
+        what=what,
+        who=_who(event),
+        source=event.source,
     )
     return stamp(body, _envelope(event))
 
@@ -165,7 +172,9 @@ def ask_body(event: Event) -> str:
 
 def issue_title(text: str) -> str:
     first = next((line.strip() for line in text.splitlines() if line.strip()), "")
-    first = first.lstrip("#").strip() or "Work item from a channel"
+    first = first.lstrip("#").strip() or strings.t(
+        "channels.bodies.issue.default-title"
+    )
     if len(first) > TITLE_MAX_CHARS:
         first = first[: TITLE_MAX_CHARS - 1].rstrip() + "…"
     return first
@@ -175,10 +184,8 @@ def issue_body(event: Event) -> str:
     """A kickoff issue's body: the message, an attribution, the envelope — and NO
     self-authored marker, because the issue must be armable (a marked ``issues``
     event is dropped at ingress: the self-diagnosis rule, decision-103 D7)."""
-    body = (
-        scrub(event.text).rstrip()
-        + f"\n\n---\n\n🗣️ _Opened from the **{event.source}** channel by "
-        f"{_who(event)} through the-loop._"
+    body = scrub(event.text).rstrip() + strings.t(
+        "channels.bodies.issue.attribution", source=event.source, who=_who(event)
     )
     return stamp(body, _envelope(event))
 

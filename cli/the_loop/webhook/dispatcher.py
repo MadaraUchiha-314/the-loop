@@ -2838,9 +2838,23 @@ class Dispatcher:
         if self.lifecycle is None:
             return
         state = stamp.get("state") or "closed"
-        kind = "pull request" if stamp.get("kind") == "pull-request" else "issue"
-        who = f" by {stamp['actor']}" if stamp.get("actor") else ""
-        text = f"the-loop: {work_item.ref} is {state} — its {kind} was {state}{who}."
+        kind = (
+            strings.t("webhook.dispatcher.closure.kind-pull-request")
+            if stamp.get("kind") == "pull-request"
+            else strings.t("webhook.dispatcher.closure.kind-issue")
+        )
+        who = (
+            strings.t("webhook.dispatcher.closure.by", actor=stamp["actor"])
+            if stamp.get("actor")
+            else ""
+        )
+        text = strings.t(
+            "webhook.dispatcher.closure.announce",
+            ref=work_item.ref,
+            state=state,
+            kind=kind,
+            who=who,
+        )
         detail = {k: v for k, v in stamp.items() if v}
         try:
             self.lifecycle("work-item.closed", work_item.ref, text, detail)

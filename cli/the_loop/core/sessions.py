@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from .. import cli_config, envstate, eventlog, lifecycle, prompts
+from .. import strings
 from ..authz import mark_self_authored
 from ..cleanup import SESSION, TMUX, WORKSPACE
 from ..comments import post_issue_comment, post_issue_comment_with_url
@@ -471,10 +472,10 @@ def register_session(
         messages.append(
             {
                 "stream": "err",
-                "text": (
-                    f"warning: harness CLI {binary!r} not found on PATH; events "
-                    f"for {work_item.ref} cannot be dispatched until it is "
-                    "installed"
+                "text": strings.t(
+                    "core.sessions.register.no-binary",
+                    binary=binary,
+                    ref=work_item.ref,
                 ),
             }
         )
@@ -494,7 +495,12 @@ def register_session(
     messages.append(
         {
             "stream": "out",
-            "text": f"registered {work_item.ref} -> {harness}:{harness_session_id}",
+            "text": strings.t(
+                "core.sessions.register.done",
+                ref=work_item.ref,
+                harness=harness,
+                session=harness_session_id,
+            ),
         }
     )
     return {
@@ -606,9 +612,8 @@ def link_pull_request(
             "messages": [
                 {
                     "stream": "err",
-                    "text": (
-                        f"no session recorded for {work_item.ref} — register the "
-                        "session before recording the pull requests it opens"
+                    "text": strings.t(
+                        "core.sessions.link-pr.no-session", ref=work_item.ref
                     ),
                 }
             ],
@@ -622,9 +627,11 @@ def link_pull_request(
     # request re-runs this step, and a second call writes nothing.
     _record_pull_request_in_state(work_item, pr, config, registry)
     text = (
-        f"recorded {pr.ref} as delivering {work_item.ref}"
+        strings.t("core.sessions.link-pr.linked", pr=pr.ref, ref=work_item.ref)
         if linked
-        else f"{pr.ref} is already recorded as delivering {work_item.ref}"
+        else strings.t(
+            "core.sessions.link-pr.already-linked", pr=pr.ref, ref=work_item.ref
+        )
     )
     return {
         "workItem": work_item.ref,
@@ -654,7 +661,10 @@ def close_session(
     messages: List[Dict[str, str]] = []
     if not registry.close(work_item):
         messages.append(
-            {"stream": "err", "text": f"no active session for {work_item.ref}"}
+            {
+                "stream": "err",
+                "text": strings.t("core.sessions.close.no-session", ref=work_item.ref),
+            }
         )
         return {
             "workItem": work_item.ref,
@@ -674,21 +684,26 @@ def close_session(
                     messages.append(
                         {
                             "stream": "out",
-                            "text": (
-                                f"ended the harness in tmux session "
-                                f"{session.tmux_target}"
+                            "text": strings.t(
+                                "core.sessions.close.harness-ended",
+                                target=session.tmux_target,
                             ),
                         }
                     )
                 elif not result.ok:
-                    messages.append({"stream": "err", "text": f"note: {result.error}"})
+                    messages.append(
+                        {
+                            "stream": "err",
+                            "text": strings.t(
+                                "core.sessions.note", detail=result.error
+                            ),
+                        }
+                    )
             messages.append(
                 {
                     "stream": "out",
-                    "text": (
-                        f"kept tmux session {session.tmux_target} — attach: tmux "
-                        f"attach -r -t {session.tmux_target} (pass --kill-tmux to "
-                        "end it)"
+                    "text": strings.t(
+                        "core.sessions.close.tmux-kept", target=session.tmux_target
                     ),
                 }
             )
@@ -698,13 +713,24 @@ def close_session(
                 {
                     "stream": "out",
                     "text": (
-                        f"killed tmux session {session.tmux_target}"
+                        strings.t(
+                            "core.sessions.close.tmux-killed",
+                            target=session.tmux_target,
+                        )
                         if result.ok
-                        else f"note: tmux session {session.tmux_target} was already gone"
+                        else strings.t(
+                            "core.sessions.close.tmux-gone",
+                            target=session.tmux_target,
+                        )
                     ),
                 }
             )
-    messages.append({"stream": "out", "text": f"closed session for {work_item.ref}"})
+    messages.append(
+        {
+            "stream": "out",
+            "text": strings.t("core.sessions.close.done", ref=work_item.ref),
+        }
+    )
     return {
         "workItem": work_item.ref,
         "closed": True,
@@ -854,7 +880,12 @@ def ask_session(
     messages: List[Dict[str, str]] = []
     if ok:
         where = f" — {url}" if url else ""
-        messages.append({"stream": "out", "text": f"asked on {work_item.ref}{where}"})
+        messages.append(
+            {
+                "stream": "out",
+                "text": strings.t("core.sessions.ask.asked", ref=work_item.ref) + where,
+            }
+        )
         for posted in channel_results:
             if not posted.ok and not channels_posted:
                 continue  # the one line below says it once, and says it properly
@@ -862,12 +893,14 @@ def ask_session(
                 {
                     "stream": "out" if posted.ok else "err",
                     "text": (
-                        f"also asked on the {posted.channel} channel"
+                        strings.t(
+                            "core.sessions.ask.also-asked", channel=posted.channel
+                        )
                         if posted.ok
-                        else (
-                            f"note: the {posted.channel} channel did not take the "
-                            f"question ({posted.error}); another channel did, and "
-                            "the work item has it"
+                        else strings.t(
+                            "core.sessions.ask.channel-refused",
+                            channel=posted.channel,
+                            error=posted.error,
                         )
                     ),
                 }
@@ -884,41 +917,28 @@ def ask_session(
             messages.append(
                 {
                     "stream": "err",
-                    "text": (
-                        f"note: NO channel took this question ({refused}) — nobody "
-                        "has been paged. It is queued for redelivery and "
-                        "`the-loop status` counts it until it lands"
-                    ),
+                    "text": strings.t("core.sessions.ask.no-channel", refused=refused),
                 }
             )
         if _bus_is_silent:
             messages.append(
                 {
                     "stream": "err",
-                    "text": (
-                        "note: this question reached GitHub only — the resolved "
-                        "config subscribes no channel to session.awaiting_input, "
-                        "so no room was told the loop is waiting. Check "
-                        "$THE_LOOP_CLI_CONFIG / --config points at the daemon's "
-                        "config, and that its channels subscribe the event"
-                    ),
+                    "text": strings.t("core.sessions.ask.github-only"),
                 }
             )
         messages.append(
             {
                 "stream": "out",
-                "text": (
-                    "recorded the wait (session.awaiting_input) — now stop and "
-                    "wait; the answer arrives as a new event in this session"
-                ),
+                "text": strings.t("core.sessions.ask.recorded-wait"),
             }
         )
     else:
         messages.append(
             {
                 "stream": "err",
-                "text": (
-                    f"error: could not post the question on {work_item.ref} ({error})"
+                "text": strings.t(
+                    "core.sessions.ask.post-failed", ref=work_item.ref, error=error
                 ),
             }
         )
@@ -927,17 +947,15 @@ def ask_session(
                 messages.append(
                     {
                         "stream": "out",
-                        "text": f"still asked on the {posted.channel} channel",
+                        "text": strings.t(
+                            "core.sessions.ask.still-asked", channel=posted.channel
+                        ),
                     }
                 )
         messages.append(
             {
                 "stream": "err",
-                "text": (
-                    "recorded the wait anyway (session.awaiting_input, "
-                    "comment_posted=false) — an operator can still answer "
-                    "through the control plane's reply route"
-                ),
+                "text": strings.t("core.sessions.ask.recorded-wait-anyway"),
             }
         )
     return {
@@ -1056,7 +1074,9 @@ def reply_session(
         messages.append(
             {
                 "stream": "err",
-                "text": f"error: could not deliver the reply: {result.error}",
+                "text": strings.t(
+                    "core.sessions.reply.deliver-failed", error=result.error
+                ),
             }
         )
         return {
@@ -1069,8 +1089,8 @@ def reply_session(
     messages.append(
         {
             "stream": "out",
-            "text": (
-                f"delivered the reply into {session.tmux_target} (session.reply_sent)"
+            "text": strings.t(
+                "core.sessions.reply.delivered", target=session.tmux_target
             ),
         }
     )
@@ -1089,15 +1109,21 @@ def reply_session(
             )
         if posted:
             messages.append(
-                {"stream": "out", "text": f"recorded the reply on {work_item.ref}"}
+                {
+                    "stream": "out",
+                    "text": strings.t(
+                        "core.sessions.reply.recorded", ref=work_item.ref
+                    ),
+                }
             )
         else:
             messages.append(
                 {
                     "stream": "err",
-                    "text": (
-                        f"note: could not record the reply on {work_item.ref} "
-                        f"({error}); it was still delivered"
+                    "text": strings.t(
+                        "core.sessions.reply.record-failed",
+                        ref=work_item.ref,
+                        error=error,
                     ),
                 }
             )
@@ -1126,16 +1152,22 @@ def framed_record(
 ) -> str:
     """The pasted prompt for a recorded act — one of :data:`FRAMES` — with the
     text under a rule, so the data and the framing are visibly two things."""
-    who = str(detail.get("person") or actor or "a member")
+    who = str(
+        detail.get("person")
+        or actor
+        or prompts.load("sessions/frame-default-person", inline=True)
+    )
     thread = str(detail.get("thread") or "")
     rationale = str(detail.get("rationale") or "").strip()
     kind_word = str(detail.get("kind") or "")
     head = FRAMES[kind].format(
         person=who,
         count=str(detail.get("count") or "?"),
-        thread=thread or "(no link)",
+        thread=thread or prompts.load("sessions/frame-no-thread", inline=True),
         ref=work_item.ref,
-        url=str(detail.get("url") or "(not recorded)"),
+        url=str(
+            detail.get("url") or prompts.load("sessions/frame-no-url", inline=True)
+        ),
         kind=(
             prompts.render("sessions/frame-kind", inline=True, kind=kind_word)
             if kind_word
@@ -1166,11 +1198,10 @@ def _reply_report(text: str, actor: str) -> str:
     be forwarded by the poller into the very session the reply route already
     delivered it to.
     """
-    who = f" from `{actor}`" if actor else ""
+    who = strings.t("core.sessions.reply-report.from", actor=actor) if actor else ""
     quoted = "\n".join(f"> {line}" for line in (text.splitlines() or [""]))
     return mark_self_authored(
-        f"🗣️ **the-loop** delivered a reply{who} into this work item's session "
-        "via the control plane (`POST /api/v1/sessions/reply`):\n\n" + quoted
+        strings.t("core.sessions.reply-report.head", who=who) + quoted
     )
 
 
@@ -1243,10 +1274,11 @@ def control_session(
         messages.append(
             {
                 "stream": "err",
-                "text": (
-                    f"error: this instance ({instance.name or 'unnamed'}) is locked "
-                    f"and does not manage {work_item.ref}; declare it under "
-                    "instance.scope.workItems in cli-config.yaml to add it"
+                "text": strings.t(
+                    "core.sessions.start.instance-locked",
+                    instance=instance.name
+                    or strings.t("core.sessions.start.instance-unnamed"),
+                    ref=work_item.ref,
                 ),
             }
         )
@@ -1328,20 +1360,35 @@ def _apply(
         if session is not None and session.is_paused:
             registry.resume(work_item)
             messages.append(
-                {"stream": "out", "text": f"resumed session for {work_item.ref}"}
+                {
+                    "stream": "out",
+                    "text": strings.t("core.sessions.resumed", ref=work_item.ref),
+                }
             )
             return "resumed", 0
         if verb == RESUME:
-            where = "is not paused" if session is not None else "has no session"
             messages.append(
-                {"stream": "err", "text": f"nothing to resume: {work_item.ref} {where}"}
+                {
+                    "stream": "err",
+                    "text": (
+                        strings.t("core.sessions.resume.not-paused", ref=work_item.ref)
+                        if session is not None
+                        else strings.t(
+                            "core.sessions.resume.no-session", ref=work_item.ref
+                        )
+                    ),
+                }
             )
             return "noop", 1
         if session is not None:
             messages.append(
                 {
                     "stream": "out",
-                    "text": f"{work_item.ref} is already running ({session.harness})",
+                    "text": strings.t(
+                        "core.sessions.already-running",
+                        ref=work_item.ref,
+                        harness=session.harness,
+                    ),
                 }
             )
             return "running", 0
@@ -1352,9 +1399,8 @@ def _apply(
             messages.append(
                 {
                     "stream": "err",
-                    "text": (
-                        f"no running session for {work_item.ref} to pause; recorded "
-                        "the pause, so it will not spawn on its own"
+                    "text": strings.t(
+                        "core.sessions.pause.no-session", ref=work_item.ref
                     ),
                 }
             )
@@ -1362,10 +1408,7 @@ def _apply(
         messages.append(
             {
                 "stream": "out",
-                "text": (
-                    f"paused session for {work_item.ref} — events are held until "
-                    "you resume it"
-                ),
+                "text": strings.t("core.sessions.paused", ref=work_item.ref),
             }
         )
         return "paused", 0
@@ -1378,10 +1421,7 @@ def _apply(
         messages.append(
             {
                 "stream": "err",
-                "text": (
-                    f"no live session for {work_item.ref}; recorded the stop, so it "
-                    "will not spawn on its own"
-                ),
+                "text": strings.t("core.sessions.stop.no-session", ref=work_item.ref),
             }
         )
         return "noop", 1
@@ -1393,7 +1433,7 @@ def _apply(
     messages.append(
         {
             "stream": "out",
-            "text": f"stopped execution for {work_item.ref} (session closed)",
+            "text": strings.t("core.sessions.stopped", ref=work_item.ref),
         }
     )
     return "stopped", 0
@@ -1433,10 +1473,8 @@ def _cleanup(
         messages.append(
             {
                 "stream": "out",
-                "text": (
-                    "ended "
-                    + ", ".join(outcome.endpoints)
-                    + " — their tmux sessions and transcripts are gone"
+                "text": strings.t(
+                    "core.sessions.cleanup.tmux", endpoints=", ".join(outcome.endpoints)
                 ),
             }
         )
@@ -1444,36 +1482,31 @@ def _cleanup(
         messages.append(
             {
                 "stream": "out",
-                "text": (
-                    f"removed the workspace checkout under {routing.workspace.root} "
-                    "— uncommitted work in it is gone"
+                "text": strings.t(
+                    "core.sessions.cleanup.workspace", root=routing.workspace.root
                 ),
             }
         )
     if SESSION in outcome.removed:
         messages.append(
-            {"stream": "out", "text": "removed the machine-local session record"}
+            {"stream": "out", "text": strings.t("core.sessions.cleanup.session")}
         )
     for error in outcome.errors:
-        messages.append({"stream": "err", "text": f"error: {error}"})
+        messages.append(
+            {"stream": "err", "text": strings.t("core.sessions.error", error=error)}
+        )
     if not outcome.found:
         messages.append(
             {
                 "stream": "err",
-                "text": (
-                    f"nothing to clean up for {work_item.ref}; recorded the "
-                    "request, so it will not spawn on its own"
-                ),
+                "text": strings.t("core.sessions.cleanup.nothing", ref=work_item.ref),
             }
         )
         return "nothing-to-clean", 0
     messages.append(
         {
             "stream": "out",
-            "text": (
-                f"cleaned up {work_item.ref} — its portable record (control, poll, "
-                "graph) is kept, and nothing remote was touched"
-            ),
+            "text": strings.t("core.sessions.cleanup.done", ref=work_item.ref),
         }
     )
     return ("cleaned" if outcome.ok else "partial"), (0 if outcome.ok else 1)
@@ -1505,10 +1538,7 @@ def _spawn_for_start(
         messages.append(
             {
                 "stream": "err",
-                "text": (
-                    "error: routing.spawnOnUnmatched is 'never', so the-loop will "
-                    "not spawn sessions; set it to 'labeled' (or 'always') first"
-                ),
+                "text": strings.t("core.sessions.start.spawn-never"),
             }
         )
         dispatcher.stop(timeout=5)
@@ -1534,7 +1564,10 @@ def _spawn_for_start(
         labeled=True,
     )
     messages.append(
-        {"stream": "out", "text": f"starting a session for {work_item.ref}…"}
+        {
+            "stream": "out",
+            "text": strings.t("core.sessions.start.starting", ref=work_item.ref),
+        }
     )
     try:
         dispatcher.handle(routed)
@@ -1549,9 +1582,8 @@ def _spawn_for_start(
             messages.append(
                 {
                     "stream": "out",
-                    "text": (
-                        f"started the loop for {work_item.ref}; waiting at its "
-                        "first human gate before launching a session"
+                    "text": strings.t(
+                        "core.sessions.start.waiting-gate", ref=work_item.ref
                     ),
                 }
             )
@@ -1561,19 +1593,18 @@ def _spawn_for_start(
         messages.append(
             {
                 "stream": "err",
-                "text": (
-                    f"error: could not start a session for {work_item.ref} — see "
-                    "the log above (and `the-loop events --work-item …`) for why"
-                ),
+                "text": strings.t("core.sessions.start.failed", ref=work_item.ref),
             }
         )
         return "failed", 1
     messages.append(
         {
             "stream": "out",
-            "text": (
-                f"started {session.harness} session for {work_item.ref} "
-                f"(tmux: {session.tmux_target})"
+            "text": strings.t(
+                "core.sessions.start.started",
+                harness=session.harness,
+                ref=work_item.ref,
+                target=session.tmux_target,
             ),
         }
     )
@@ -1604,7 +1635,11 @@ def _announce(
         messages.append(
             {
                 "stream": "out",
-                "text": f"commented {config.keyword(verb)!r} on {work_item.ref}",
+                "text": strings.t(
+                    "core.sessions.commented",
+                    keyword=config.keyword(verb),
+                    ref=work_item.ref,
+                ),
             }
         )
         eventlog.emit("control.announced", work_item=work_item.ref, command=verb)
@@ -1612,9 +1647,8 @@ def _announce(
     messages.append(
         {
             "stream": "err",
-            "text": (
-                f"note: could not comment on {work_item.ref} ({error}); the command "
-                "was still applied locally"
+            "text": strings.t(
+                "core.sessions.comment-failed", ref=work_item.ref, error=error
             ),
         }
     )
@@ -1807,7 +1841,7 @@ def _restart_selection(
                     "ref": work_item.ref,
                     "tmuxTarget": "",
                     "outcome": "skipped",
-                    "detail": "no session is registered for this work item",
+                    "detail": strings.t("core.sessions.restart.no-session"),
                     "stale": [],
                 }
             )
@@ -1844,24 +1878,24 @@ def _restart_one(
     if not target or not runner.live_pane_pids(target):
         row.update(
             outcome="skipped",
-            detail=(
-                "not running — `the-loop sessions start` brings a stopped session up"
-            ),
+            detail=strings.t("core.sessions.restart.not-running"),
         )
         return row
     session_id = session.harness_session_id
     if not session_id or not _RESTART_SESSION_ID_RE.match(session_id):
         row.update(
             outcome="skipped",
-            detail=(
-                "no resumable harness conversation is recorded; left running rather "
-                "than replaced with a blank one"
-            ),
+            detail=strings.t("core.sessions.restart.not-resumable"),
         )
         return row
     adapter = _restart_adapter(session, config)
     if adapter is None:
-        row.update(outcome="skipped", detail=f"unknown harness {session.harness!r}")
+        row.update(
+            outcome="skipped",
+            detail=strings.t(
+                "core.sessions.restart.unknown-harness", harness=session.harness
+            ),
+        )
         return row
     try:
         adapter.interactive_resume_argv(RESTART_NOTICE, session_id)
@@ -1897,10 +1931,7 @@ def _restart_one(
         # so rather than reported as a success the operator would not re-check.
         row.update(
             outcome="failed",
-            detail=(
-                "the relaunched harness exited immediately — the conversation "
-                "could not be resumed"
-            ),
+            detail=strings.t("core.sessions.restart.exited"),
         )
         eventlog.emit(
             "session.restart_failed",
@@ -1923,7 +1954,7 @@ def _restart_one(
     else:
         row.update(
             outcome="unverified",
-            detail="this host would not report the new process's environment",
+            detail=strings.t("core.sessions.restart.unverified"),
         )
     eventlog.emit(
         "session.restarted",
@@ -1975,10 +2006,7 @@ def restart_sessions(
         messages.append(
             {
                 "stream": "err",
-                "text": (
-                    "error: name a work item to restart, or pass --all to restart "
-                    "every running session"
-                ),
+                "text": strings.t("core.sessions.restart.name-one"),
             }
         )
         return {"sessions": [], "exitCode": 2, "messages": messages}
@@ -1987,11 +2015,7 @@ def restart_sessions(
         messages.append(
             {
                 "stream": "err",
-                "text": (
-                    "error: no env file is configured, so there is no refreshed "
-                    "environment to restart onto — set `env.file` (or "
-                    "`env.sessionPassthrough`) in the CLI config"
-                ),
+                "text": strings.t("core.sessions.restart.no-env-file"),
             }
         )
         return {"sessions": [], "exitCode": 2, "messages": messages}
@@ -2000,10 +2024,12 @@ def restart_sessions(
         messages.append(
             {
                 "stream": "err",
-                "text": (
-                    "note: the env file has malformed "
-                    + ", ".join(f"line {n}" for n in invalid_lines)
-                    + "; the rest were read"
+                "text": strings.t(
+                    "core.sessions.restart.malformed-lines",
+                    lines=", ".join(
+                        strings.t("core.sessions.restart.line", n=n)
+                        for n in invalid_lines
+                    ),
                 ),
             }
         )
@@ -2017,19 +2043,41 @@ def restart_sessions(
         credentials_dir=_layout(config).session_credentials_dir,
     )
     forward = declared_values.forward
+    counts = dict(
+        n=len(selected),
+        forward_n=len(forward),
+        forward=", ".join(sorted(forward)),
+        removed_n=len(declared_values.remove),
+        removed=", ".join(declared_values.remove),
+    )
     messages.append(
         {
             "stream": "out",
             "text": (
-                f"{'checking' if dry_run else 'restarting'} {len(selected)} "
-                f"session(s): forwarding {len(forward)} variable(s) "
-                f"[{', '.join(sorted(forward))}], keeping out "
-                f"{len(declared_values.remove)} "
-                f"[{', '.join(declared_values.remove)}]"
+                (
+                    strings.t(
+                        "core.sessions.restart.summary-checking",
+                        n=counts["n"],
+                        forward_n=counts["forward_n"],
+                        forward=counts["forward"],
+                        removed_n=counts["removed_n"],
+                        removed=counts["removed"],
+                    )
+                    if dry_run
+                    else strings.t(
+                        "core.sessions.restart.summary-restarting",
+                        n=counts["n"],
+                        forward_n=counts["forward_n"],
+                        forward=counts["forward"],
+                        removed_n=counts["removed_n"],
+                        removed=counts["removed"],
+                    )
+                )
                 + (
-                    ", handing over "
-                    + ", ".join(c.name for c in declared_values.credentials)
-                    + " where in scope"
+                    strings.t(
+                        "core.sessions.restart.handing-over",
+                        names=", ".join(c.name for c in declared_values.credentials),
+                    )
                     if declared_values.credentials
                     else ""
                 )
@@ -2045,10 +2093,7 @@ def restart_sessions(
         messages.append(
             {
                 "stream": "err",
-                "text": (
-                    f"error: {len(failed)} session(s) did not come back on the "
-                    "declared environment — they are named above"
-                ),
+                "text": strings.t("core.sessions.restart.failed", n=len(failed)),
             }
         )
     unverified = [row for row in rows if row["outcome"] == "unverified"]
@@ -2056,10 +2101,8 @@ def restart_sessions(
         messages.append(
             {
                 "stream": "err",
-                "text": (
-                    f"note: {len(unverified)} session(s) were relaunched but could "
-                    "not be verified on this host; `the-loop status` will not report "
-                    "on them either"
+                "text": strings.t(
+                    "core.sessions.restart.unverified-count", n=len(unverified)
                 ),
             }
         )
@@ -2085,8 +2128,9 @@ def _restart_line(
     if row.get("ref"):
         declared_values = declared_values.for_work_item(row["ref"])
     if row.get("stale"):
-        line += " — still differing: " + ", ".join(
-            _wanted(name, declared_values) for name in row["stale"]
+        line += strings.t(
+            "core.sessions.restart.still-differing",
+            names=", ".join(_wanted(name, declared_values) for name in row["stale"]),
         )
     elif row.get("detail"):
         line += f" — {row['detail']}"
@@ -2096,7 +2140,15 @@ def _restart_line(
 def _wanted(name: str, declared_values: envstate.SessionEnvironment) -> str:
     """How a differing name is rendered: a fingerprint, or "must be absent"."""
     if name in declared_values.forward:
-        return f"{name} (wanted {envstate.fingerprint(declared_values.forward[name])})"
+        return strings.t(
+            "core.sessions.restart.wanted",
+            name=name,
+            fingerprint=envstate.fingerprint(declared_values.forward[name]),
+        )
     if name in declared_values.inherit:
-        return f"{name} (wanted {envstate.fingerprint(declared_values.inherit[name])})"
-    return f"{name} (held; a session must not hold it)"
+        return strings.t(
+            "core.sessions.restart.wanted",
+            name=name,
+            fingerprint=envstate.fingerprint(declared_values.inherit[name]),
+        )
+    return strings.t("core.sessions.restart.held", name=name)

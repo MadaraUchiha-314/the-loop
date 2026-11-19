@@ -119,6 +119,33 @@ def test_tools_list_is_the_core_surface_minus_exclusions(mcp):
     assert "ref" in by_name["get_work_item"]["inputSchema"]["properties"]
 
 
+def test_each_tool_description_is_its_prompt_file(mcp):
+    """
+    Feature: MCP tool descriptions live in the prompt catalog
+      Scenario: an agent reads what a tool does
+        Given every registered tool
+        When the host calls tools/list
+        Then each description is prompts/mcp/tools/<tool>.md verbatim (one
+             trailing newline dropped), and every such file names a served tool
+
+    Requirement: docs/specs/issue-540/design.md § "The remaining prompts"
+    """
+    from the_loop import prompts
+
+    client, _ = mcp
+    tools = client.request("tools/list")["result"]["tools"]
+    served = {t["name"]: t["description"] for t in tools}
+    files = {
+        name[len("mcp/tools/") :]
+        for name in prompts.names()
+        if name.startswith("mcp/tools/")
+    }
+    assert files == set(served)
+    for name, description in served.items():
+        assert description == prompts.load(f"mcp/tools/{name}", inline=True), name
+        assert description and not description.endswith("\n"), name
+
+
 def test_tools_call_round_trips_core_data(mcp):
     """
     Feature: MCP tools serve the same data as REST

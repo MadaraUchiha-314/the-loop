@@ -51,6 +51,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
+from . import strings
 from .harness_plugins import (
     DEFAULT_MARKETPLACE_REPO,
     MARKETPLACE_NAME,
@@ -353,7 +354,11 @@ def plan_cli(*, scope: str, upgrade: bool, project_dir: Path, env: Env) -> List[
     dependency manifest.
     """
     verb = "upgrade" if upgrade else "install"
-    summary = f"{verb} the {DISTRIBUTION} CLI"
+    summary = (
+        strings.t("install.cli.upgrade", distribution=DISTRIBUTION)
+        if upgrade
+        else strings.t("install.cli.install", distribution=DISTRIBUTION)
+    )
     if scope == "project":
         python = _venv_python(project_dir)
         if python is None:
@@ -362,9 +367,8 @@ def plan_cli(*, scope: str, upgrade: bool, project_dir: Path, env: Env) -> List[
                     "cli",
                     summary,
                     state="skipped",
-                    detail=(
-                        f"no virtualenv at {Path(project_dir) / '.venv'}; create one "
-                        "(e.g. `uv venv`), or install for your user with --scope user"
+                    detail=strings.t(
+                        "install.cli.no-venv", venv=Path(project_dir) / ".venv"
                     ),
                 )
             ]
@@ -380,10 +384,7 @@ def plan_cli(*, scope: str, upgrade: bool, project_dir: Path, env: Env) -> List[
                 "cli",
                 summary,
                 state="skipped",
-                detail=(
-                    f"running from a source checkout at {detail}; update it with "
-                    "`git pull` (and `uv sync`) rather than installing over it"
-                ),
+                detail=strings.t("install.cli.source-checkout", checkout=detail),
             )
         ]
     if method == "uv-tool" and env.which("uv"):
@@ -428,17 +429,22 @@ def plan_claude(
     )
     target = str(store.settings_path())
     reason = (
-        "claude not found on PATH"
+        strings.t("install.claude.not-on-path")
         if not surface.path
-        else "this claude build exposes no `plugin` command"
+        else strings.t("install.claude.no-plugin-command")
     )
     return [
         Step(
             "claude",
-            f"register {MARKETPLACE_NAME} ({repo}) and enable {PLUGIN_KEY}",
+            strings.t(
+                "install.claude.settings",
+                marketplace=MARKETPLACE_NAME,
+                repo=repo,
+                plugin=PLUGIN_KEY,
+            ),
             writer=lambda: store.enable(repo),
             target=target,
-            detail=f"{reason}; wrote the plugin settings directly",
+            detail=strings.t("install.claude.settings-detail", reason=reason),
         )
     ]
 
@@ -459,13 +465,9 @@ def _harness_cli_steps(
         return [
             Step(
                 component,
-                f"install the the-loop plugin for {component}",
+                strings.t("install.plugin.install-for", component=component),
                 state="skipped",
-                detail=(
-                    f"`{surface.binary} plugin install` does not accept --scope, so a "
-                    "project-scoped install cannot be expressed; re-run with "
-                    "--scope user, or install it from the harness UI"
-                ),
+                detail=strings.t("install.plugin.no-scope", binary=surface.binary),
             )
         ]
     cwd = Path(project_dir) if scope == "project" else None
@@ -473,13 +475,15 @@ def _harness_cli_steps(
         return [
             Step(
                 component,
-                f"refresh the {MARKETPLACE_NAME} marketplace",
+                strings.t(
+                    "install.plugin.refresh-marketplace", marketplace=MARKETPLACE_NAME
+                ),
                 argv=[binary, "plugin", "marketplace", "update", MARKETPLACE_NAME],
                 cwd=cwd,
             ),
             Step(
                 component,
-                f"update {PLUGIN_KEY}",
+                strings.t("install.plugin.update", plugin=PLUGIN_KEY),
                 argv=[binary, "plugin", "update", PLUGIN_KEY] + scope_args,
                 cwd=cwd,
             ),
@@ -487,13 +491,17 @@ def _harness_cli_steps(
     return [
         Step(
             component,
-            f"register the {MARKETPLACE_NAME} marketplace ({repo})",
+            strings.t(
+                "install.plugin.register-marketplace",
+                marketplace=MARKETPLACE_NAME,
+                repo=repo,
+            ),
             argv=[binary, "plugin", "marketplace", "add", repo] + scope_args,
             cwd=cwd,
         ),
         Step(
             component,
-            f"install {PLUGIN_KEY}",
+            strings.t("install.plugin.install", plugin=PLUGIN_KEY),
             argv=[binary, "plugin", "install", PLUGIN_KEY] + scope_args,
             cwd=cwd,
         ),
@@ -538,9 +546,9 @@ def plan(
                 steps.append(
                     Step(
                         "codex",
-                        "check Codex CLI",
+                        strings.t("install.codex.check"),
                         state="failed",
-                        detail="codex not found on PATH; install the official Codex CLI first",
+                        detail=strings.t("install.codex.not-on-path"),
                     )
                 )
             else:
@@ -548,12 +556,12 @@ def plan(
                 steps.append(
                     Step(
                         "codex",
-                        "prepare the-loop instructions and Stop hook",
+                        strings.t("install.codex.prepare"),
                         writer=lambda target=target: prepare_instructions(
                             str(target), global_scope=scope == "user"
                         ),
                         target=str(target / "AGENTS.md"),
-                        detail="Trust the new Stop hook once with Codex /hooks; existing instructions and hooks are preserved.",
+                        detail=strings.t("install.codex.prepare-detail"),
                     )
                 )
         else:
@@ -613,7 +621,7 @@ def _execute_one(step: Step) -> StepResult:
                 step.summary,
                 "already",
                 step.render(),
-                "already registered",
+                strings.t("install.result.already-registered"),
             )
         return StepResult(
             step.component,
@@ -634,7 +642,11 @@ def _execute_one(step: Step) -> StepResult:
             step.summary,
             "failed",
             step.render(),
-            f"exit {completed.returncode}: {_last_line(completed)}",
+            strings.t(
+                "install.result.exit",
+                code=completed.returncode,
+                line=_last_line(completed),
+            ),
         )
     return StepResult(
         step.component, step.summary, "applied", step.render(), _last_line(completed)

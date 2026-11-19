@@ -17,6 +17,7 @@ import type { RestartSchedule } from "../api/types.ts";
 import { ConfigSection } from "../components/ConfigEditor.tsx";
 import type { Chrome } from "../components/HeaderBar.tsx";
 import { HeaderBar } from "../components/HeaderBar.tsx";
+import { t } from "../i18n.ts";
 import { Card, ControlButton, FieldLabel, INPUT_CLASS, Kicker, LearnMore, Report } from "../components/primitives.tsx";
 import { StatusDot, type DotStatus } from "../components/StatusDot.tsx";
 import { useApi } from "../state/ApiContext.tsx";
@@ -44,14 +45,15 @@ export function Settings({ chrome }: { chrome: Chrome }) {
 
   return (
     <>
-      <HeaderBar chrome={chrome} title="Settings" meta={<span>Where this browser points, and the daemon&rsquo;s own configuration.</span>} />
+      <HeaderBar chrome={chrome} title={t("ui.settings.title")} meta={<span>{t("ui.settings.meta")}</span>} />
       <div className="scroll-thin min-h-0 flex-1 overflow-y-auto px-6 py-6">
       <div className="mx-auto max-w-3xl space-y-4">
 
       <Card>
-        <Kicker>API server</Kicker>
+        <Kicker>{t("ui.settings.api.kicker")}</Kicker>
         <FieldLabel htmlFor="lp-baseurl">
-          Base URL — the workstation running <code className="ref-chip">the-loop start</code>
+          {t("ui.settings.api.base-url")}
+          <code className="ref-chip">the-loop start</code>
         </FieldLabel>
         <div className="flex flex-wrap items-center gap-2">
           <input
@@ -67,7 +69,7 @@ export function Settings({ chrome }: { chrome: Chrome }) {
             autoComplete="off"
           />
           <ControlButton primary onClick={() => void saveAndTest()}>
-            Save &amp; test
+            {t("ui.settings.api.save")}
           </ControlButton>
         </div>
 
@@ -78,32 +80,30 @@ export function Settings({ chrome }: { chrome: Chrome }) {
 
         <LearnMore>
           <p>
-            This dashboard is a static page — hosted anywhere, pointed at any workstation. The service binds loopback
-            by default and refuses a non-loopback bind unless <code>service.exposed: true</code>, and it carries no
-            in-app auth. This page&rsquo;s origin is allowed to read it out of the box
-            (<code>service.cors.allowOrigins</code>); a copy hosted anywhere else has to be added there. A service on
-            another machine still needs to reach this browser — an SSH tunnel
-            (<code>ssh -L 8787:127.0.0.1:8787 workstation</code>) or a gateway that terminates auth. The URL is saved
-            in this browser (localStorage); the health check is GET {normalizeBaseUrl(draft)}/api/v1/health.
+            {t("ui.settings.api.learn.a")}
+            <code>service.exposed: true</code>
+            {t("ui.settings.api.learn.b")}
+            <code>service.cors.allowOrigins</code>
+            {t("ui.settings.api.learn.c")}
+            <code>ssh -L 8787:127.0.0.1:8787 workstation</code>
+            {t("ui.settings.api.learn.d", { url: normalizeBaseUrl(draft) })}
           </p>
         </LearnMore>
       </Card>
 
       <Card>
-        <Kicker>Data source</Kicker>
+        <Kicker>{t("ui.settings.data.kicker")}</Kicker>
         <div className="flex flex-wrap gap-2">
           <ModeButton current={settings.mode} value="live" onPick={updateSettings}>
-            Live service
+            {t("ui.settings.data.live")}
           </ModeButton>
           <ModeButton current={settings.mode} value="demo" onPick={updateSettings}>
-            Demo fixture
+            {t("ui.settings.data.demo")}
           </ModeButton>
         </div>
         <LearnMore>
           <p>
-            The demo serves a bundled fixture in the same record shapes the service uses, so the screens can be
-            evaluated without a reachable workstation. Control verbs in demo mode mutate an in-memory copy and never
-            leave the browser.
+            {t("ui.settings.data.learn")}
           </p>
         </LearnMore>
       </Card>
@@ -122,18 +122,18 @@ export function Settings({ chrome }: { chrome: Chrome }) {
 const MODES: { value: RefreshMode; name: string; why: string }[] = [
   {
     value: "stream",
-    name: "Streaming",
-    why: "The service pushes changes as they happen. One connection, held open. Best on loopback or a stable tunnel.",
+    name: t("ui.settings.refresh.stream.name"),
+    why: t("ui.settings.refresh.stream.why"),
   },
   {
     value: "poll",
-    name: "Polling",
-    why: "Ask again on a timer. A failed cycle costs one request, so this is the kinder mode over a flaky link.",
+    name: t("ui.settings.refresh.poll.name"),
+    why: t("ui.settings.refresh.poll.why"),
   },
   {
     value: "manual",
-    name: "Manual",
-    why: "No background request of any kind. The screen changes only when you ask it to.",
+    name: t("ui.settings.refresh.manual.name"),
+    why: t("ui.settings.refresh.manual.why"),
   },
 ];
 
@@ -150,10 +150,10 @@ function RefreshSection() {
   const { settings, updateSettings } = useApi();
   return (
     <Card>
-      <Kicker>Refresh</Kicker>
+      <Kicker>{t("ui.settings.refresh.kicker")}</Kicker>
       <fieldset className="space-y-2">
-        <legend className="text-xs text-muted-foreground">How this browser keeps the screen current</legend>
-        <div className="grid gap-1.5 sm:grid-cols-3" role="radiogroup" aria-label="Refresh mode">
+        <legend className="text-xs text-muted-foreground">{t("ui.settings.refresh.legend")}</legend>
+        <div className="grid gap-1.5 sm:grid-cols-3" role="radiogroup" aria-label={t("ui.settings.refresh.label")}>
           {MODES.map((mode) => (
             <label
               className={`flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 transition-colors ${
@@ -180,7 +180,7 @@ function RefreshSection() {
 
       {settings.refreshMode === "poll" ? (
         <div className="flex flex-wrap items-center gap-2">
-          <FieldLabel htmlFor="lp-poll">Poll interval</FieldLabel>
+          <FieldLabel htmlFor="lp-poll">{t("ui.settings.refresh.interval")}</FieldLabel>
           <select
             id="lp-poll"
             className={`${INPUT_CLASS} w-auto`}
@@ -189,7 +189,7 @@ function RefreshSection() {
           >
             {POLL_CHOICES.map((seconds) => (
               <option key={seconds} value={seconds}>
-                every {seconds}s
+                {t("ui.settings.refresh.every", { seconds })}
               </option>
             ))}
           </select>
@@ -198,11 +198,9 @@ function RefreshSection() {
 
       <LearnMore>
         <p>
-          Each poll cycle is four list calls plus one <code className="ref-chip">graph/check</code> per active loop, so a
-          large board against a remote workstation is happier at 30s. Streaming costs one held-open connection instead,
-          and refreshes only what each change touches — a graph move re-reads that one work item&rsquo;s position,
-          anything else re-reads the lists. A stream that cannot be opened says so in the sidebar&rsquo;s health word
-          and falls back to polling.
+          {t("ui.settings.refresh.learn.a")}
+          <code className="ref-chip">graph/check</code>
+          {t("ui.settings.refresh.learn.b")}
         </p>
       </LearnMore>
     </Card>
@@ -237,10 +235,10 @@ function RestartSection() {
 
   return (
     <Card>
-      <Kicker>Service</Kicker>
+      <Kicker>{t("ui.settings.service.kicker")}</Kicker>
       <div className="flex flex-wrap items-center gap-3">
         <ControlButton disabled={state.kind === "asking"} onClick={() => void restart()}>
-          {state.kind === "asking" ? "Scheduling…" : withUpgrade ? "Restart with upgrade" : "Restart the-loop"}
+          {state.kind === "asking" ? t("ui.settings.service.scheduling") : withUpgrade ? t("ui.settings.service.restart-upgrade") : t("ui.settings.service.restart")}
         </ControlButton>
         <label className="flex items-center gap-2 text-xs text-muted-foreground">
           <input
@@ -249,22 +247,24 @@ function RestartSection() {
             onChange={(event) => setWithUpgrade(event.target.checked)}
             className="accent-[var(--primary)]"
           />
-          upgrade the CLI first
+          {t("ui.settings.service.upgrade-first")}
         </label>
       </div>
       {state.kind === "scheduled" ? (
         <Report tone="ok" role="status">
-          Restart scheduled (pid {state.schedule.pid}
-          {state.schedule.withUpgrade ? ", with upgrade" : ""}) — the service will drop and come back;
-          output at <code className="ref-chip">{state.schedule.logfile}</code> on the workstation.
+          {t("ui.settings.service.scheduled", { pid: state.schedule.pid })}
+          {state.schedule.withUpgrade ? t("ui.settings.service.scheduled.with-upgrade") : ""}
+          {t("ui.settings.service.scheduled.output")}
+          <code className="ref-chip">{state.schedule.logfile}</code>
+          {t("ui.settings.service.scheduled.end")}
         </Report>
       ) : null}
       {state.kind === "failed" ? <Report tone="fail" role="alert">{state.message}</Report> : null}
       <LearnMore>
         <p>
-          Stops every running the-loop service on the workstation, then starts every enabled one —
-          the same thing <code className="ref-chip">the-loop restart</code> does. With the upgrade, the
-          CLI is upgraded in between; a failed upgrade still restarts the current version.
+          {t("ui.settings.service.learn.a")}
+          <code className="ref-chip">the-loop restart</code>
+          {t("ui.settings.service.learn.b")}
         </p>
       </LearnMore>
     </Card>
@@ -309,12 +309,12 @@ function probeClass(probe: Probe): DotStatus {
 function probeText(probe: Probe, baseUrl: string): string {
   switch (probe.state) {
     case "checking":
-      return "checking /api/v1/health…";
+      return t("ui.settings.probe.checking");
     case "ok":
-      return `connected — ${baseUrl} (the-loop ${probe.version})`;
+      return t("ui.settings.probe.ok", { url: baseUrl, version: probe.version });
     case "fail":
       return probe.advice;
     default:
-      return `not tested — currently pointing at ${baseUrl}`;
+      return t("ui.settings.probe.idle", { url: baseUrl });
   }
 }

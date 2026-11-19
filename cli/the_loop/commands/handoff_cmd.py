@@ -37,7 +37,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
 from .base import Command, register
 from .sessions_cmd import _cli_config
-from .. import eventlog
+from .. import eventlog, strings
 from ..authz import is_self_authored, mark_self_authored
 from ..client.routing import daemon_spawned, harness_routed, service_error
 from ..core import github_ops, tickets
@@ -117,13 +117,13 @@ def _item_ref(args: argparse.Namespace, record: HandoffRecord) -> WorkItemRef:
     if not text:
         text = _ref_from_comment_url(record.comment_url)
     if not text:
-        raise UsageError("cannot tell which issue the record is on; pass --work-item")
+        raise UsageError(strings.t("cli.handoff.item-ref.cannot-tell-issue"))
     try:
         item = WorkItemRef.parse(text)
     except ValueError as exc:
         raise UsageError(str(exc)) from None
     if item.provider != "github":
-        raise UsageError(f"{item.ref}: a handoff record lives on a GitHub issue")
+        raise UsageError(strings.t("cli.handoff.item-ref.not-github", ref=item.ref))
     return item
 
 
@@ -150,7 +150,9 @@ def _ticket_comments(
         return None, mapped[0] if mapped else str(exc)
     if int(result.get("exitCode") or 0) != 0:
         texts = [m.get("text", "") for m in result.get("messages") or []]
-        return None, "; ".join(t for t in texts if t) or "could not read the ticket"
+        return None, "; ".join(t for t in texts if t) or strings.t(
+            "cli.handoff.ticket-comments.could-not-read"
+        )
     comments = [
         _Comment(
             body=str(c.get("body") or ""),
@@ -176,7 +178,7 @@ def _guarded(call: Callable[[], int]) -> int:
         if mapped is None:
             if not isinstance(exc, ValueError):
                 raise
-            mapped = (f"error: {exc}", 2)
+            mapped = (strings.t("cli.handoff.guarded.error", exc=exc), 2)
         print(mapped[0], file=sys.stderr)
         return mapped[1]
 
@@ -188,36 +190,48 @@ def _read_record(path: str) -> HandoffRecord:
     try:
         data = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
-        raise UsageError(f"cannot read the record {path}: {exc}") from None
+        raise UsageError(
+            strings.t("cli.handoff.read-record.cannot-read", path=path, exc=exc)
+        ) from None
     if not isinstance(data, dict):
-        raise UsageError(f"{path} is not a JSON object")
+        raise UsageError(strings.t("cli.handoff.read-record.not-an-object", path=path))
     try:
         return HandoffRecord.from_dict(data)
     except (KeyError, TypeError, ValueError) as exc:
-        raise UsageError(f"{path} is not a handoff record: {exc}") from None
+        raise UsageError(
+            strings.t("cli.handoff.read-record.not-a-record", path=path, exc=exc)
+        ) from None
 
 
 def _read_files(record: HandoffRecord, files_dir: str) -> Dict[str, str]:
     """The carried bodies for a ``carried-by: ticket`` record, by artifact name."""
     if record.carried_by != "ticket":
         if files_dir:
-            raise UsageError("--files is only for a carried-by ticket record")
+            raise UsageError(
+                strings.t("cli.handoff.read-files.files-not-for-this-record")
+            )
         return {}
     if not record.artifacts:
         return {}
     if not files_dir:
-        raise UsageError("a carried-by ticket record needs --files <dir>")
+        raise UsageError(strings.t("cli.handoff.read-files.needs-files"))
     files: Dict[str, str] = {}
     for artifact in record.artifacts:
         if artifact.name not in CHAIN:
-            raise UsageError(f"{artifact.name!r} is not a spec-chain artifact")
+            raise UsageError(
+                strings.t("cli.handoff.read-files.not-in-chain", name=artifact.name)
+            )
         path = Path(files_dir) / artifact.name
         try:
             text = path.read_text(encoding="utf-8")
         except OSError as exc:
-            raise UsageError(f"cannot read {path}: {exc}") from None
+            raise UsageError(
+                strings.t("cli.handoff.read-files.cannot-read", path=path, exc=exc)
+            ) from None
         if sha256_text(text) != artifact.sha256:
-            raise UsageError(f"{path} does not match the record's sha256")
+            raise UsageError(
+                strings.t("cli.handoff.read-files.sha256-mismatch", path=path)
+            )
         files[artifact.name] = text
     return files
 
@@ -229,12 +243,14 @@ def post(args: argparse.Namespace) -> int:
     except ValueError as exc:
         raise UsageError(str(exc)) from None
     if item.provider != "github":
-        raise UsageError(f"{item.ref}: a handoff record is posted on a GitHub issue")
+        raise UsageError(strings.t("cli.handoff.post.not-github", ref=item.ref))
     files = _read_files(record, args.files or "")
     try:
         comments = render(record, files)
     except ValueError as exc:
-        raise UsageError(f"the record would be refused: {exc}") from None
+        raise UsageError(
+            strings.t("cli.handoff.post.would-be-refused", exc=exc)
+        ) from None
     config = _cli_config()
     posted: List[str] = []
     for body in comments:
@@ -290,7 +306,9 @@ def materialize(
             "refused": [
                 {
                     "name": str(e.get("name", "")),
-                    "reason": "the spec folder is reached through a symlink",
+                    "reason": strings.t(
+                        "cli.handoff.materialize.spec-folder-symlinked"
+                    ),
                 }
                 for e in handoff.get("artifacts") or ()
                 if isinstance(e, Mapping)
@@ -300,14 +318,29 @@ def materialize(
         name = str(entry.get("name", "")) if isinstance(entry, Mapping) else ""
         sha = str(entry.get("sha256", "")) if isinstance(entry, Mapping) else ""
         if name not in CHAIN:
-            refused.append({"name": name, "reason": "not a spec-chain artifact"})
+            refused.append(
+                {
+                    "name": name,
+                    "reason": strings.t("cli.handoff.materialize.not-in-chain"),
+                }
+            )
             continue
         if not _SHA_RE.fullmatch(sha):
-            refused.append({"name": name, "reason": "malformed sha256"})
+            refused.append(
+                {
+                    "name": name,
+                    "reason": strings.t("cli.handoff.materialize.malformed-sha256"),
+                }
+            )
             continue
         target = spec_dir / name
         if target.is_symlink():
-            refused.append({"name": name, "reason": "the target is a symlink"})
+            refused.append(
+                {
+                    "name": name,
+                    "reason": strings.t("cli.handoff.materialize.target-symlinked"),
+                }
+            )
             continue
         existing: Optional[str] = None
         if target.is_file():
@@ -339,7 +372,7 @@ def materialize(
             verified.append(name)
             continue
         if text is not None or (carried is None and local is not None):
-            reason = "sha256 mismatch"
+            reason = strings.t("cli.handoff.materialize.sha256-mismatch")
         else:
             reason = carrier_error or "missing"
         refused.append({"name": name, "reason": reason})
@@ -362,20 +395,25 @@ def _read_dir(from_dir: Path) -> Dict[str, str]:
 def import_files(args: argparse.Namespace) -> int:
     spec_dir, state = _load_state(args)
     if not state.handoff:
-        raise UsageError(f"{work_item_id(args.item)} has no handoff record in state")
+        raise UsageError(
+            strings.t(
+                "cli.handoff.no-record-in-state", work_item_id=work_item_id(args.item)
+            )
+        )
     record = HandoffRecord.from_dict(state.handoff)
     carried: Optional[Dict[str, str]] = None
     error = ""
     if args.from_dir:
         from_dir = Path(args.from_dir)
         if not from_dir.is_dir():
-            raise UsageError(f"--from-dir {from_dir} is not a directory")
+            raise UsageError(
+                strings.t(
+                    "cli.handoff.import.from-dir-not-a-directory", from_dir=from_dir
+                )
+            )
         carried = _read_dir(from_dir)
     elif record.carried_by == "artifact":
-        raise UsageError(
-            "the record is carried by the spec-chain artifact: extract its "
-            "embedded files and pass --from-dir <dir>"
-        )
+        raise UsageError(strings.t("cli.handoff.import.carried-by-artifact"))
     elif record.carried_by == "ticket":
         item = _item_ref(args, record)
         comments, error = _ticket_comments(item.ref, _cli_config())
@@ -383,7 +421,7 @@ def import_files(args: argparse.Namespace) -> int:
         if comments is not None:
             bodies = collect_parts(comments, record)
             if bodies is None:
-                error = "the record comment or one of its part comments is missing"
+                error = strings.t("cli.handoff.import.parts-missing")
             else:
                 carried = extract_files(bodies)
     result = materialize(spec_dir, state.handoff, carried, error)
@@ -412,9 +450,7 @@ def _pull_request(args: argparse.Namespace, state: Any, item: WorkItemRef) -> in
         )
     )
     if not rows:
-        raise UsageError(
-            "no pull request is recorded for the item; pass --pull-request"
-        )
+        raise UsageError(strings.t("cli.handoff.pull-request.none-recorded"))
     return rows[0].number
 
 
@@ -430,10 +466,10 @@ def _edit(
     a daemon-spawned session holds no token, so there it is never tried.
     """
     if daemon_spawned():
-        return False, "a daemon-spawned session cannot edit comments"
+        return False, strings.t("cli.handoff.edit.daemon-spawned")
     match = _COMMENT_URL_RE.fullmatch(comment.url)
     if not match or _ref_from_comment_url(comment.url) != item.ref:
-        return False, "the record comment is not on this issue"
+        return False, strings.t("cli.handoff.edit.not-on-this-issue")
     from .. import comments as gh_comments
     from ..channels.envelope import parse as parse_envelope, stamp
     from ..channels.github import github_api
@@ -460,14 +496,18 @@ def note(args: argparse.Namespace) -> int:
     root = Path(args.repo).resolve() if args.repo else Path(".").resolve()
     _, state = _load_state(args)
     if not state.handoff:
-        raise UsageError(f"{work_item_id(args.item)} has no handoff record in state")
+        raise UsageError(
+            strings.t(
+                "cli.handoff.no-record-in-state", work_item_id=work_item_id(args.item)
+            )
+        )
     record = HandoffRecord.from_dict(state.handoff)
     branch = args.branch or current_branch(root)
     if not is_valid_branch(branch):
         raise UsageError(
-            f"branch {branch!r} is not a the-loop/ branch; pass --branch"
+            strings.t("cli.handoff.note.not-a-loop-branch", branch=branch)
             if branch
-            else "no branch is checked out here; pass --branch"
+            else strings.t("cli.handoff.note.no-branch")
         )
     item = _item_ref(args, record)
     number = _pull_request(args, state, item)
@@ -483,9 +523,11 @@ def note(args: argparse.Namespace) -> int:
     try:
         head = render(pointed)[0]
     except ValueError as exc:
-        raise UsageError(f"the pointed record would be refused: {exc}") from None
+        raise UsageError(
+            strings.t("cli.handoff.note.pointed-would-be-refused", exc=exc)
+        ) from None
     config = _cli_config()
-    carried = f"branch {branch} · PR #{number}"
+    carried = strings.t("cli.handoff.note.carried-by", branch=branch, number=number)
 
     comments, _ = _ticket_comments(item.ref, config)
     own = next(
@@ -496,16 +538,20 @@ def note(args: argparse.Namespace) -> int:
         ),
         None,
     )
-    reason = "the record is not the-loop's own comment"
+    reason = strings.t("cli.handoff.note.not-own-comment")
     if own is not None and is_self_authored(own.body):
         edited, reason = _edit(item, own, head, config)
         if edited:
             _print({"edited": True, "url": own.url, "carriedBy": carried})
             return 0
     body = (
-        f"Supersedes the handoff record {record.comment_url or '(unknown)'}: the "
-        f"carried files are committed on `{branch}` in PR #{number}, and from now "
-        "on they are the source of truth.\n\n" + head
+        strings.t(
+            "cli.handoff.note.supersedes",
+            comment_url=record.comment_url or strings.t("cli.handoff.note.unknown-url"),
+            branch=branch,
+            number=number,
+        )
+        + head
     )
     result = _routed_comment(item.ref, body, config)
     if int(result.get("exitCode") or 0) != 0:
@@ -529,17 +575,16 @@ def note(args: argparse.Namespace) -> int:
 def _add_location(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "item",
-        help="The work item: its spec id (issue-42) or its ref (github:OWNER/REPO#42).",
+        help=strings.t("cli.handoff.add-location.item.help"),
     )
     parser.add_argument(
-        "--repo", default="", help="Repository root (default: the current directory)."
+        "--repo", default="", help=strings.t("cli.handoff.add-location.repo.help")
     )
     parser.add_argument(
         "--spec-dir",
         default="",
         dest="spec_dir",
-        help="Where the specs live, relative to the repository root "
-        "(default: routing.graph.specDir from the CLI config, else docs/specs).",
+        help=strings.t("cli.handoff.add-location.spec-dir.help"),
     )
 
 
@@ -547,49 +592,43 @@ def _add_work_item(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--work-item",
         default="",
-        help="The issue the record is on (default: the positional when it is a "
-        "ref, else the issue the record's comment URL names).",
+        help=strings.t("cli.handoff.add-work-item.work-item.help"),
     )
 
 
 @register
 class HandoffCommand(Command):
     name = "handoff"
-    help = (
-        "Post, show, import or re-point a conversation handoff record "
-        "(issue-517) — the record that starts an item past its first phases"
-    )
+    help = strings.t("cli.handoff.help")
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         actions = parser.add_subparsers(dest="handoff_command", required=True)
 
-        p_post = actions.add_parser(
-            "post", help="Render the record and its parts and post them in order"
-        )
+        p_post = actions.add_parser("post", help=strings.t("cli.handoff.post.help"))
         p_post.add_argument(
-            "--work-item", required=True, help="The GitHub issue, github:OWNER/REPO#N."
+            "--work-item",
+            required=True,
+            help=strings.t("cli.handoff.post.work-item.help"),
         )
         p_post.add_argument(
             "--record",
             required=True,
-            help="The record as JSON (the shape `handoff show` prints).",
+            help=strings.t("cli.handoff.post.record.help"),
         )
         p_post.add_argument(
             "--files",
             default="",
-            help="carried-by ticket: the directory holding the carried files.",
+            help=strings.t("cli.handoff.post.files.help"),
         )
         p_post.set_defaults(_action=post)
 
-        p_show = actions.add_parser(
-            "show", help="The record frozen in work-item-state.json, as JSON"
-        )
+        p_show = actions.add_parser("show", help=strings.t("cli.handoff.show.help"))
         _add_location(p_show)
         p_show.set_defaults(_action=show)
 
         p_import = actions.add_parser(
             "import",
-            help="Write the carried files that verify into docs/specs/<id>/",
+            help=strings.t("cli.handoff.import.help"),
         )
         _add_location(p_import)
         _add_work_item(p_import)
@@ -597,29 +636,27 @@ class HandoffCommand(Command):
             "--from-dir",
             default="",
             dest="from_dir",
-            help="carried-by artifact: where the session extracted the artifact's "
-            "embedded files.",
+            help=strings.t("cli.handoff.import.from-dir.help"),
         )
         p_import.set_defaults(_action=import_files)
 
         p_note = actions.add_parser(
             "note",
-            help="Point the record at the committed files and the PR (edit, or "
-            "post a superseding comment)",
+            help=strings.t("cli.handoff.note.help"),
         )
         _add_location(p_note)
         _add_work_item(p_note)
         p_note.add_argument(
             "--branch",
             default="",
-            help="The spec branch (default: the checkout's current branch).",
+            help=strings.t("cli.handoff.note.branch.help"),
         )
         p_note.add_argument(
             "--pull-request",
             type=int,
             default=0,
             dest="pull_request",
-            help="The PR number (default: the item's PR recorded in state).",
+            help=strings.t("cli.handoff.note.pull-request.help"),
         )
         p_note.set_defaults(_action=note)
 

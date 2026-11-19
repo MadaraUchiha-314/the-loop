@@ -42,7 +42,7 @@ from dataclasses import dataclass
 from importlib import resources
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 
-from .. import eventlog
+from .. import eventlog, strings
 from ..collaborators import parse_logins
 from ..control import COLLABORATOR_COMMANDS, COMMANDS, ControlConfig
 from ..ghhost import github_host
@@ -127,22 +127,7 @@ def _refused(why: str) -> Invocation:
 
 def usage() -> str:
     """The vocabulary, as the usage line and the `help` answer print it."""
-    return (
-        "`/the-loop help` — this text\n"
-        "`/the-loop <keyword> <work-item> [@login] [instance:<name>]` — a control "
-        "keyword on a work item (`start`, `stop`, `pause`, `resume`, `execute`, "
-        "`contribute`, `do`, `review`, `cleanup`, `add-collaborator @login`, "
-        "`remove-collaborator @login`); the work item is `github:owner/repo#N`, "
-        "`owner/repo#N`, `#N` (against kickoff.repo) or its GitHub URL\n"
-        "`/the-loop new [<repo>:] <title>` — open a work item (the kickoff's "
-        "grammar: a first-line `<repo>:` prefix against the declared "
-        "`repositories`, else `kickoff.repo`; more lines are the body); its "
-        "thread opens here\n"
-        "`/the-loop status` · `/the-loop restart` · `/the-loop upgrade` — this "
-        "instance\n"
-        "`/the-loop standing list` · `/the-loop standing start|stop|restart <name>` "
-        "— standing sessions"
-    )
+    return strings.t("channels.commands.usage")
 
 
 def _command_for(verb: str, control: ControlConfig) -> Optional[str]:
@@ -173,34 +158,41 @@ def parse_invocation(text: Optional[str], control: ControlConfig) -> Invocation:
         prose = (text or "").strip()[len(tokens[0]) :].strip()
         if not prose:
             return _refused(
-                f"`{verb}` needs a title — `/the-loop new [<repo>:] <title>`"
+                strings.t("channels.commands.refusal.needs-title", verb=verb)
             )
         return Invocation(family="create", verb="new", target=prose)
     if verb in INSTANCE_VERBS:
         if rest:
-            return _refused(f"`{verb}` takes no argument")
+            return _refused(
+                strings.t("channels.commands.refusal.no-argument", verb=verb)
+            )
         return Invocation(family="instance", verb=verb)
     if verb == "standing":
         if not rest:
-            return _refused("`standing` needs a verb: list, start, stop or restart")
+            return _refused(strings.t("channels.commands.refusal.standing-needs-verb"))
         sub, args = rest[0].lower(), rest[1:]
         if sub not in STANDING_VERBS:
-            return _refused(f"unknown standing verb `{sub}`")
+            return _refused(
+                strings.t("channels.commands.refusal.unknown-standing-verb", sub=sub)
+            )
         if sub == "list":
             if args:
-                return _refused("`standing list` takes no argument")
+                return _refused(
+                    strings.t("channels.commands.refusal.standing-list-no-argument")
+                )
             return Invocation(family="standing", verb=sub)
         if len(args) != 1:
-            return _refused(f"`standing {sub}` needs exactly one session name")
+            return _refused(
+                strings.t("channels.commands.refusal.standing-needs-name", sub=sub)
+            )
         if not STANDING_NAME_RE.fullmatch(args[0]):
             return _refused(
-                f"`{args[0]}` is not a standing-session name "
-                "(lowercase letters, digits and hyphens, up to 40)"
+                strings.t("channels.commands.refusal.bad-standing-name", name=args[0])
             )
         return Invocation(family="standing", verb=sub, target=args[0])
     command = _command_for(verb, control)
     if command is None:
-        return _refused(f"unknown verb `{verb}`")
+        return _refused(strings.t("channels.commands.refusal.unknown-verb", verb=verb))
     target = ""
     logins: List[str] = []
     addresses: List[str] = []
@@ -208,30 +200,36 @@ def parse_invocation(text: Optional[str], control: ControlConfig) -> Invocation:
         if token.lower().startswith(_ADDRESS_PREFIX):
             name = token[len(_ADDRESS_PREFIX) :]
             if not INSTANCE_NAME_RE.fullmatch(name):
-                return _refused(f"`{token}` is not an instance address")
+                return _refused(
+                    strings.t("channels.commands.refusal.bad-address", token=token)
+                )
             addresses.append(name)
         elif token.startswith("@"):
             parsed = parse_logins(token)
             if len(parsed) != 1:
-                return _refused(f"`{token}` is not a GitHub login")
+                return _refused(
+                    strings.t("channels.commands.refusal.bad-login", token=token)
+                )
             logins.append(parsed[0])
         elif not target:
             target = token
         else:
             return _refused(
-                f"one work item per command — `{token}` is a second argument"
+                strings.t("channels.commands.refusal.second-argument", token=token)
             )
     if not target:
-        return _refused(f"`{verb}` needs a work item (`#N`, `owner/repo#N` or a URL)")
+        return _refused(
+            strings.t("channels.commands.refusal.needs-work-item", verb=verb)
+        )
     if len(addresses) > 1:
-        return _refused("two instance addresses — name one")
+        return _refused(strings.t("channels.commands.refusal.two-addresses"))
     subject = ""
     if command in COLLABORATOR_COMMANDS:
         if len(logins) != 1:
-            return _refused(f"`{verb}` takes exactly one @login")
+            return _refused(strings.t("channels.commands.refusal.one-login", verb=verb))
         subject = logins[0]
     elif logins:
-        return _refused(f"`{verb}` takes no @login")
+        return _refused(strings.t("channels.commands.refusal.no-login", verb=verb))
     return Invocation(
         family="work-item",
         verb=command,
@@ -382,53 +380,68 @@ def render_status(doc: Mapping[str, Any]) -> str:
     from ..core.lifecycle import environment_line, split_lines
 
     instance = doc.get("instance") or {}
-    name = str(instance.get("name") or "unnamed")
+    name = str(instance.get("name") or strings.t("channels.commands.status.unnamed"))
     mode = str((instance.get("scope") or {}).get("mode") or "open")
     lines = [
-        f"the-loop status — instance `{name}` (mode: {mode}) · "
-        f"{'ok' if doc.get('ok') else 'not ok'}"
+        strings.t(
+            "channels.commands.status.header",
+            name=name,
+            mode=mode,
+            health=(
+                strings.t("channels.commands.status.ok")
+                if doc.get("ok")
+                else strings.t("channels.commands.status.not-ok")
+            ),
+        )
     ]
     for row in doc.get("services") or []:
         if not row.get("enabled"):
-            state = "disabled"
+            state = strings.t("channels.commands.status.disabled")
         elif row.get("running"):
-            state = "running"
+            state = strings.t("channels.commands.status.running")
             if row.get("pid"):
-                state += f" (pid {row['pid']})"
+                state += strings.t("channels.commands.status.pid", pid=row["pid"])
             if row.get("hosted"):
-                state += ", hosted by the service"
+                state += strings.t("channels.commands.status.hosted")
             if row.get("url"):
                 state += f" — {row['url']}"
         else:
-            state = "stopped (enabled)"
+            state = strings.t("channels.commands.status.stopped-enabled")
         lines.append(f"• {row.get('service', '?')}: {state}")
     for rival in doc.get("conflictingRoots") or []:
         # Never silently picked between (issue-339, R4.2).
         lines.append(
-            f"• conflict: `{rival}` also holds a poller heartbeat — reporting on "
-            f"`{doc.get('stateRoot')}`"
+            strings.t(
+                "channels.commands.status.conflict",
+                rival=rival,
+                state_root=doc.get("stateRoot"),
+            )
         )
     drift = environment_line(doc)
     if drift:
-        lines.append(f"• sessions: {drift}")
+        lines.append(strings.t("channels.commands.status.sessions", drift=drift))
     split = split_lines(doc)
     if split:
         # The same sentences `the-loop status` prints (issue-413) — the operator
         # reading this in Slack is the one whose room is losing envelopes. One
         # bullet, because it is one finding; the caveat and the remedy are its
         # continuation, not two more items in the list.
-        lines.append(f"• slack: {split[0]}")
+        lines.append(strings.t("channels.commands.status.slack", line=split[0]))
         lines.extend(f"  {line}" for line in split[1:])
     standing = doc.get("standingSessions") or []
+    running = strings.t("channels.commands.standing.running")
+    stopped = strings.t("channels.commands.standing.stopped")
     lines.append(
-        "• standing: "
-        + (
-            " · ".join(
-                f"{s.get('name', '?')} {'running' if s.get('running') else 'stopped'}"
-                for s in standing
-            )
-            if standing
-            else "none"
+        strings.t(
+            "channels.commands.status.standing",
+            sessions=(
+                " · ".join(
+                    f"{s.get('name', '?')} {running if s.get('running') else stopped}"
+                    for s in standing
+                )
+                if standing
+                else strings.t("channels.commands.status.standing-none")
+            ),
         )
     )
     return "\n".join(lines)
@@ -436,15 +449,23 @@ def render_status(doc: Mapping[str, Any]) -> str:
 
 def _render_standing_rows(rows: Sequence[Mapping[str, Any]]) -> str:
     if not rows:
-        return "no standing sessions — none declared, none recorded"
+        return strings.t("channels.commands.standing.none")
     lines = []
     for row in rows:
         if "outcome" in row:
             detail = f" — {row['detail']}" if row.get("detail") else ""
             lines.append(f"• {row.get('name', '?')}: {row['outcome']}{detail}")
         else:
-            kind = "declared" if row.get("declared") else "created"
-            state = "running" if row.get("running") else "stopped"
+            kind = (
+                strings.t("channels.commands.standing.declared")
+                if row.get("declared")
+                else strings.t("channels.commands.standing.created")
+            )
+            state = (
+                strings.t("channels.commands.standing.running")
+                if row.get("running")
+                else strings.t("channels.commands.standing.stopped")
+            )
             lines.append(f"• {row.get('name', '?')}: {state} ({kind})")
     return "\n".join(lines)
 
@@ -556,22 +577,39 @@ def handle_slash_command(
     # 3. Parse the fixed vocabulary (R2.2, A4).
     invocation = parse_invocation(text, _control_config(cli_config))
     if not invocation.family:
-        reply(f"{invocation.error}.\n{usage()}")
+        reply(
+            strings.t(
+                "channels.commands.answer.refused",
+                error=invocation.error,
+                usage=usage(),
+            )
+        )
         return _drop("unknown-command", member)
     if invocation.family == "help":
+        granted = strings.t("channels.commands.answer.granted")
+        not_granted = strings.t("channels.commands.answer.not-granted")
         grants = "\n".join(
-            f"• {family} verbs — `{grant}`: "
-            f"{'granted' if grant in config.publish else 'not granted'}"
+            strings.t(
+                "channels.commands.answer.help-grant",
+                family=family,
+                grant=grant,
+                state=granted if grant in config.publish else not_granted,
+            )
             for family, grant in FAMILY_GRANTS.items()
         )
-        answered = reply(f"{usage()}\n\nWhat this channel may do here:\n{grants}")
+        answered = reply(
+            strings.t("channels.commands.answer.help", usage=usage(), grants=grants)
+        )
         return {"outcome": "help", "answered": answered}
     # 5. The family's grant (R3.2, A2).
     grant = FAMILY_GRANTS[invocation.family]
     if grant not in config.publish:
         reply(
-            f"This channel does not hold `{grant}` — add it to "
-            f"`channels.slack.publish` to allow `{invocation.verb}` from Slack."
+            strings.t(
+                "channels.commands.answer.missing-grant",
+                grant=grant,
+                verb=invocation.verb,
+            )
         )
         return _drop("unpublishable-event", member, level="warning", kind=grant)
 
@@ -634,13 +672,18 @@ def _work_item_verb(invocation, config, cli_config, member, post_comment, result
     try:
         ref = resolve_work_item(invocation.target, cli_config)
     except ValueError as exc:
-        return "unknown-target", f"`{invocation.target}` — {exc}."
+        return "unknown-target", strings.t(
+            "channels.commands.answer.unknown-target",
+            target=invocation.target,
+            error=exc,
+        )
     result["workItem"] = ref.ref
     if not may_target(ref, cli_config):
         return (
             "unknown-target",
-            f"`{ref.ref}` — this instance is not configured for `{ref.path}` "
-            "(the top-level `repositories`, or a work item it already manages).",
+            strings.t(
+                "channels.commands.answer.not-configured", ref=ref.ref, path=ref.path
+            ),
         )
     _received(member, invocation, ref.ref)
     control = _control_config(cli_config)
@@ -669,12 +712,16 @@ def _work_item_verb(invocation, config, cli_config, member, post_comment, result
         link = f" — {record.url}" if record.url else ""
         return (
             "recorded",
-            f"Recorded `{line}` on `{ref.ref}`{link}. The loop executes it on its "
-            "next ingress (a webhook delivery or a poll cycle); a start opens the "
-            "work item's thread here.",
+            strings.t(
+                "channels.commands.answer.recorded", line=line, ref=ref.ref, link=link
+            ),
         )
-    error = (record.error if record else "") or "the ledger did not record it"
-    return "record-failed", f"Could not record `{line}` on `{ref.ref}`: {error}"
+    error = (record.error if record else "") or strings.t(
+        "channels.commands.answer.record-error"
+    )
+    return "record-failed", strings.t(
+        "channels.commands.answer.record-failed", line=line, ref=ref.ref, error=error
+    )
 
 
 def _create_verb(
@@ -718,8 +765,12 @@ def _create_verb(
     )
     record = publish(event, cli_config, channels=[], ledger=ledger).record
     if not (record and record.ok and record.ref):
-        error = (record.error if record else "") or "the ledger did not create it"
-        return "create-failed", f"Could not open the work item: {error}"
+        error = (record.error if record else "") or strings.t(
+            "channels.commands.answer.create-error"
+        )
+        return "create-failed", strings.t(
+            "channels.commands.answer.create-failed", error=error
+        )
     result["workItem"] = record.ref
     result["url"] = record.url
     link = f" — {record.url}" if record.url else ""
@@ -748,17 +799,17 @@ def _create_verb(
             work_item=record.ref,
             error=str(exc),
         )
-        where = (
-            f" Its conversation here could not be opened ({exc}); the first "
-            "event opens it."
-        )
+        where = strings.t("channels.commands.answer.open-failed", error=exc)
     else:
         channel_id, thread = conversation
-        said = f"Opened {record.ref}{link}. " + (
-            "This thread is now that work item's conversation — replies here reach it."
+        said = (
+            strings.t(
+                "channels.commands.answer.opened-thread", ref=record.ref, link=link
+            )
             if thread
-            else "This channel is that work item's conversation — messages "
-            "here reach it."
+            else strings.t(
+                "channels.commands.answer.opened-channel", ref=record.ref, link=link
+            )
         )
         bot.say(
             thread,
@@ -778,13 +829,29 @@ def _create_verb(
         )
         if channel_id:
             keyword = config.keyword("start")
-            typed = f"type `{keyword}` there, or " if keyword else ""
-            where = (
-                f" Its conversation is {'a thread ' if thread else ''}in "
-                f"<#{channel_id}>; {typed}run `/the-loop start {record.ref}` to "
-                "start it."
+            typed = (
+                strings.t("channels.commands.answer.typed", keyword=keyword)
+                if keyword
+                else ""
             )
-    return "created", f"Opened `{record.ref}`{link}.{where}"
+            where = (
+                strings.t(
+                    "channels.commands.answer.where-thread",
+                    channel_id=channel_id,
+                    typed=typed,
+                    ref=record.ref,
+                )
+                if thread
+                else strings.t(
+                    "channels.commands.answer.where-channel",
+                    channel_id=channel_id,
+                    typed=typed,
+                    ref=record.ref,
+                )
+            )
+    return "created", strings.t(
+        "channels.commands.answer.created", ref=record.ref, link=link, where=where
+    )
 
 
 def _instance_verb(invocation, cli_config, member, lifecycle):
@@ -814,12 +881,18 @@ def _instance_verb(invocation, cli_config, member, lifecycle):
         what = "the-loop restart --with-upgrade" if upgrade else "the-loop restart"
         return (
             "ok",
-            f"Scheduled `{what}` (pid {scheduled.get('pid')}); its output goes to "
-            f"`{scheduled.get('logfile')}`. `/the-loop status` says when it is back.",
+            strings.t(
+                "channels.commands.answer.scheduled",
+                what=what,
+                pid=scheduled.get("pid"),
+                logfile=scheduled.get("logfile"),
+            ),
         )
     except Exception as exc:  # noqa: BLE001 — the answer carries the failure (R3.6)
         logger.warning("slack: /the-loop %s failed: %s", invocation.verb, exc)
-        return "failed", f"`{invocation.verb}` failed: {exc}"
+        return "failed", strings.t(
+            "channels.commands.answer.failed", verb=invocation.verb, error=exc
+        )
 
 
 def _standing_verb(invocation, cli_config, member, standing, result):
@@ -838,4 +911,6 @@ def _standing_verb(invocation, cli_config, member, standing, result):
         return "ok", _render_standing_rows(outcome.get("sessions") or [])
     except Exception as exc:  # noqa: BLE001 — the answer carries the failure (R3.6)
         logger.warning("slack: /the-loop standing %s failed: %s", invocation.verb, exc)
-        return "failed", f"`standing {invocation.verb}` failed: {exc}"
+        return "failed", strings.t(
+            "channels.commands.answer.standing-failed", verb=invocation.verb, error=exc
+        )

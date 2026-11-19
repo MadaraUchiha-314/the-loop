@@ -58,6 +58,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from ... import strings
 from ...authz import is_self_authored, mark_self_authored
 from ..contract import HookContext, HookResult
 from ..registry import hook
@@ -365,57 +366,45 @@ def _request_body(ctx: HookContext) -> str:
     """
     work_item_review = _thread_kind(ctx) == "issue"
     detected = _detected_pulls(ctx) if work_item_review else []
-    subject = "work item" if work_item_review else "thread"
+    subject = (
+        strings.t("graph.review.request.subject-work-item")
+        if work_item_review
+        else strings.t("graph.review.request.subject-thread")
+    )
     lines = [
-        "🤖 _the-loop_ — **what should this review look at?**",
+        strings.t("graph.review.request.heading"),
         "",
-        f"the-loop was asked to review this {subject}. It will not start "
-        "until an authorized user states the review's brief — in one comment, "
-        "in this shape (keep the sections you need, drop the rest; at least "
-        "one bullet in at least one of Questions/Angles/Validations):",
+        strings.t("graph.review.request.intro", subject=subject),
         "",
         "```",
         "Questions:",
-        "- <what you want answered about this change>",
+        "- " + strings.t("graph.review.request.questions-placeholder"),
         "Angles:",
-        "- <the perspectives to review from — correctness, security, "
-        "performance, API shape, …>",
+        "- " + strings.t("graph.review.request.angles-placeholder"),
         "Validations:",
-        "- <what to run or prove — commands, scenarios, invariants>",
+        "- " + strings.t("graph.review.request.validations-placeholder"),
     ]
     if work_item_review:
         lines.append("Pull requests:")
         if detected:
             lines += [f"- {ref}" for ref in detected]
         else:
-            lines.append("- <the pull requests delivering this work item>")
+            lines.append("- " + strings.t("graph.review.request.pulls-placeholder"))
     lines += [
         "```",
         "",
-        "The brief becomes the review's contract: it is frozen with your name "
-        "on it, every question gets an answer, every angle gets examined, and "
-        "every validation gets run (or a stated reason it could not be). "
-        "Follow-ups are welcome after each round; the review ends when you say "
-        "it is done. If your `the-loop review` comment already contained this "
-        "block, nothing more is needed.",
+        strings.t("graph.review.request.outro"),
     ]
     if work_item_review:
-        detected_line = (
-            "the-loop pre-filled `Pull requests:` with the ones it recorded "
-            "opening for this work item — edit that list if it is wrong. "
-        )
         lines += [
             "",
-            "This is a **work-item** review: one review conversation across "
-            "every pull request delivering the item. "
+            strings.t("graph.review.request.work-item")
             + (
-                detected_line
+                strings.t("graph.review.request.pulls-detected")
                 if detected
-                else "the-loop has no pull requests recorded for this item, so "
-                "please list them under `Pull requests:` (a `#number`, an "
-                "`owner/repo#number`, or a URL per bullet). "
+                else strings.t("graph.review.request.pulls-missing")
             )
-            + "A review with no pull requests reviews the work item itself.",
+            + strings.t("graph.review.request.no-pulls"),
         ]
     lines += ["", BRIEF_REQUEST_MARKER]
     return mark_self_authored("\n".join(lines))
@@ -471,31 +460,31 @@ def post_review_brief(ctx: HookContext) -> HookResult:
 
 def _confirmation(brief: Dict[str, Any]) -> str:
     lines = [
-        "🤖 _the-loop_ — **review brief recorded**",
+        strings.t("graph.review.confirm.heading"),
         "",
-        f"Reviewing against, as stated by {brief['by']}:",
+        strings.t("graph.review.confirm.by", by=brief["by"]),
         "",
     ]
     titles = {
-        "questions": "Questions",
-        "angles": "Angles",
-        "validations": "Validations",
-        PULLS_SECTION: "Pull requests in scope",
+        "questions": strings.t("graph.review.confirm.title.questions"),
+        "angles": strings.t("graph.review.confirm.title.angles"),
+        "validations": strings.t("graph.review.confirm.title.validations"),
+        PULLS_SECTION: strings.t("graph.review.confirm.title.pulls"),
     }
     for section in (*SECTIONS, PULLS_SECTION):
         items = brief.get(section) or []
         if not items:
             continue
-        lines.append(f"> **{titles[section]}:**")
+        lines.append(
+            "> " + strings.t("graph.review.confirm.section", title=titles[section])
+        )
         lines += [f"> - {item}" for item in items]
         lines.append(">")
     if lines[-1] == ">":
         lines.pop()
     lines += [
         "",
-        "This brief is now the review's contract. the-loop reviews the change "
-        "against it and posts its findings here; reply with follow-ups for "
-        "another round, or say the review is done to end it.",
+        strings.t("graph.review.confirm.outro"),
     ]
     return mark_self_authored("\n".join(lines))
 

@@ -263,52 +263,46 @@ def _quiz_body(
     if micro:
         # R2.7: a `micro` page has no quiz, so the box attests reading only.
         what = (
-            "the spec explainer before code generation starts"
+            strings.t("graph.quiz.read.spec-micro")
             if node == "spec-quiz"
-            else "the explainer of this change before review is requested"
+            else strings.t("graph.quiz.read.code-micro")
         )
     else:
         what = (
-            "the spec explainer and take its quiz before code generation starts"
+            strings.t("graph.quiz.read.spec")
             if node == "spec-quiz"
-            else "the explainer of this change and take the code quiz before "
-            "review is requested"
+            else strings.t("graph.quiz.read.code")
         )
     line = (READ_ONLY if micro else ATTESTATIONS)[node]
-    lines = [f"🎓 **{title}** — read {what}."]
+    lines = [strings.t("graph.quiz.heading", title=title, what=what)]
     commands = _view_commands(location, ref)
     if commands:
         lines += [
             "",
-            f"The page is committed at `{location}`. Open it rendered with one of:",
+            strings.t("graph.quiz.committed", location=location),
             "",
             "```sh",
             *commands,
             "```",
         ]
     else:
-        lines += ["", f"**Open it:** {location}"]
+        lines += ["", strings.t("graph.quiz.open-it", location=location)]
     if ref.startswith("jira:"):
         # Jira cannot say who edited a comment, so a tick here could never be
         # attributed: ask for the typed line instead. Inline code, so this very
         # comment never reads as ticked.
         lines += [
             "",
-            f"Reply with this line to move on: `- [x] {line}`",
+            strings.t("graph.quiz.jira-reply", line=line),
             "",
-            "Only a user authorized for this deployment of the-loop can answer; "
-            "the quiz itself is yours alone, and the-loop records only who "
-            "replied.",
+            strings.t("graph.quiz.jira-note"),
         ]
     else:
         lines += [
             "",
             f"- [ ] {line}",
             "",
-            "Ticking the box is enough — no reply needed. Only a user authorized "
-            "for this deployment of the-loop can tick it for the work item to "
-            "move on; the quiz itself is yours alone, and the-loop records only "
-            "who ticked.",
+            strings.t("graph.quiz.tick-note"),
         ]
     lines += ["", quiz_marker_text(node, round_, digest)]
     return mark_self_authored("\n".join(lines))

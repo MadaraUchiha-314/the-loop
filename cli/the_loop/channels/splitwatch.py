@@ -50,7 +50,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
-from .. import eventlog
+from .. import eventlog, strings
 from .slack import (
     DEFAULT_SPLIT_CHECK_BEATS,
     MAX_SPLIT_CHECK_BEATS,
@@ -227,19 +227,31 @@ def summary_line(state: Optional[SplitState]) -> str:
         return ""
     short_in_window = state.recent.count("split-suspected")
     window = (
-        f"{short_in_window} of the last {len(state.recent)} checks short"
+        strings.t(
+            "channels.splitwatch.summary.window-many",
+            short=short_in_window,
+            total=len(state.recent),
+        )
         if len(state.recent) > 1
-        else "the first check was short"
+        else strings.t("channels.splitwatch.summary.window-first")
     )
     latest = (
-        f"{state.echoed}/{state.beats} heartbeats reached the listener within "
-        f"{state.window_seconds:g}s"
+        strings.t(
+            "channels.splitwatch.summary.latest",
+            echoed=state.echoed,
+            beats=state.beats,
+            window=state.window_seconds,
+        )
         if state.verdict != "unverifiable"
-        else f"the last check could not run — {state.reason}"
+        else strings.t(
+            "channels.splitwatch.summary.latest-unverifiable", reason=state.reason
+        )
     )
-    return (
-        f"inbound may be split across two Socket Mode consumers — {latest} "
-        f"({window}, last at {state.checked_at or 'unknown'})"
+    return strings.t(
+        "channels.splitwatch.summary.headline",
+        latest=latest,
+        window=window,
+        checked_at=state.checked_at or strings.t("channels.splitwatch.unknown-time"),
     )
 
 
@@ -254,24 +266,38 @@ def split_lines(state: Optional[SplitState]) -> List[str]:
 def cadence_line(state: Optional[SplitState], config: SlackChannelConfig) -> str:
     """What ``channels status`` says when there is no finding to report."""
     if not config.split_check_beats:
-        return "off (channels.slack.read.splitCheckBeats: 0)"
+        return strings.t("channels.splitwatch.cadence.off")
     every = (
-        f"every {config.catch_up_seconds}s"
+        strings.t("channels.splitwatch.cadence.every", seconds=config.catch_up_seconds)
         if config.catch_up_seconds
-        else "at connect only (read.catchUpSeconds: 0)"
+        else strings.t("channels.splitwatch.cadence.connect-only")
     )
-    how = f"{config.split_check_beats} heartbeat(s) {every}"
+    how = strings.t(
+        "channels.splitwatch.cadence.how", beats=config.split_check_beats, every=every
+    )
     if state is None:
-        return f"{how} — not run yet on this state root"
+        return strings.t("channels.splitwatch.cadence.not-run", how=how)
     if state.verdict == "unverifiable":
-        return f"{how} — last check unverifiable: {state.reason}"
+        return strings.t(
+            "channels.splitwatch.cadence.unverifiable", how=how, reason=state.reason
+        )
     short = state.recent.count("split-suspected")
-    window = f"{len(state.recent)} retained, " + (
-        f"{short} short" if short else "none short"
+    window = strings.t(
+        "channels.splitwatch.cadence.window",
+        retained=len(state.recent),
+        short=(
+            strings.t("channels.splitwatch.cadence.short", short=short)
+            if short
+            else strings.t("channels.splitwatch.cadence.none-short")
+        ),
     )
-    return (
-        f"{how} — last check {state.echoed}/{state.beats} at "
-        f"{state.checked_at or 'unknown'}, {window}"
+    return strings.t(
+        "channels.splitwatch.cadence.last",
+        how=how,
+        echoed=state.echoed,
+        beats=state.beats,
+        checked_at=state.checked_at or strings.t("channels.splitwatch.unknown-time"),
+        window=window,
     )
 
 
@@ -382,19 +408,21 @@ class SplitWatch:
             return self._record(
                 "unverifiable",
                 0,
-                "no channel to post the heartbeat into — channels.slack.channel is "
-                + (
-                    "unset"
-                    if not self._config.channel
-                    else f"{self._config.channel!r}, which resolves to no channel "
-                    "this bot can see"
+                strings.t("channels.splitwatch.reason.no-channel-unset")
+                if not self._config.channel
+                else strings.t(
+                    "channels.splitwatch.reason.no-channel-unresolved",
+                    channel=self._config.channel,
                 ),
             )
         if not os.environ.get(self._config.bot_token_env):
             return self._record(
                 "unverifiable",
                 0,
-                f"no bot token — {self._config.bot_token_env} is unset",
+                strings.t(
+                    "channels.splitwatch.reason.no-bot-token",
+                    env=self._config.bot_token_env,
+                ),
             )
         wanted: Set[str] = set()
         posted: List[Tuple[str, str]] = []
@@ -408,7 +436,11 @@ class SplitWatch:
                 wanted.add(nonce)
                 posted.append((nonce, str((response or {}).get("ts") or "")))
         except Exception as exc:  # noqa: BLE001 — a post that fails is unverifiable
-            reason = f"could not post the heartbeat: {type(exc).__name__}: {exc}"
+            reason = strings.t(
+                "channels.splitwatch.reason.post-failed",
+                error_type=type(exc).__name__,
+                error=exc,
+            )
         try:
             if reason:
                 return self._record("unverifiable", 0, reason)

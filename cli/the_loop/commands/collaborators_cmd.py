@@ -29,7 +29,7 @@ import sys
 
 from .base import Command, register
 from .sessions_cmd import _cli_config, _default_portable_dir, _render
-from .. import eventlog
+from .. import eventlog, strings
 from ..control import ADD_COLLABORATOR, REMOVE_COLLABORATOR
 from ..core import collaborators as core_collaborators
 
@@ -44,36 +44,26 @@ class _CollaboratorCommand(Command):
             "logins",
             nargs="*",
             metavar="@LOGIN",
-            help="GitHub login(s) to act on, with or without the leading @.",
+            help=strings.t("cli.collaborators.add-arguments.logins.help"),
         )
         parser.add_argument(
             "--slack",
             action="append",
             default=[],
             metavar="ID|@HANDLE",
-            help=(
-                "A Slack member to act on, by member id (U…) or by handle (@dana). "
-                "A handle is resolved to its id through the workspace directory "
-                "before anything is written, and one that does not resolve refuses "
-                "the whole command. Repeatable."
-            ),
+            help=strings.t("cli.collaborators.add-arguments.slack.help"),
         )
         parser.add_argument(
             "--work-item",
             required=True,
-            help="The work item the grant is scoped to, e.g. github:OWNER/REPO#15. "
-            "A grant covers this work item only — the same person on another item "
-            "needs another grant.",
+            help=strings.t("cli.collaborators.add-arguments.work-item.help"),
         )
         parser.add_argument("--portable-dir", default=_default_portable_dir())
         parser.add_argument(
             "--comment",
             action=argparse.BooleanOptionalAction,
             default=True,
-            help=(
-                "Post the equivalent keyword comment on the work item so the thread "
-                "records who granted what (default: on; best-effort)."
-            ),
+            help=strings.t("cli.collaborators.add-arguments.comment.help"),
         )
 
     def run(self, args: argparse.Namespace) -> int:
@@ -92,7 +82,7 @@ class _CollaboratorCommand(Command):
             # A malformed login, an unresolvable handle, nobody named at all, or a
             # bad work-item ref: the caller's mistake, so exit 2 (argparse's own
             # code) and change nothing at all.
-            print(f"error: {exc}", file=sys.stderr)
+            print(strings.t("cli.collaborators.run.error", exc=exc), file=sys.stderr)
             return 2
         return _render(result)
 
@@ -101,15 +91,11 @@ class _CollaboratorCommand(Command):
 class AddCollaboratorCommand(_CollaboratorCommand):
     name = "add-collaborator"
     verb = ADD_COLLABORATOR
-    help = (
-        "Grant a GitHub login or a Slack member (--slack) work-item collaborator "
-        "status on one work item (their comments become input for its session — "
-        "nothing more)"
-    )
+    help = strings.t("cli.collaborators.add-collaborator.help")
 
 
 @register
 class RemoveCollaboratorCommand(_CollaboratorCommand):
     name = "remove-collaborator"
     verb = REMOVE_COLLABORATOR
-    help = "Revoke a work-item collaborator's grant"
+    help = strings.t("cli.collaborators.remove-collaborator.help")

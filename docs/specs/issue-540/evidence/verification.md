@@ -101,3 +101,32 @@ VALID   skills/the-loop/templates/gateway-config.yaml
 ```
 
 `cli/pyproject.toml` dependencies are unchanged (NFR: no new runtime dependency).
+
+## V5 — scope extension: the whole application
+
+Run on 2026-11-18 after the owner asked for the whole application in this PR (tasks 11–19).
+Every human-facing string of the CLI and the UI now comes from `en.json` (2,275 keys, 428
+of them `ui.*`). The 37 MCP tool descriptions and the stop hook's feedback are prompt files
+(144 prompt `.md` files in all).
+
+```text
+$ cd cli && env -u THE_LOOP_CLI_CONFIG -u THE_LOOP_INSTANCE -u THE_LOOP_WORK_ITEM uv run python -m pytest -q
+6998 passed, 2 warnings in 261.70s (0:04:21)
+$ uv run python -m pytest -q tests/test_strings_catalog.py tests/test_prompts.py tests/test_prompts_guard.py tests/test_harness_gate.py
+80 passed in 2.54s
+$ cd ui && npm test            # Node 26 locally needs NODE_OPTIONS=--no-experimental-webstorage
+Test Files  23 passed (23)
+     Tests  379 passed (379)
+$ npm run typecheck && npm run lint && npm run build     # all clean
+$ grep -c '"eventlog.event-type' ui/dist/assets/*.js    # the build keeps only ui.* keys
+0
+$ uv run ruff format --check cli hooks   # 527 files already formatted
+$ uv run ruff check cli hooks            # All checks passed!
+$ uv run pyright cli                     # 0 errors, 0 warnings, 0 informations
+$ npx --yes markdownlint-cli2@0.18.1 "**/*.md"   # 1936 files, 0 error(s)
+$ uv run python scripts/validate_config.py       # 3 × VALID
+```
+
+The existing CLI and UI suites assert today's exact text, so a green run shows that the
+rendered output did not change. Each migration group also compared its renderers' output
+before and after on sample inputs and found them identical.

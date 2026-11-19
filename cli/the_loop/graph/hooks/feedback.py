@@ -30,6 +30,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
+from ... import strings
 from ...authz import is_authorized, is_self_authored
 from ..contract import HookContext, HookResult, Message
 from ..frontmatter import split_front_matter
@@ -214,9 +215,11 @@ def record_feedback(ctx: HookContext) -> HookResult:
         # fixes its own markdown, never a human's words.
         body = comment["body"].strip()
         if body:
-            entry.append(f"\n**@{comment['author']}** wrote:\n\n{body}\n")
+            wrote = strings.t("graph.feedback.wrote", author=comment["author"])
+            entry.append(f"\n{wrote}\n\n{body}\n")
         else:
-            entry.append(f"\n**@{comment['author']}** left no comment text.\n")
+            silent = strings.t("graph.feedback.no-text", author=comment["author"])
+            entry.append(f"\n{silent}\n")
     block = "".join(entry)
 
     if f"## {REVIEW_SECTION}" in text:

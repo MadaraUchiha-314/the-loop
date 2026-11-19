@@ -26,7 +26,7 @@ import time
 from pathlib import Path
 
 from .base import Command, register
-from .. import eventlog
+from .. import eventlog, strings
 from ..client.routing import via_service as _routing_via_service
 
 # Envelope keys rendered as their own table columns; everything else lands in
@@ -60,7 +60,16 @@ def _detail(record: dict) -> str:
 
 
 def _print_table(records) -> int:
-    rows = [("Time", "Source", "Level", "Event", "Work item", "Detail")]
+    rows = [
+        (
+            strings.t("cli.events.table.header.time"),
+            strings.t("cli.events.table.header.source"),
+            strings.t("cli.events.table.header.level"),
+            strings.t("cli.events.table.header.event"),
+            strings.t("cli.events.table.header.work-item"),
+            strings.t("cli.events.table.header.detail"),
+        )
+    ]
     for r in records:
         rows.append(
             (
@@ -77,21 +86,21 @@ def _print_table(records) -> int:
         head = "  ".join(cell.ljust(widths[i]) for i, cell in enumerate(row[:-1]))
         print(f"{head}  {row[-1]}".rstrip())
     if len(rows) == 1:
-        print("(no matching events)", file=sys.stderr)
+        print(strings.t("cli.events.print-table.no-matching-events"), file=sys.stderr)
     return 0
 
 
 @register
 class EventsCommand(Command):
     name = "events"
-    help = "Query the-loop's structured event log (routing, dispatch, sessions)"
+    help = strings.t("cli.events.help")
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         default_file = str(eventlog.load_config().get("path", eventlog.DEFAULT_PATH))
         parser.add_argument(
             "--file",
             default=default_file,
-            help="Event log to read (default: eventLog.path in the CLI config).",
+            help=strings.t("cli.events.file.help"),
         )
         parser.add_argument(
             "--type",
@@ -99,37 +108,35 @@ class EventsCommand(Command):
             default=[],
             dest="types",
             metavar="PATTERN",
-            help="Filter by event type; fnmatch patterns, repeatable "
-            "(e.g. --type 'dispatch.*' --type session.spawned).",
+            help=strings.t("cli.events.type.help"),
         )
         parser.add_argument(
             "--work-item",
-            help="Filter to one work item, e.g. github:OWNER/REPO#15.",
+            help=strings.t("cli.events.work-item.help"),
         )
         parser.add_argument(
             "--delivery-id",
-            help="Filter to one GitHub delivery id (X-GitHub-Delivery).",
+            help=strings.t("cli.events.delivery-id.help"),
         )
         parser.add_argument(
             "--source",
             choices=["gh-webhook", "poll", "sessions"],
-            help="Filter by emitting process.",
+            help=strings.t("cli.events.source.help"),
         )
         parser.add_argument(
             "--level",
             choices=list(eventlog.LEVELS),
-            help="Minimum level (e.g. warning shows warning + error).",
+            help=strings.t("cli.events.level.help"),
         )
         parser.add_argument(
             "--since",
-            help="Only events at/after this time: ISO-8601 UTC, or relative "
-            "like 30s / 15m / 2h / 1d.",
+            help=strings.t("cli.events.since.help"),
         )
         parser.add_argument(
             "--limit",
             type=int,
             default=50,
-            help="Show only the last N matching events (0 = no limit; default 50).",
+            help=strings.t("cli.events.limit.help"),
         )
         parser.add_argument(
             "--format", choices=["table", "json", "jsonl"], default="table"
@@ -137,13 +144,13 @@ class EventsCommand(Command):
         parser.add_argument(
             "--follow",
             action="store_true",
-            help="After printing, keep watching the log and print new matches.",
+            help=strings.t("cli.events.follow.help"),
         )
         parser.add_argument(
             "--types",
             action="store_true",
             dest="list_types",
-            help="List all documented event types and exit.",
+            help=strings.t("cli.events.types.help"),
         )
 
     def run(self, args: argparse.Namespace) -> int:
@@ -168,7 +175,7 @@ class EventsCommand(Command):
             from ..client import ServiceUnavailable
 
             if isinstance(exc, ServiceUnavailable):
-                print(f"error: {exc}", file=sys.stderr)
+                print(strings.t("cli.events.run.error", exc=exc), file=sys.stderr)
                 return 2
             raise
         if args.limit and args.limit > 0:

@@ -6,7 +6,7 @@ import argparse
 import sys
 from typing import List, Optional
 
-from . import __version__, cli_config
+from . import __version__, cli_config, strings
 from .commands import iter_commands
 
 
@@ -29,17 +29,17 @@ def _peek_config_flag(argv: List[str]) -> Optional[str]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="the-loop",
-        description="Lightweight, extensible CLI for the-loop.",
+        description=strings.t("cli.main.build-parser.description"),
     )
     parser.add_argument(
-        "--version", action="version", version=f"the-loop {__version__}"
+        "--version",
+        action="version",
+        version=strings.t("cli.main.version", version=__version__),
     )
     parser.add_argument(
         "--config",
         "-c",
-        help="Path to the CLI config file (webhooks/polling/eventLog). Overrides "
-        "$THE_LOOP_CLI_CONFIG, ./.the-loop/cli-config.yaml and "
-        "~/.the-loop/cli-config.yaml (decision-032). Must precede the subcommand.",
+        help=strings.t("cli.main.build-parser.config.help"),
     )
     sub = parser.add_subparsers(dest="command", metavar="<command>")
     sub.required = True
@@ -65,5 +65,5 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = parser.parse_args(argv)
     handler = getattr(args, "_handler", None)
     if handler is None:  # pragma: no cover - argparse enforces required subcommand
-        parser.error("no command given")
+        parser.error(strings.t("cli.main.main.no-command-given"))
     return int(handler(args) or 0)

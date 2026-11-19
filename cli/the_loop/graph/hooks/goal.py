@@ -42,6 +42,7 @@ import logging
 import re
 from typing import Any, Dict, List, Optional
 
+from ... import strings
 from ...authz import is_authorized, is_self_authored, mark_self_authored
 from ..contract import HookContext, HookResult
 from ..registry import hook
@@ -163,23 +164,18 @@ def _latest_goal(ctx: HookContext) -> Optional[Dict[str, Any]]:
 
 def _request_body(ctx: HookContext) -> str:
     lines = [
-        "🤖 _the-loop_ — **what should this contribution achieve?**",
+        strings.t("graph.goal.request.heading"),
         "",
-        "the-loop was asked to join this work item as a contributor. It will "
-        "not start until an authorized user states the intervention's purpose "
-        "— in one comment, in this shape:",
+        strings.t("graph.goal.request.intro"),
         "",
         "```",
-        "Goal: <one sentence: what the-loop should accomplish here>",
+        "Goal: " + strings.t("graph.goal.request.goal-placeholder"),
         "Success criteria:",
-        "- [ ] <how we will know it worked>",
-        "- [ ] <add as many as it takes>",
+        "- [ ] " + strings.t("graph.goal.request.criterion-placeholder"),
+        "- [ ] " + strings.t("graph.goal.request.criterion-more"),
         "```",
         "",
-        "The criteria become the definition of done: they are frozen with your "
-        "name on them, carried as checkboxes, and the loop's verification gate "
-        "holds until every one is met. If your `the-loop contribute` comment "
-        "already contained this block, nothing more is needed.",
+        strings.t("graph.goal.request.outro"),
         "",
         GOAL_REQUEST_MARKER,
     ]
@@ -226,20 +222,18 @@ def post_goal_request(ctx: HookContext) -> HookResult:
 
 def _confirmation(goal: Dict[str, Any]) -> str:
     lines = [
-        "🤖 _the-loop_ — **goal recorded**",
+        strings.t("graph.goal.confirm.heading"),
         "",
-        f"Contributing toward, as stated by {goal['by']}:",
+        strings.t("graph.goal.confirm.by", by=goal["by"]),
         "",
-        f"> **Goal:** {goal['goal']}",
+        "> " + strings.t("graph.goal.confirm.goal", goal=goal["goal"]),
         ">",
-        "> **Success criteria:**",
+        "> " + strings.t("graph.goal.confirm.criteria"),
     ]
     lines += [f"> - [ ] {c}" for c in goal["criteria"]]
     lines += [
         "",
-        "These criteria are now the definition of done: the loop's "
-        "verification gate holds until every one is met. Next, the-loop asks "
-        "which phases this intervention needs.",
+        strings.t("graph.goal.confirm.outro"),
     ]
     return mark_self_authored("\n".join(lines))
 

@@ -34,7 +34,7 @@ import re
 from dataclasses import replace
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
-from .. import eventlog
+from .. import eventlog, strings
 from ..identity import principal_for
 from ..repos import declared_repositories
 from ..standing import parse_standing_ref
@@ -479,8 +479,7 @@ def process_reply(
         _tell(
             bot,
             reply,
-            "Could not verify the mention just now (auth.test failed); please "
-            "try again in a moment. Nothing was recorded.",
+            strings.t("channels.inbound.tell.no-bot-id"),
         )
         return _drop(reply, "no-bot-id", level="warning", actor=reply.author)
     text, found = strip_mention(reply.text, own)
@@ -498,9 +497,10 @@ def process_reply(
         _tell(
             bot,
             reply,
-            f"`{verb.name if verb else event_type}` needs an authorized user of "
-            "the-loop; as a collaborator on this work item you may add context "
-            "(`record-context`) and reply.",
+            strings.t(
+                "channels.inbound.tell.unauthorized-act",
+                name=verb.name if verb else event_type,
+            ),
         )
         return _drop(
             reply,
@@ -519,8 +519,7 @@ def process_reply(
         _tell(
             bot,
             reply,
-            "This thread belongs to a standing session, which has no ticket to "
-            "record on. Nothing was recorded; a plain reply still reaches it.",
+            strings.t("channels.inbound.tell.standing-no-ticket"),
         )
         return _drop(reply, "no-ticket", actor=reply.author, kind=event_type)
     if event_type == "help":
@@ -566,7 +565,11 @@ def process_reply(
             # on the work item, the way the B2 fix explains a refused control
             # keyword. Best-effort: the ephemeral and reaction stand regardless.
             # issue-405 P1: the drop record says what the clause was read as.
-            _say_on_ticket(reply, f"⚠️ {refusal}", cli_config)
+            _say_on_ticket(
+                reply,
+                strings.t("channels.inbound.tell.refusal-on-ticket", refusal=refusal),
+                cli_config,
+            )
             return _drop(reply, reason, actor=reply.author, read=read or None)
         if composed != reply.text:
             reply = replace(reply, text=composed)
@@ -576,9 +579,7 @@ def process_reply(
         _tell(
             bot,
             reply,
-            "`record-decision` needs the decision itself: "
-            "`@the-loop record-decision [product|design|tech:] <what was decided> "
-            "[— why: <rationale>]`. Nothing was recorded.",
+            strings.t("channels.inbound.tell.empty-decision"),
         )
         return _drop(reply, "empty-decision", actor=reply.author)
     eventlog.emit(
@@ -637,7 +638,11 @@ def process_reply(
             )
         except ChannelError as exc:
             bot.react(reply, "error")
-            _tell(bot, reply, f"Could not read the thread: {exc}")
+            _tell(
+                bot,
+                reply,
+                strings.t("channels.inbound.tell.snapshot-failed", error=exc),
+            )
             return _drop(reply, "snapshot-failed", level="warning", error=str(exc))
         if snapshot.count == 0 and snapshot.truncated:
             # The first new message alone is over the cap: not "nothing new",
@@ -646,8 +651,7 @@ def process_reply(
             _tell(
                 bot,
                 reply,
-                "The next message in this thread is too large to record in one "
-                "comment; record from after it, or link it instead.",
+                strings.t("channels.inbound.tell.next-message-too-large"),
             )
             return _drop(reply, "snapshot-too-large", level="warning")
         if snapshot.count == 0:
@@ -666,7 +670,7 @@ def process_reply(
             _tell(
                 bot,
                 reply,
-                "Nothing new in this thread since it was last recorded as context.",
+                strings.t("channels.inbound.tell.nothing-new"),
             )
             eventlog.emit(
                 "channel.snapshot_empty",
@@ -680,8 +684,7 @@ def process_reply(
             _tell(
                 bot,
                 reply,
-                "This thread is too large to record in one comment even after the "
-                "cap; record it in parts, or link it instead.",
+                strings.t("channels.inbound.tell.thread-too-large"),
             )
             return _drop(reply, "snapshot-too-large", level="warning")
         text = snapshot.text
@@ -795,12 +798,21 @@ def process_reply(
     if kind != "reply" and recorded and record is not None:
         # The one visible receipt in the thread (R3.6): what landed, and where.
         what = (
-            f"📎 recorded {detail.get('count')} message(s) as context"
+            strings.t("channels.inbound.receipt.context", count=detail.get("count"))
             if kind == "context"
-            else "📌 recorded the decision"
+            else strings.t("channels.inbound.receipt.decision")
         )
         link = f" — {record.url}" if record.url else ""
-        bot.say(reply.thread, f"{what} on `{reply.work_item}`{link}", reply.channel_id)
+        bot.say(
+            reply.thread,
+            strings.t(
+                "channels.inbound.receipt.line",
+                what=what,
+                work_item=reply.work_item,
+                link=link,
+            ),
+            reply.channel_id,
+        )
     return outcome
 
 
@@ -925,11 +937,10 @@ def _selection_grammar(
     if rows is None or not rows.phases:
         return (
             "",
-            (
-                "Could not read the phase checklist on this work item just now, so "
-                f"`{WITHOUT}` cannot tell which phases you mean; nothing was recorded. "
-                "Try again in a moment, or tick the boxes on GitHub and reply "
-                f"`{keyword}` there."
+            strings.t(
+                "channels.inbound.selection.checklist-unreadable",
+                without=WITHOUT,
+                keyword=keyword,
             ),
             "checklist-unreadable",
             read,
@@ -1077,7 +1088,9 @@ def _deliver(
         )
         return False, str(exc)
     delivered = bool(result.get("delivered")) if isinstance(result, dict) else True
-    return delivered, "" if delivered else "the session did not take the reply"
+    return delivered, "" if delivered else strings.t(
+        "channels.inbound.deliver.not-taken"
+    )
 
 
 # -- kickoff (R6.5) ----------------------------------------------------------------
@@ -1255,10 +1268,7 @@ def _open_work_item(
     # with its line (issue-529) — where a press can be received (issue-337
     # R1.2): each value is the configured keyword, so a press is that keyword
     # typed.
-    said = (
-        f"Opened {result.ref}{link}. This thread is now that work item's "
-        "conversation — replies here reach it."
-    )
+    said = strings.t("channels.inbound.kickoff.opened", ref=result.ref, link=link)
     bot.say(
         reply.thread,
         said,
@@ -1386,10 +1396,13 @@ def poll_once(
     """
     config = SlackChannelConfig.from_mapping(cli_config)
     if not config.enabled:
-        return {"skipped": "channels.slack is not enabled", "replies": 0}
+        return {
+            "skipped": strings.t("channels.inbound.poll.skipped.not-enabled"),
+            "replies": 0,
+        }
     if config.read_mode == "off":
         return {
-            "skipped": "channels.slack.read.mode is 'off' — nothing is read",
+            "skipped": strings.t("channels.inbound.poll.skipped.read-off"),
             "replies": 0,
         }
     channel = SlackBotChannel(
@@ -1719,12 +1732,20 @@ def _shortcut_outcome(
         # the-loop is listening where nothing is bound (A1, A8).
         return
     if what == "processed" and not outcome.get("mirrored"):
-        said = "Could not record: " + str(outcome.get("error") or "the ledger refused")
+        said = strings.t(
+            "channels.inbound.shortcut.could-not-record",
+            error=str(
+                outcome.get("error")
+                or strings.t("channels.inbound.shortcut.ledger-refused")
+            ),
+        )
     elif what == "processed":
         url = str(outcome.get("url") or "")
-        said = "Recorded" + (f" — {url}" if url else "") + "."
+        said = strings.t(
+            "channels.inbound.shortcut.recorded", link=f" — {url}" if url else ""
+        )
         if outcome.get("delivered") is False:
-            said += " The session could not take it; the record stands."
+            said += strings.t("channels.inbound.shortcut.session-not-taken")
     elif what in (
         "empty-decision",
         "unauthorized-act",
@@ -1736,7 +1757,7 @@ def _shortcut_outcome(
     ):
         return  # already told, on the same channel, by the pipeline
     else:
-        said = f"Nothing recorded ({what})."
+        said = strings.t("channels.inbound.shortcut.nothing-recorded", outcome=what)
     _tell(bot, reply, said)
 
 
@@ -1794,16 +1815,14 @@ def handle_message_action(
             _tell(
                 bot,
                 reply,
-                "Recording a decision needs an authorized user of the-loop; as a "
-                "collaborator you may add context and reply.",
+                strings.t("channels.inbound.shortcut.decision-unauthorized"),
             )
             return _drop(reply, "unauthorized-act", level="warning", actor=member)
         if parse_standing_ref(reply.work_item):
             _tell(
                 bot,
                 reply,
-                "This thread belongs to a standing session, which has no ticket "
-                "to record a decision on.",
+                strings.t("channels.inbound.shortcut.decision-standing"),
             )
             return _drop(reply, "no-ticket", actor=member, kind="decision.recorded")
         if "decision.recorded" not in config.publish:
@@ -1812,8 +1831,7 @@ def handle_message_action(
             _tell(
                 bot,
                 reply,
-                "This channel may not record decisions: `decision.recorded` is "
-                "not in its publish grants.",
+                strings.t("channels.inbound.shortcut.decision-unpublishable"),
             )
             return _drop(
                 reply, "unpublishable-event", actor=member, kind="decision.recorded"
@@ -1828,8 +1846,7 @@ def handle_message_action(
             _tell(
                 bot,
                 reply,
-                "Could not open the decision form — try the shortcut again, or type "
-                "`@the-loop record-decision <what was decided>`.",
+                strings.t("channels.inbound.shortcut.form-failed"),
             )
         return {"outcome": "modal-opened" if opened else "modal-failed"}
     outcome = process_reply(

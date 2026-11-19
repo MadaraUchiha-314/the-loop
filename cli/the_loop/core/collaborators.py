@@ -31,6 +31,7 @@ import logging
 from typing import Any, Dict, List, Optional, Tuple
 
 from .. import eventlog
+from .. import strings
 from ..channels.directory import SlackDirectory, is_member_id
 from ..collaborators import CollaboratorStore, normalize_login, slack_token
 from ..comments import post_issue_comment
@@ -187,15 +188,14 @@ def manage_collaborators(
 def _line(effect: str, label: str, work_item: WorkItemRef) -> str:
     """``label`` is the subject as a person reads it: ``@dana`` or ``slack:U…``."""
     if effect == "granted":
-        return (
-            f"{label} is now a collaborator on {work_item.ref}: their comments on it "
-            "reach the session as input (they cannot start, stop or approve anything)"
-        )
+        return strings.t("core.collaborators.granted", label=label, ref=work_item.ref)
     if effect == "revoked":
-        return f"{label} is no longer a collaborator on {work_item.ref}"
+        return strings.t("core.collaborators.revoked", label=label, ref=work_item.ref)
     if effect == "already-granted":
-        return f"{label} is already a collaborator on {work_item.ref}; nothing changed"
-    return f"{label} is not a collaborator on {work_item.ref}; nothing changed"
+        return strings.t(
+            "core.collaborators.already-granted", label=label, ref=work_item.ref
+        )
+    return strings.t("core.collaborators.not-granted", label=label, ref=work_item.ref)
 
 
 def _announce(
@@ -225,8 +225,11 @@ def _announce(
             messages.append(
                 {
                     "stream": "out",
-                    "text": (
-                        f"commented {config.keyword(verb)!r} {label} on {work_item.ref}"
+                    "text": strings.t(
+                        "core.collaborators.commented",
+                        keyword=config.keyword(verb),
+                        label=label,
+                        ref=work_item.ref,
                     ),
                 }
             )
@@ -240,9 +243,10 @@ def _announce(
         messages.append(
             {
                 "stream": "err",
-                "text": (
-                    f"note: could not comment on {work_item.ref} ({error}); the "
-                    "roster was still updated locally"
+                "text": strings.t(
+                    "core.collaborators.comment-failed",
+                    ref=work_item.ref,
+                    error=error,
                 ),
             }
         )

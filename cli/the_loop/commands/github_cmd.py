@@ -27,7 +27,7 @@ from typing import Any, Callable, Dict
 
 from .base import Command, register
 from .sessions_cmd import _cli_config, _render
-from .. import eventlog
+from .. import eventlog, strings
 from ..client.routing import harness_routed, service_error
 from ..core import github_ops, tickets
 from ..ghapi import CLOSE_REASONS, MERGE_METHODS
@@ -46,15 +46,17 @@ def _read_body(args: argparse.Namespace, what: str = "body") -> str:
     try:
         return sys.stdin.read() if path == "-" else Path(path).read_text("utf-8")
     except OSError as exc:
-        raise ValueError(f"cannot read the {what}: {exc}") from None
+        raise ValueError(
+            strings.t("cli.github.read-body.cannot-read", what=what, exc=exc)
+        ) from None
 
 
 def _add_body(parser: argparse.ArgumentParser, required: bool = True) -> None:
     group = parser.add_mutually_exclusive_group(required=required)
-    group.add_argument("--body", help="The text (markdown).")
+    group.add_argument("--body", help=strings.t("cli.github.add-body.body.help"))
     group.add_argument(
         "--body-file",
-        help="Read the text from this file ('-' = stdin) — for multi-line markdown.",
+        help=strings.t("cli.github.add-body.body-file.help"),
     )
 
 
@@ -67,7 +69,7 @@ def _run(call: Callable[[], Dict[str, Any]], as_json: bool = False) -> int:
         if mapped is None:
             if not isinstance(exc, ValueError):
                 raise
-            mapped = (f"error: {exc}", 2)
+            mapped = (strings.t("cli.github.run.error", exc=exc), 2)
         print(mapped[0], file=sys.stderr)
         return mapped[1]
     if as_json and int(result.get("exitCode") or 0) == 0:
@@ -79,17 +81,13 @@ def _run(call: Callable[[], Dict[str, Any]], as_json: bool = False) -> int:
 @register
 class CommentCommand(Command):
     name = "comment"
-    help = (
-        "Post a comment on a work item as the agent — marked, enveloped and "
-        "mirrored to subscribed channels (never needs gh)"
-    )
+    help = strings.t("cli.github.comment.help")
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
             "--work-item",
             required=True,
-            help="Work-item ref, e.g. github:OWNER/REPO#15 (a PR's conversation too) "
-            "or jira:SITE/KEY-7.",
+            help=strings.t("cli.github.comment.work-item.help"),
         )
         _add_body(parser)
 
@@ -111,32 +109,27 @@ class CommentCommand(Command):
 @register
 class TicketCommand(Command):
     name = "ticket"
-    help = "Read a ticket (body, comments, attachment links) or open one"
+    help = strings.t("cli.github.ticket.help")
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         actions = parser.add_subparsers(dest="ticket_command", required=True)
-        show = actions.add_parser(
-            "show", help="The ticket's body, comments and attachment links, as JSON"
-        )
-        show.add_argument(
-            "ref", help="Work-item ref, e.g. github:OWNER/REPO#15 or jira:SITE/KEY-7"
-        )
+        show = actions.add_parser("show", help=strings.t("cli.github.ticket.show.help"))
+        show.add_argument("ref", help=strings.t("cli.github.ticket.show.ref.help"))
         show.set_defaults(_action=self._show)
 
         create = actions.add_parser(
-            "create", help="Open a ticket (a GitHub issue, or a Jira ticket)"
+            "create", help=strings.t("cli.github.ticket.create.help")
         )
         where = create.add_mutually_exclusive_group(required=True)
         where.add_argument(
             "--repository",
             metavar="[HOST/]OWNER/REPO",
-            help="Open a GitHub issue in this repository.",
+            help=strings.t("cli.github.ticket.create.repository.help"),
         )
         where.add_argument(
             "--project",
             metavar="KEY",
-            help="Open a Jira ticket in this project (one under "
-            "integrations.jira.projects).",
+            help=strings.t("cli.github.ticket.create.project.help"),
         )
         create.add_argument("--title", required=True)
         _add_body(create)
@@ -144,43 +137,41 @@ class TicketCommand(Command):
             "--label",
             action="append",
             default=[],
-            help="A label to apply (repeatable), e.g. loop:requirements-definition.",
+            help=strings.t("cli.github.ticket.create.label.help"),
         )
         create.add_argument(
             "--issue-type",
             metavar="NAME",
             default="",
-            help="Jira only: the issue type, e.g. Story (default Task).",
+            help=strings.t("cli.github.ticket.create.issue-type.help"),
         )
         create.add_argument(
             "--parent",
             metavar="KEY",
             default="",
-            help="Jira only: the issue key the ticket sits under, e.g. an epic PROJ-1.",
+            help=strings.t("cli.github.ticket.create.parent.help"),
         )
         create.set_defaults(_action=self._create)
 
         projects = actions.add_parser(
             "projects",
-            help="The Jira projects a ticket can be opened in "
-            "(integrations.jira.projects), as JSON",
+            help=strings.t("cli.github.ticket.projects.help"),
         )
         projects.set_defaults(_action=self._projects)
 
         close = actions.add_parser(
             "close",
-            help="Close a registered work item's ticket (finish-tasks' cleanup)",
+            help=strings.t("cli.github.ticket.close.help"),
         )
         close.add_argument(
             "ref",
-            help="Work-item ref, e.g. github:OWNER/REPO#15, or jira:SITE/KEY-7 "
-            "(transitioned into Done)",
+            help=strings.t("cli.github.ticket.close.ref.help"),
         )
         close.add_argument("--reason", choices=CLOSE_REASONS, default="completed")
         close.add_argument(
             "--work-item",
             default="",
-            help="An ad-hoc (`the-loop do`) work item closing a ticket it names.",
+            help=strings.t("cli.github.ticket.close.work-item.help"),
         )
         close.set_defaults(_action=self._close)
 
@@ -255,119 +246,125 @@ def _add_pr(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "pull_request",
         metavar="PR",
-        help="The pull request: a ref (github:OWNER/REPO#16), its URL, or a "
-        "number with --work-item.",
+        help=strings.t("cli.github.add-pr.pull-request.help"),
     )
     parser.add_argument(
         "--work-item",
         default="",
-        help="Work-item ref a bare PR number is resolved against.",
+        help=strings.t("cli.github.add-pr.work-item.help"),
     )
 
 
 @register
 class PrCommand(Command):
     name = "pr"
-    help = (
-        "Open, inspect, ready or merge a pull request for a work item (never needs gh)"
-    )
+    help = strings.t("cli.github.pr.help")
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         actions = parser.add_subparsers(dest="pr_command", required=True)
 
         create = actions.add_parser(
             "create",
-            help="Open the pull request and link it to the work item in one act",
+            help=strings.t("cli.github.pr.create.help"),
         )
         create.add_argument(
             "--work-item",
             required=True,
-            help="Work-item ref the PR delivers; a jira: ref opens it in its "
-            "project's repository.",
+            help=strings.t("cli.github.pr.create.work-item.help"),
         )
         create.add_argument("--title", required=True)
         _add_body(create)
         create.add_argument(
             "--head",
             default="",
-            help="The branch to merge from (default: the checkout's current branch; "
-            "OWNER:BRANCH for a fork).",
+            help=strings.t("cli.github.pr.create.head.help"),
         )
         create.add_argument(
             "--base",
             default="",
-            help="The branch to merge into (default: the repository's default branch).",
+            help=strings.t("cli.github.pr.create.base.help"),
         )
         create.add_argument(
             "--repository",
             default="",
             metavar="[HOST/]OWNER/REPO",
-            help="Where to open it (default: the work item's repository).",
+            help=strings.t("cli.github.pr.create.repository.help"),
         )
-        create.add_argument("--draft", action="store_true", help="Open it as a draft.")
+        create.add_argument(
+            "--draft",
+            action="store_true",
+            help=strings.t("cli.github.pr.create.draft.help"),
+        )
         create.set_defaults(_action=self._create)
 
         status = actions.add_parser(
-            "status", help="State, mergeability and one checks verdict, as JSON"
+            "status", help=strings.t("cli.github.pr.status.help")
         )
         _add_pr(status)
         status.set_defaults(_action=self._status)
 
         checks = actions.add_parser(
             "checks",
-            help="Every check on the PR's head, with failed jobs' log tails, as JSON",
+            help=strings.t("cli.github.pr.checks.help"),
         )
         _add_pr(checks)
         checks.add_argument(
-            "--failing", action="store_true", help="List only the failing checks."
+            "--failing",
+            action="store_true",
+            help=strings.t("cli.github.pr.checks.failing.help"),
         )
         checks.add_argument(
             "--log-lines",
             type=int,
             default=github_ops.DEFAULT_LOG_LINES,
             metavar="N",
-            help="Lines of each failed GitHub Actions job's log to include "
-            f"(default {github_ops.DEFAULT_LOG_LINES}; 0 fetches none).",
+            help=strings.t(
+                "cli.github.pr.checks.log-lines.help",
+                default_log_lines=github_ops.DEFAULT_LOG_LINES,
+            ),
         )
         checks.set_defaults(_action=self._checks)
 
         threads = actions.add_parser(
-            "threads", help="The PR's unresolved review threads, as JSON"
+            "threads", help=strings.t("cli.github.pr.threads.help")
         )
         _add_pr(threads)
         threads.add_argument(
-            "--all", action="store_true", help="Include resolved threads."
+            "--all",
+            action="store_true",
+            help=strings.t("cli.github.pr.threads.all.help"),
         )
         threads.set_defaults(_action=self._threads)
 
         resolve = actions.add_parser(
             "resolve-thread",
-            help="Resolve one of the PR's review threads (an id from `pr threads`)",
+            help=strings.t("cli.github.pr.resolve-thread.help"),
         )
         _add_pr(resolve)
         resolve.add_argument(
-            "--thread", required=True, help="The thread's id (PRRT_…)."
+            "--thread",
+            required=True,
+            help=strings.t("cli.github.pr.resolve-thread.thread.help"),
         )
         resolve.set_defaults(_action=self._resolve)
 
         ready = actions.add_parser(
             "ready",
-            help="Take a draft PR out of draft, ready for review",
+            help=strings.t("cli.github.pr.ready.help"),
         )
         _add_pr(ready)
         ready.set_defaults(_action=self._ready)
 
         merge = actions.add_parser(
             "merge",
-            help="Merge the PR — refused when routing.mergeOnApproval is false",
+            help=strings.t("cli.github.pr.merge.help"),
         )
         _add_pr(merge)
         merge.add_argument("--method", choices=MERGE_METHODS, default="merge")
         merge.add_argument(
             "--sha",
             default="",
-            help="The head commit you reviewed; GitHub refuses the merge if the "
-            "branch has moved since (recommended).",
+            help=strings.t("cli.github.pr.merge.sha.help"),
         )
         merge.set_defaults(_action=self._merge)
 
@@ -380,9 +377,7 @@ class PrCommand(Command):
             body = _read_body(args)
             head = args.head or current_branch(Path.cwd())
             if not head:
-                raise ValueError(
-                    "no branch is checked out here (detached HEAD?); pass --head"
-                )
+                raise ValueError(strings.t("cli.github.pr.create.no-branch"))
             return harness_routed(
                 lambda c: c.post(
                     "/work-items/pull-requests",

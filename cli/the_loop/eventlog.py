@@ -44,11 +44,11 @@ import threading
 from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Iterator, Optional, Sequence, Union
+from typing import Dict, Iterator, Optional, Sequence, Tuple, Union
 
 import yaml
 
-from . import cli_config
+from . import cli_config, strings
 
 logger = logging.getLogger("the-loop.eventlog")
 
@@ -58,1366 +58,269 @@ LEVELS = ("debug", "info", "warning", "error")
 
 # The catalog of event types the-loop emits — the single source of truth used
 # by `the-loop events --types` and mirrored in the observability reference.
-# Adding an instrumentation point means adding its type (and description) here.
-EVENT_TYPES: Dict[str, str] = {
-    "session.identity_bound": "The launch identity was resolved to the harness's native conversation id (work_item, harness, harness_session_id).",
-    "poll.item_filtered": "A listed item lacked required arming labels (item_number, required_labels, missing_labels, reason). Every configured label is required.",
-    "session.default_harness_bypassed": "The declared default cannot host a session; the routing fallback was used (declared_harness, harness, reason).",
+# Adding an instrumentation point means adding its type here and its description
+# to strings/en.json under ``eventlog.event-type.<type>``.
+_EVENT_TYPE_TEXT: Dict[str, str] = strings.section("eventlog.event-type")
+_EVENT_NAMES: Tuple[str, ...] = (
+    "session.identity_bound",
+    "poll.item_filtered",
+    "session.default_harness_bypassed",
     # -- lifecycle hooks (issue-344; source: whichever process ran the chain) ---
-    "hooks.loaded": (
-        "The top-level `hooks` declaration was loaded into this process (hooks: the "
-        "names in order, count, config). Emitted only when at least one is declared."
-    ),
-    "hooks.load_failed": (
-        "The `hooks` declaration could not be loaded and this process runs WITHOUT "
-        "lifecycle hooks (error, strict=false). Warning-level: a one-shot command "
-        "(`the-loop ask`, `the-loop graph complete`) proceeds hookless; a daemon "
-        "started on the same config refuses to start instead."
-    ),
-    "hooks.decided": (
-        "A lifecycle hook changed a decision at a point (point, hook, changed: the "
-        "decision fields whose value changed, work_item). Also emitted when a "
-        "`required` hook's failure set proceed=false on its behalf."
-    ),
-    "hooks.failed": (
-        "A lifecycle hook raised, timed out, answered badly or could not be reached "
-        "(point, hook, error, required, work_item). Warning-level: the chain "
-        "continues with the context unchanged by that hook; a `required` hook at a "
-        "point carrying `proceed` refuses the operation instead (see hooks.decided)."
-    ),
-    "hooks.refused": (
-        "A `proceed: false` decision was applied: a start was refused "
-        "(work_item_start), a session launch was prevented (session_spawn), or a "
-        "person's input was dropped (input_received: an answer, a comment, a "
-        "control command) — "
-        "point, reason, work_item, and the hook(s) that decided when known. The "
-        "event is settled, the ticket gets one marked comment, nothing is retried."
-    ),
+    "hooks.loaded",
+    "hooks.load_failed",
+    "hooks.decided",
+    "hooks.failed",
+    "hooks.refused",
     # -- webhook receiver (source: gh-webhook) --------------------------------
-    "webhook.received": (
-        "An inbound webhook POST was accepted for routing "
-        "(gh_event, delivery_id, verified: HMAC signature checked)."
-    ),
-    "webhook.rejected": (
-        "An inbound webhook POST was refused before routing "
-        "(reason: invalid-signature | invalid-payload)."
-    ),
+    "webhook.received",
+    "webhook.rejected",
     # -- routing (source: gh-webhook or poll) ---------------------------------
-    "routing.routed": (
-        "A verified event mapped to work item(s) and passed all guards "
-        "(gh_event, work_items, labeled)."
-    ),
-    "routing.dropped": (
-        "A verified event was not routed (reason: disabled-event | "
-        "duplicate-delivery | undeclared-repository | no-work-item | "
-        "unauthorized-actor; actor). `undeclared-repository` (issue-348) is the "
-        "repository bound: the delivery — or a work item it named — is outside the "
-        "top-level `repositories`, the one list every ingress reads. It carries "
-        "`repository` for a delivery judged on its own repository and `work_items` "
-        "for refs filtered out of one, and is checked ABOVE the actor guard, so an "
-        "undeclared repository's payload reaches nothing else."
-    ),
-    "routing.collaborator": (
-        "A verified event was routed on a WORK-ITEM COLLABORATOR grant rather than "
-        "`routing.authorizedUsers` (gh_event, actor, work_items) — issue-307. An "
-        "authorized user granted this login the right to be *input* on these work "
-        "items: the comment reaches the session, and the control and spawn seams "
-        "still refuse it everything else."
-    ),
-    "routing.linkage_dropped": (
-        "A work-item ref an event named ONLY through the issue-<n> branch "
-        "convention does not exist, so it was removed from that event's work "
-        "items before anything acted on it (work_item, source: branch, reason: "
-        "not-found, gh_event, delivery_id) — issue-269. The branch convention is "
-        "the one linkage source that supplies a repository the event never "
-        "stated; every other source is routed unchecked."
-    ),
+    "routing.routed",
+    "routing.dropped",
+    "routing.collaborator",
+    "routing.linkage_dropped",
     # -- dispatch (source: gh-webhook or poll) --------------------------------
-    "dispatch.queued": (
-        "A routed event was enqueued on a session's FIFO queue "
-        "(work_item, spawn: whether it will spawn a new session)."
-    ),
-    "dispatch.quiz_gate": (
-        "A ticked quiz box re-evaluated the gate its work item waits at "
-        "(issue-488): `outcome` is the gate's verdict. Delivery-only — no prompt "
-        "is rendered or delivered, and nothing spawns."
-    ),
-    "dispatch.dropped": (
-        "A routed event was discarded at dispatch (reason: duplicate-delivery "
-        "| already-processed | spawn-policy | awaiting-start | session-paused "
-        "| collaborator-no-spawn | session-vanished | no-adapter | "
-        "session-occupied | work-item-not-found | no-work-item | "
-        "ci-not-actionable | ci-autofix-exhausted | ci-review-loop | no-gate). "
-        "`no-gate` (issue-488) is a quiz doorbell for a work item that is not "
-        "waiting at a human gate — nothing to re-evaluate, and never a spawn. "
-        "`ci-not-actionable` and `ci-autofix-exhausted` (issue-462) are the CI "
-        "gate's (`routing.ci.autofix`): a CI event that needs no action (a "
-        "running, passing, cancelled or aggregate one), or a failure of a check "
-        "whose attempts are spent; both carry `check` and are settled, never "
-        "retried. `ci-review-loop` (issue-524) is a CI event kept from a session "
-        "walking the review loop, which changes no code: recorded per reviewer, "
-        "carries `check`, and spends no attempt. "
-        "`collaborator-no-spawn` (issue-307) means the event reached dispatch on a "
-        "work-item collaborator grant, which admits input and never a new session. "
-        "`work-item-not-found` (issue-269) means every work item the event named "
-        "was a branch-invented ref the provider says does not exist, and "
-        "`no-work-item` that it named none to begin with; in both cases the "
-        "delivery id is deliberately NOT released, because that is a permanent "
-        "condition and a redelivery could only reach the same answer. "
-        "`session-occupied` (issue-146) means a dead tmux session held the work "
-        "item's `loop-<slug>` name and could not be cleared, so nothing was "
-        "spawned and the delivery id was deliberately NOT released — retrying "
-        "could only hit the same collision. "
-        "`awaiting-start` and `session-paused` are *suppressions*: the delivery "
-        "id is kept AND recorded as settled (issue-270), so the poll path "
-        "resolves the comment instead of counting a retry against it — nothing "
-        "is replayed when the item is started or the session resumed, and the "
-        "session reads the thread itself instead (`poll.comment_settled`)."
-    ),
-    "ci.check_failed": (
-        "A failing CI check was delivered to its session to heal, within its "
-        "attempt budget (work_item, pull_request, check, attempt, max_attempts, "
-        "head_sha; issue-462)."
-    ),
-    "ci.autofix_exhausted": (
-        "A CI check failed on more distinct commits than `routing.ci.maxAttempts` "
-        "since it last passed: the session was told once to stop and escalate, and "
-        "no further failure of the check is delivered until it passes (same fields "
-        "as `ci.check_failed`; issue-462)."
-    ),
-    "dispatch.succeeded": (
-        "An event was delivered to its harness session (work_item, harness, "
-        "via: resume | tmux)."
-    ),
-    "dispatch.attachments": (
-        "A forwarded GitHub event's body carried attachment URLs (issue-416): how "
-        "many, and how many were fetched into the work item's attachment "
-        "directory before the prompt was delivered (work_item, gh_event, count, "
-        "fetched). A URL that was not fetched is named in the prompt with its "
-        "reason; this line carries no URL and no path."
-    ),
-    "dispatch.failed": (
-        "Delivering an event to its session failed (work_item, harness, "
-        "error; will_retry: the delivery id was released so a redelivery / "
-        "next poll cycle can retry)."
-    ),
-    "dispatch.error": (
-        "A dispatch worker crashed on an event (work_item, error; will_retry)."
-    ),
-    "dispatch.abandoned": (
-        "The dispatcher shut down with events still queued; they were never "
-        "delivered and are left for the next start to retry (count, "
-        "delivery_ids) — issue-159. On the poll path the attempts they spent "
-        "are handed back (`poll.attempts_released`)."
-    ),
-    "reaction.added": (
-        "A dispatch-lifecycle emoji reaction was added to the triggering "
-        "comment/issue/PR (work_item, state: started | completed | error, "
-        "content, target) — issue-84, routing.reactions."
-    ),
-    "reaction.failed": (
-        "Adding a dispatch-lifecycle reaction failed; the dispatch itself is "
-        "unaffected (work_item, state, content, error)."
-    ),
+    "dispatch.queued",
+    "dispatch.quiz_gate",
+    "dispatch.dropped",
+    "ci.check_failed",
+    "ci.autofix_exhausted",
+    "dispatch.succeeded",
+    "dispatch.attachments",
+    "dispatch.failed",
+    "dispatch.error",
+    "dispatch.abandoned",
+    "reaction.added",
+    "reaction.failed",
     # -- execution control (source: any; issue-106) ---------------------------
-    "control.command": (
-        "A control command was recognised and applied (work_item, command: "
-        "start | stop | pause | resume | add-collaborator | remove-collaborator, "
-        "source: comment | cli, actor, effect: spawned | resumed | paused | "
-        "stopped | noop | granted | revoked | already-granted | "
-        "not-a-collaborator) — the record of who asked for a run to start or "
-        "stop, and (issue-307, with `collaborator`: the login) of who was "
-        "invited onto a work item or removed from it. `loop` (issue-343) names "
-        "the operator's own graph an arming command selected — a new command "
-        "bound in `routing.control.commands` is logged as `start` with its `loop`."
-    ),
-    "control.rejected": (
-        "A control command was recognised but refused (work_items, command, "
-        "source, actor, reason: spawn-policy | awaiting-start | "
-        "nothing-to-resume | unauthorized-actor | missing-collaborator | "
-        "input-refused: a lifecycle hook said no, issue-344) — e.g. a "
-        "start for a work item that is not armed for autonomous execution (which "
-        "is refused without being remembered), a command with no named authorized "
-        "actor, or an `add-collaborator` naming no valid `@login`."
-    ),
-    "control.ambiguous": (
-        "A comment opened lines with two or more different control keywords, so "
-        "none was executed; the comment was routed as conversation (issue-498) "
-        "(work_items, actor, commands)."
-    ),
+    "control.command",
+    "control.rejected",
+    "control.ambiguous",
     # A control comment is CONSUMED, never delivered — so on the poll path its
     # delivery is settled rather than counted as an attempt (issue-270). That
     # applies to two outcomes above: applied (`control.command`) and refused
     # (`control.rejected`). An ambiguous one (`control.ambiguous`) is routed as
     # conversation instead (issue-498).
-    "control.announced": (
-        "A CLI control action was mirrored to the work item as a comment "
-        "carrying the same keyword (work_item, command)."
-    ),
-    "control.announce_failed": (
-        "Mirroring a CLI control action to the work item failed (work_item, "
-        "command, error) — best-effort; the command was still applied locally."
-    ),
+    "control.announced",
+    "control.announce_failed",
     # -- session lifecycle (source: any) --------------------------------------
-    "session.registered": (
-        "A work item ↔ harness session link was recorded in the registry "
-        "(work_item, harness, harness_session_id, cwd)."
-    ),
-    "session.pr_linked": (
-        "A pull request was durably recorded as delivering a work item "
-        "(work_item, pull_request) — issue-172. Written when the routing "
-        "decision is made, so which session owns the PR's events stops being "
-        "recomputed from `gh` — and, since issue-274, by the session that "
-        "OPENED the pull request (`sessions link-pr`), which is the only "
-        "writer a the-loop-authored PR has: it carries no closing reference, "
-        "no `issue-<n>` branch and no closing keyword to infer from. Emitted "
-        "only when the PR is newly listed."
-    ),
-    "session.pr_spawned": (
-        "A recorded pull request got its own tmux session and harness "
-        "conversation (work_item, pull_request, harness, harness_session_id, "
-        "tmux_target; harness_args, the argv it launched with, since issue-377) "
-        "— `routing.tmux.sessionPerPr`. The work item's own "
-        "session is untouched; this is an additional endpoint. Which pull "
-        "requests reach this is the operator's choice (issue-258): under the "
-        "default `cross-repository` only one in ANOTHER repository does, "
-        "because the work item's own repository is its own session's; "
-        "`always` adds same-repository pull requests that can be given a "
-        "checkout of their own; `never` reaches this for none of them."
-    ),
-    "session.pr_session_declined": (
-        "A pull request was NOT given a session of its own, and its event went "
-        "into the work item's session instead (work_item, pull_request, "
-        "reason: no-separate-checkout | workspace-failed | shared-worktree) — "
-        "issue-253. An endpoint gets a conversation only when it has a working "
-        "tree of its own; without `routing.workspace.root` there is none to "
-        "give, and two harness sessions never share a tree. Under "
-        "`sessionPerPr: always` a same-repository endpoint is also declined "
-        "(reason workspace-failed) when its checkout cannot hold the pull "
-        "request's head branch — which is every time the work item's own "
-        "session already holds it under `workspace.strategy: worktree`."
-    ),
-    "session.pr_closed": (
-        "A pull request's endpoint was closed while its work item's session "
-        "kept running (work_item, pull_request) — a work item may be delivered "
-        "by several PRs, so one merging ends only that conversation "
-        "(issue-101, issue-172)."
-    ),
-    "session.link_failed": (
-        "Recording a pull request against its work item failed (work_item, "
-        "linked_ref, error). Best-effort: the event was still dispatched, and "
-        "routing falls back to deriving the linkage as it did before issue-172."
-    ),
-    "graph.assignment_delivered": (
-        "The graph entered an agent node and pushed that node's assignment "
-        "into the loop's bound session (work_item; endpoint: the PR's ref when "
-        "an inner loop was assigned) — issue-172, the deliver-assignment entry "
-        "hook. The graph assigns; the session works; the claim reports back."
-    ),
-    "graph.assignment_failed": (
-        "Pushing an entered node's assignment into its session failed "
-        "(work_item, endpoint, error). Best-effort: the node is entered "
-        "regardless, and the same state is re-rendered into every event prompt."
-    ),
-    "session.spawned": (
-        "A new harness session was spawned for a work item — this is the "
-        "'what triggered this session' record (work_item, harness, "
-        "harness_session_id, runner, gh_event, delivery_id; and, since "
-        "issue-377, the argv it was launched with: harness_args, model, effort, "
-        "each omitted when empty — so 'was it launched with the flag?' is "
-        "answerable from the log alone)."
-    ),
-    "session.spawn_failed": (
-        "Spawning a session failed (work_item, harness, error; will_retry)."
-    ),
-    "session.choice_changed": (
-        "A session was re-launched (resuming its conversation) because the model "
-        "or effort its work item resolves to no longer matches what the session "
-        "was launched with (issue-358, R4.3) — a choice changed after the gate, a "
-        "declaration withdrawn, or a verdict that turned `refused` (work_item, "
-        "harness, previous_model, previous_effort)."
-    ),
-    "session.choice_refused": (
-        "A model or effort level a work item had frozen was withheld because this "
-        "machine's harness refuses it (issue-358, R7.4). The session is launched on "
-        "the harness's own arguments instead, and the choice is not retried until "
-        "its verdict changes (work_item, harness, kind, name)."
-    ),
-    "session.spawn_deferred": (
-        "No session was spawned, on purpose: the work item is parked on its "
-        "graph's first node and that node is a HUMAN gate the daemon services "
-        "itself (issue-358, R8) — `phase-selection`, a contribution's "
-        "`goal-definition`. A session starts once an authorized reply unparks "
-        "the pointer, and it then carries the model that gate froze (work_item, "
-        "harness, gh_event, delivery_id, reason)."
-    ),
-    "session.respawned": (
-        "A tmux-mode session found dead on delivery was respawned on a fresh "
-        "tmux session, and the pending event delivered as its boot prompt "
-        "(work_item, harness, harness_session_id, runner, tmux_target, "
-        "resumed: whether the previous conversation was resumed or a fresh one "
-        "started, gh_event, delivery_id; harness_args, model, effort as on "
-        "session.spawned)."
-    ),
-    "session.respawn_averted": (
-        "A delivery reported its tmux session missing, but the session turned "
-        "out to be alive when the respawn re-checked — so the pending event was "
-        "delivered into the existing session and nothing was respawned "
-        "(work_item, harness, tmux_target, gh_event, delivery_id). issue-146: "
-        "the-loop never spawns over a live `loop-<slug>`; it routes into it."
-    ),
-    "session.resume_failed": (
-        "A respawn could not resume the dead session's conversation and fell "
-        "back to a fresh one (work_item, harness, harness_session_id, error) — "
-        "e.g. an unresumable id or a harness without interactive resume. Not "
-        "emitted when resuming is simply off (routing.tmux.resumeOnRespawn)."
-    ),
-    "session.restarted": (
-        "A running session was relaunched in place onto the environment `env.file` "
-        "declares now (work_item, harness, tmux_target, outcome, stale) — issue-410's "
-        "recovery from a credential rotation. `outcome` is restarted / stale / "
-        "unverified, and `stale` names the variables that STILL differ afterwards, "
-        "never their values."
-    ),
-    "session.credentials_inherited": (
-        "A spawned or respawned session was handed opted-in credentials from "
-        "`env.sessionCredentials` (work_item, tmux_target, names) — issue-533. "
-        "Warning level on purpose: an unattended agent now holds a token. Names "
-        "only, never a value."
-    ),
-    "session.restart_failed": (
-        "A relaunch did not produce a running harness (work_item, harness, "
-        "tmux_target, error): tmux refused the respawn, or the resumed harness "
-        "exited inside the probe window. The session is left as it was found."
-    ),
-    "session.announced": (
-        "A comment announcing a newly spawned tmux session (and how to attach "
-        "to it) was posted on the work item (work_item, tmux_target); a respawn "
-        "reuses the name and posts nothing further."
-    ),
-    "session.work_item_missing": (
-        "The session announcement came back 404: the work item the-loop just "
-        "spawned a session for does not exist (work_item, tmux_target, error) — "
-        "issue-269. Recorded, not acted on: a repository the credential cannot "
-        "see answers 404 for items that do exist, so killing a live session on "
-        "this evidence would destroy work. The ref is remembered as missing, so "
-        "the next event naming it through a branch convention is dropped."
-    ),
-    "session.announce_failed": (
-        "Posting the tmux-session announcement comment failed (work_item, "
-        "tmux_target, error) — best-effort, the dispatch is unaffected."
-    ),
-    "session.awaiting_input": (
-        "A session asked a human a question through `the-loop ask` and is now "
-        "waiting for the answer (work_item, question, actor, comment_url, "
-        "comment_posted: whether the question reached the ticket, "
-        "channels_posted: how many channels took it — 0 means nobody was paged "
-        "and the outbox holds it, issue-409) — issue-208. "
-        "The verb stamps the loop-prevention marker centrally, so the wait is "
-        "recorded even when the agent forgot nothing. Closed by the next "
-        "session.reply_sent; an answer given on the ticket instead is forwarded "
-        "as usual but emits nothing, so the wait stays reported."
-    ),
-    "session.reply_sent": (
-        "An operator's answer was delivered straight into the waiting session's "
-        "tmux pane via POST /api/v1/sessions/reply (work_item, actor) — "
-        "issue-208. Closes the work item's session.awaiting_input on the "
-        "attention surface and the dashboard alike."
-    ),
+    "session.registered",
+    "session.pr_linked",
+    "session.pr_spawned",
+    "session.pr_session_declined",
+    "session.pr_closed",
+    "session.link_failed",
+    "graph.assignment_delivered",
+    "graph.assignment_failed",
+    "session.spawned",
+    "session.spawn_failed",
+    "session.choice_changed",
+    "session.choice_refused",
+    "session.spawn_deferred",
+    "session.respawned",
+    "session.respawn_averted",
+    "session.resume_failed",
+    "session.restarted",
+    "session.credentials_inherited",
+    "session.restart_failed",
+    "session.announced",
+    "session.work_item_missing",
+    "session.announce_failed",
+    "session.awaiting_input",
+    "session.reply_sent",
     # -- channels (source: ask | channels | poll | gh-webhook) ----------------
-    "channel.posted": (
-        "An outbound event was posted to a communication channel (channel, "
-        "work_item, event_type, thread: the provider's conversation handle) — "
-        "issue-245. The work item already carries the text; this is the "
-        "fan-out."
-    ),
-    "channel.post_failed": (
-        "A channel post failed (channel, work_item, event_type, error) — "
-        "best-effort by contract: the ask's outcome is unaffected and the "
-        "work item remains the record."
-    ),
-    "channel.undelivered": (
-        "The bus asked at least one channel to take an event and NONE accepted "
-        "it, so the event was queued for redelivery (event_type, work_item, "
-        "channels: the ones asked, error: the first refusal, pending: how many "
-        "entries the outbox now holds) — issue-409. Warning level: before this "
-        "the fact lived only in a debug `bus.published` line with `posted: 0`, "
-        "which is how three days of agent questions went missing. Ids and counts "
-        "only; the message text is in the outbox, never in the log."
-    ),
-    "channel.posting_unavailable": (
-        "`the-loop start` found Slack enabled and no way to post to it (reason: the "
-        "unset bot-token variable and, with a gateway block, what the gateway said "
-        "about `slack.post.enabled` or that it could not be asked) — issue-519. "
-        "Warning level, once per start; the start itself succeeds and a failed post "
-        "waits in the outbox."
-    ),
-    "channel.delivered_late": (
-        "A queued event was accepted by a channel on a later attempt and left the "
-        "outbox (event_type, work_item, attempts, waited_seconds) — issue-409."
-    ),
-    "channel.undelivered_dropped": (
-        "The outbox was full and its OLDEST entry was dropped to make room "
-        "(work_item, event_type, queued_at, cap) — issue-409. The event is gone "
-        "from the queue; the work item still carries whatever the ledger recorded."
-    ),
-    "channel.reply_received": (
-        "An authorized reply arrived through a channel and entered the "
-        "pipeline (channel, work_item, actor: the channel-native member id, "
-        "kind: the event type it became, gate: open | none | unknown — what "
-        "the graph read returned, issue-321). Payloads carry ids, never "
-        "message text."
-    ),
-    "channel.dropped": (
-        "An inbound channel message was not processed (reason: unmapped | "
-        "self-authored | unauthorized-actor | undeliverable | "
-        "unpublishable-event | kickoff-unknown-repo | kickoff-ambiguous-repo | "
-        "kickoff-no-target | kickoff-empty-message | create-failed | "
-        "unknown-command | unknown-target | duplicate | channel-disabled | "
-        "unknown-phase | unskippable-phase | empty-clause | checklist-unreadable; "
-        "channel, work_item, actor, kind: the classified event type — or, for a "
-        "refused kickoff, the repository prefix that was read, error; read: for a "
-        "refused `execute without` reply, the items the clause was read as, a "
-        "word that is not a name as its length only, issue-405). The four "
-        "selection reasons are a typed phase-selection reply refused (issue-393 "
-        "R9.3): a name, number or word the checklist does not offer, a protected "
-        "phase, a clause naming nothing, and a checklist that could not be read "
-        "just then (transient, retriable). "
-        "undeliverable means the mirror "
-        "stood but no session could take the reply; unpublishable-event means "
-        "the message classified as a type the channel's `publish` list does "
-        "not grant (issue-309) — dropped, never downgraded. The four `kickoff-` "
-        "reasons are a top-level message whose target could not be settled "
-        "(issue-341): a prefix naming nothing declared, one naming several, no "
-        "prefix and no `kickoff.repo` fallback, and a prefix with no message "
-        "after it — each answered in the member's own thread, never guessed. "
-        "The last three are "
-        "the slash command's (issue-334): text outside its vocabulary, a work "
-        "item this instance is not configured for, a trigger already handled."
-    ),
-    "channel.caught_up": (
-        "The Socket Mode listener ran one read cycle over the bound threads "
-        "and the kickoff cursor right after connecting (replies, processed, "
-        "delivered, created, dropped) — issue-334. What accumulated while no "
-        "listener was connected is processed once, from the shared cursors; "
-        "a Slack retry of a message the catch-up already handled is dropped as "
-        "`duplicate`."
-    ),
-    "channel.heartbeat": (
-        "The Socket Mode listener received one of `the-loop doctor slack`'s own "
-        "heartbeat messages (channel_id, ts, nonce) — issue-393 F2. The doctor "
-        "posts a fixed-format nonce into the configured channel and counts how "
-        "many reach this listener within its window; a shortfall is EVIDENCE "
-        "(Slack lists no connections, so never proof) that a second Socket "
-        "Mode consumer shares the app token and Slack is splitting events "
-        "between them. A heartbeat never enters the inbound pipeline."
-    ),
-    "channel.split_suspected": (
-        "The Socket Mode listener's own split check heard back fewer heartbeats "
-        "than it posted (channel, channel_id, beats, echoed, window_seconds, "
-        "consecutive: how many checks in a row have now been short, remedy) — "
-        "issue-413. Warning level: roughly half of everything inbound — "
-        "mentions, presses, slash commands — is landing on another Socket Mode "
-        "consumer holding the same app-level token, and the loss is otherwise "
-        "visible only as an ABSENCE (no channel.dropped, no record at all). "
-        "EVIDENCE, never proof: Slack exposes no API that lists an app's "
-        "connections. Emitted on the first short check and then once every "
-        "SPLIT_ESCALATE_EVERY, so a persistent split is a periodic warning and "
-        "not a storm."
-    ),
-    "channel.split_cleared": (
-        "A split check came back clean after one or more short ones (channel, "
-        "channel_id, beats, echoed, after: how many consecutive short checks it "
-        "ends) — issue-413. Closes the warning ladder that "
-        "channel.split_suspected opened. It does not mean the split is gone: at "
-        "two beats a real split answers clean a quarter of the time, which is "
-        "why `status` reads the rolling window rather than this one verdict."
-    ),
-    "channel.command_received": (
-        "An authorized member's `/the-loop` slash command passed the grant "
-        "check (channel, actor: the member id, family: work-item | instance | "
-        "standing, verb, target: the resolved work-item ref or the standing "
-        "name) — issue-334. Ids only, never the command text."
-    ),
-    "channel.command_completed": (
-        "A slash command was acted on (channel, actor, family, verb, work_item "
-        "or standing, outcome: recorded | record-failed | ok | failed) — "
-        "issue-334. `recorded` means the ledger holds the control keyword and "
-        "its ingress executes it next; `ok` means the core facade returned."
-    ),
-    "channel.command_answer_failed": (
-        "The ephemeral answer to a slash command could not be posted through "
-        "its response_url (channel, actor, error) — issue-334. The outcome "
-        "stands; only the member's receipt was lost."
-    ),
-    "channel.attachments": (
-        "A forwarded Slack message carried files (issue-416): how many the message "
-        "attached and how many were fetched into the work item's attachment "
-        "directory for the session to read (channel, work_item, actor, count, "
-        "fetched). A file that was not fetched is named on the record and in the "
-        "pane with its reason; this line carries no file name and no path."
-    ),
-    "channel.mirrored": (
-        "A channel reply was posted onto its work item as the-loop's own "
-        "marker-stamped comment — the single-source-of-truth rule (channel, "
-        "work_item, actor)."
-    ),
-    "channel.mirror_skipped": (
-        "A channel reply had no work item to mirror onto and was delivered "
-        "anyway (channel, work_item, reason: standing-session) — a standing "
-        "session owns no ticket, so this event IS its paper trail (issue-277)."
-    ),
-    "channel.mirror_failed": (
-        "The work-item mirror of a channel reply could not be posted "
-        "(channel, work_item, error); the delivery attempt still proceeds."
-    ),
-    "channel.kickoff_asked": (
-        "A top-level channel message could not be resolved to a repository, so "
-        "the-loop ASKED which one (channel, actor, thread, kind: the unresolved "
-        "outcome, count: how many repositories were offered) — issue-349. "
-        "Nothing was created, recorded or bound: the message is held until the "
-        "member picks, or until the question expires. Ids and counts only, never "
-        "the message text and never a repository name."
-    ),
-    "channel.created": (
-        "A top-level channel message became a work item (channel, work_item: "
-        "the new ref, actor, thread) — the `work-item.create` grant (issue-309). "
-        "The issue is the ledger's record; the thread is bound to it."
-    ),
-    "channel.thread_opened": (
-        "A conversation was bound to a work item (channel, work_item, thread: "
-        "the root's ts, channel_id, origin: event | kickoff | start) — issue-312. "
-        "`event` means the-loop opened a root for the first event it delivered; "
-        "`kickoff` means a member's top-level message became the work item and "
-        "that thread is its conversation; `start` means the-loop opened the root "
-        "when the work item started, before any event (issue-317); `declared` "
-        "means it was re-opened in a room the work item declared (issue-375). "
-        "With `mode: channel` (issue-378) the conversation is the room itself, "
-        "`thread` is empty and every update is a top-level message there. "
-        "Otherwise every later message is a reply into it. Ids only, never text."
-    ),
-    "channel.open_failed": (
-        "A work item started but a channel could not open its conversation "
-        "(channel, work_item, error) — issue-317. Best-effort by contract: the "
-        "session was spawned regardless, nothing was bound, and the next event "
-        "for the work item opens the thread lazily as before issue-317."
-    ),
-    "channel.reaction_added": (
-        "The Slack channel acknowledged an accepted inbound message with a "
-        "reaction on that message (channel, work_item, state: received | "
-        "completed | error, content: the emoji name, thread) — issue-325, "
-        "channels.slack.reactions. Debug level: the decoration mirrors "
-        "reaction.added on GitHub. Ids and names only, never text."
-    ),
-    "channel.reaction_failed": (
-        "The Slack channel could not add an acknowledgment reaction (channel, "
-        "work_item, state, content, thread, error) — issue-325. Best-effort by "
-        "contract: the record and the delivery are unaffected. A missing "
-        "reactions:write scope on the bot token is the usual cause."
-    ),
-    "channel.press_reported": (
-        "The Slack channel wrote a button press's outcome onto the pressed "
-        "message (channel, work_item, thread, action: the action_id the-loop "
-        "rendered, outcome: landed | failed) — issue-337. `landed` means the "
-        "pressed buttons were removed and the line links the record; `failed` "
-        "means the buttons stayed beside the error. Ids only, never the value."
-    ),
-    "channel.press_report_failed": (
-        "The Slack channel could not edit the pressed message to show the "
-        "press's outcome (channel, work_item, thread, action, error) — "
-        "issue-337. Best-effort by contract: the record and the reactions are "
-        "unaffected. A message the bot did not post (`cant_update_message`) is "
-        "the usual cause."
-    ),
+    "channel.posted",
+    "channel.post_failed",
+    "channel.undelivered",
+    "channel.posting_unavailable",
+    "channel.delivered_late",
+    "channel.undelivered_dropped",
+    "channel.reply_received",
+    "channel.dropped",
+    "channel.caught_up",
+    "channel.heartbeat",
+    "channel.split_suspected",
+    "channel.split_cleared",
+    "channel.command_received",
+    "channel.command_completed",
+    "channel.command_answer_failed",
+    "channel.attachments",
+    "channel.mirrored",
+    "channel.mirror_skipped",
+    "channel.mirror_failed",
+    "channel.kickoff_asked",
+    "channel.created",
+    "channel.thread_opened",
+    "channel.open_failed",
+    "channel.reaction_added",
+    "channel.reaction_failed",
+    "channel.press_reported",
+    "channel.press_report_failed",
     # -- mention-gated rooms, records and shortcuts (issue-389) ---------------
-    "channel.context_recorded": (
-        "A `record-context` act landed: the thread's snapshot was written to "
-        "the ticket as a marked context record (channel, work_item, actor, "
-        "thread, count: messages in the snapshot) — issue-389 R3."
-    ),
-    "channel.decision_recorded": (
-        "A `record-decision` act landed: the decision text was written to the "
-        "ticket as a marked decision record (channel, work_item, actor, "
-        "thread, kind: the keyword when one closed the act) — issue-389 R4."
-    ),
-    "channel.snapshot_empty": (
-        "A `record-context` act found nothing new since the thread's last "
-        "snapshot, so no record was written (channel, work_item, thread) — "
-        "issue-389 R3. The member is told in the thread."
-    ),
-    "channel.shortcut_received": (
-        "A message shortcut arrived over Socket Mode (channel, work_item, "
-        "actor: Slack member id, shortcut: the callback id) — issue-389 R6. "
-        "It is handled exactly as the typed mention would be."
-    ),
-    "channel.shortcut_failed": (
-        "The Slack channel could not open the decision modal or answer the "
-        "shortcut's member (channel, error) — issue-389 R6. Best-effort by "
-        "contract: the member sees nothing and can type the mention instead."
-    ),
-    "channel.view_submitted": (
-        "The decision modal was submitted (channel, work_item, actor: Slack "
-        "member id, kind: the keyword chosen, if any) — issue-389 R6. The "
-        "text then goes through the same `record-decision` path."
-    ),
+    "channel.context_recorded",
+    "channel.decision_recorded",
+    "channel.snapshot_empty",
+    "channel.shortcut_received",
+    "channel.shortcut_failed",
+    "channel.view_submitted",
     # -- the bus (issue-309, decision-103) --------------------------------------
-    "bus.published": (
-        "An event went through the bus (event_type, work_item, source, recorded: "
-        "whether the ledger wrote it — null when the catalog says it is not "
-        "recorded, posted: how many channels took it, channels). Debug level: "
-        "one line per event, ids only."
-    ),
-    "bus.recorded": (
-        "The ledger wrote an event that originated elsewhere (ledger, work_item, "
-        "event_type, source, url) — a comment with an envelope, or the issue a "
-        "`work-item.create` opened. Always before any other channel sees it."
-    ),
-    "bus.record_failed": (
-        "The ledger could not write an event (ledger, work_item, event_type, "
-        "source, error). Best-effort by contract: the publisher decides what it "
-        "means — the ask still reports its exit code, a reply still delivers."
-    ),
-    "standing.started": (
-        "A standing session — one that belongs to no work item — was spawned on "
-        "a fresh conversation (standing, harness, harness_session_id, "
-        "tmux_target, cwd). issue-277."
-    ),
-    "standing.resumed": (
-        "A standing session was spawned continuing its RECORDED conversation "
-        "rather than a fresh one (same payload as standing.started), which is "
-        "what makes `the-loop restart` not amnesia for a supervisor session."
-    ),
-    "standing.resume_failed": (
-        "A standing session's resume did not survive its liveness probe "
-        "(standing, harness_session_id, error); a fresh conversation is started "
-        "instead, so a standing.started follows."
-    ),
-    "standing.spawn_failed": (
-        "A standing session could not be started (standing, harness, "
-        "tmux_target, error): a missing harness binary, a cwd that is not "
-        "there, an unreadable promptFile, or a live tmux session the-loop has "
-        "no record of and will not spawn over."
-    ),
-    "standing.created": (
-        "A standing session was brought into existence through the API rather "
-        "than declared in the config (standing, harness, cwd, auto_start) — "
-        "issue-277 R6. The definition now lives in its registry record."
-    ),
-    "standing.create_failed": (
-        "A create wrote its record but the session would not start (standing, "
-        "error); the record was removed again, so the name is free for a retry."
-    ),
-    "standing.deleted": (
-        "A created standing session was stopped and its record removed "
-        "(standing). Unlike standing.stopped, nothing comes back: the "
-        "conversation id is gone with the record."
-    ),
-    "standing.stopped": (
-        "A standing session's harness was terminated and its tmux session "
-        "killed (standing, tmux_target). The record is KEPT, so the next start "
-        "resumes the same conversation."
-    ),
-    "standing.stop_failed": (
-        "A standing session's tmux session could not be killed (standing, "
-        "tmux_target, error); the record is marked stopped regardless."
-    ),
-    "standing.said": (
-        "A message was pasted into a running standing session and submitted "
-        "(standing, tmux_target, actor). Nothing is posted to any ticket — "
-        "there is none — so this event is the delivery's only record."
-    ),
-    "standing.announced": (
-        "A standing session was announced in Slack and the resulting thread "
-        "bound to it (standing, channel, thread), which is what makes replies "
-        "in that thread reach its terminal."
-    ),
-    "standing.announce_failed": (
-        "A standing session's Slack announcement did not land (standing, "
-        "error). Best-effort by contract: the session is up regardless, it "
-        "simply has no Slack thread."
-    ),
-    "session.closed": "A session was closed in the registry (work_item).",
-    "session.paused": (
-        "A session was paused, so events for its work item are held rather "
-        "than delivered (work_item, harness, harness_session_id) — issue-106, "
-        "the pause command."
-    ),
-    "session.resumed": (
-        "A paused session returned to active and delivery resumed (work_item, "
-        "harness, harness_session_id); events suppressed while paused are not "
-        "replayed."
-    ),
-    "session.retained": (
-        "A closed work item's tmux session was left running so its transcript "
-        "stays readable (work_item, tmux_target); "
-        "routing.tmux.keepSessionOnClose: false kills it instead."
-    ),
-    "session.autoclosed": (
-        "A session was auto-closed because its work item ended (work_item, "
-        "reason: issue-closed | pr-merged | pr-closed; merged: the closure is a "
-        "merge, or a pull request recorded on the work item merged — issue-405; "
-        "waited_seconds, finished: only when the closure was first held for the "
-        "session's endgame, whether the completion claim ended the hold)."
-    ),
-    "session.closing": (
-        "A work item ended while its session stands on the graph's terminal "
-        "node — the endgame, where the completion summary is posted and `graph "
-        "complete` claimed — so the closure is HELD rather than run (work_item, "
-        "reason, node, grace_seconds, delivery_id; issue-405 P2). The session's "
-        "claim ends the hold; routing.tmux.finishGraceSeconds ends it regardless; "
-        "`session.autoclosed` then records how it ended."
-    ),
-    "session.closing_cancelled": (
-        "A held closure was dropped because the work item was reopened during "
-        "the hold (work_item, source); the session stays live (issue-405 P2)."
-    ),
-    "session.pr_notice_delivered": (
-        "The work item's own session was told that one of its pull requests' "
-        "sessions changed state (work_item, pull_request, transition, via: paste "
-        "| with-event) — spawned, declined, spawn-failed, respawned, "
-        "respawn-failed, completed, merged, closed or escalated (issue-538)."
-    ),
-    "session.pr_notice_skipped": (
-        "A pull-request session notice was not delivered because the work item "
-        "has no session to tell (work_item, pull_request, transition, reason: "
-        "paused | no-live-session). The inner state files still hold the fact "
-        "(issue-538)."
-    ),
-    "session.pr_notice_failed": (
-        "Pasting a pull-request session notice into the work item's session "
-        "failed (work_item, pull_request, transition, error). Not retried; the "
-        "path it rode on carried on (issue-538)."
-    ),
-    "graph.outer_reevaluated": (
-        "The daemon re-ran the outer node's exit chain after an inner loop "
-        "finished (work_item, node, status, outcome) — or declined to: outcome "
-        "not-parked | no-inner-gate. A pass advances the work item exactly as a "
-        "claim would (issue-538)."
-    ),
-    "session.kept_open": (
-        "A close event matched a session only through linkage — one of the "
-        "work item's PRs closed, the work item itself did not — so the session "
-        "was left active (work_item, reason, closed_ref, delivery_id); a work "
-        "item may be delivered by several PRs (issue-101)."
-    ),
-    "session.reset": (
-        "A work item's state on this machine was reset — `the-loop sessions "
-        "reset` (work_item, actor, removed: which of workspace|session|control|"
-        "poll went, found: false when there was nothing here, was_live, error). "
-        "Appended like every other event: a reset can never erase its own trail."
-    ),
-    "session.cleaned": (
-        "A work item's LOCAL resources were released — `the-loop cleanup`, the "
-        "same verb from the CLI/API, or a closure by an authorized user "
-        "(work_item, actor, source: comment | cli | close-event, removed: which "
-        "of tmux|workspace|session went, endpoints: the conversations ended, "
-        "found: false when there was nothing here, error). The PORTABLE record "
-        "— control, poll, graph — is deliberately untouched, and nothing remote "
-        "is changed (issue-186)."
-    ),
-    "work_item.ended": (
-        "A work item ended upstream and its portable record was stamped "
-        "`ended` (work_item, state: closed | merged, kind: issue | "
-        "pull-request, reason: issue-closed | pr-merged | pr-closed, outcome: "
-        "completed | cancelled | closed-externally | unknown — issue-452, "
-        "source: webhook | poll, actor: who closed it or none, delivery_id). "
-        "Written with or without a session on this machine; the attention "
-        "surfaces read it to demote the item (issue-329), and `the-loop check "
-        "<ref>` answers from its terminal record once the checkout is gone."
-    ),
-    "work_item.pull_request_ended": (
-        "A pull request delivering a tracked work item merged or closed "
-        "(work_item: the owner, pull_request, state: merged | closed) — "
-        "issue-368. The pull request's upstream state is recorded in the work "
-        "item's own state file and its poll ledger is dropped from the owner's "
-        "portable record. No `ended` stamp and no record of its own: a pull "
-        "request that delivers a work item is not a work item."
-    ),
-    "work_item.reopened": (
-        "A work item's `ended` stamp was cleared because the item is open "
-        "again (work_item, source: webhook — a `reopened` event — or poll — "
-        "the item was listed) (issue-329)."
-    ),
+    "bus.published",
+    "bus.recorded",
+    "bus.record_failed",
+    "standing.started",
+    "standing.resumed",
+    "standing.resume_failed",
+    "standing.spawn_failed",
+    "standing.created",
+    "standing.create_failed",
+    "standing.deleted",
+    "standing.stopped",
+    "standing.stop_failed",
+    "standing.said",
+    "standing.announced",
+    "standing.announce_failed",
+    "session.closed",
+    "session.paused",
+    "session.resumed",
+    "session.retained",
+    "session.autoclosed",
+    "session.closing",
+    "session.closing_cancelled",
+    "session.pr_notice_delivered",
+    "session.pr_notice_skipped",
+    "session.pr_notice_failed",
+    "graph.outer_reevaluated",
+    "session.kept_open",
+    "session.reset",
+    "session.cleaned",
+    "work_item.ended",
+    "work_item.pull_request_ended",
+    "work_item.reopened",
     # -- the harness's GitHub verbs (issue-447) --------------------------------
-    "work_item.commented": (
-        "The agent's comment was posted on a work item through `the-loop "
-        "comment` (work_item, comment_url, comment_posted, channels_posted) — "
-        "marked and enveloped by the ledger, so no ingress re-publishes it. "
-        "`warning` when the post failed."
-    ),
-    "work_item.pr_opened": (
-        "`the-loop pr create` opened a pull request for a work item "
-        "(work_item, pull_request, url); the link that follows is its own "
-        "`session.pr_linked`."
-    ),
-    "work_item.pr_labelled": (
-        "Every `routing.autoExecuteLabels` label was put on a pull request "
-        "the-loop had just linked to a work item (pull_request, labels) — "
-        "`pr create`, `sessions link-pr` and its `--discover` (issue-466), so "
-        "the poller, which lists only a PR carrying all of them, sees it. "
-        "`warning` with `error` when GitHub refused or the host is untrusted; "
-        "the link stands either way."
-    ),
-    "work_item.pr_merged": (
-        "`the-loop pr merge` merged a pull request (pull_request, method)."
-    ),
-    "work_item.pr_ready": (
-        "`the-loop pr ready` took a registered work item's draft pull request "
-        "out of draft, ready for review (pull_request; issue-465)."
-    ),
-    "work_item.ticket_closed": (
-        "`the-loop ticket close` closed a registered work item's ticket "
-        "(work_item, reason: completed | not_planned)."
-    ),
-    "work_item.thread_resolved": (
-        "`the-loop pr resolve-thread` resolved one review thread of a pull "
-        "request recorded against a registered work item (pull_request, thread)."
-    ),
-    "work_item.merge_refused": (
-        "`the-loop pr merge` refused to merge (pull_request, reason): the "
-        "executing process's `routing.mergeOnApproval` is false — a person "
-        "merges this repository's pull requests — or the pull request is not "
-        "recorded against a work item registered on this instance."
-    ),
-    "cleanup.deferred": (
-        "A work item closed but was NOT cleaned up, because the close event "
-        "named no actor or an unauthorized one (work_item, reason: no-actor | "
-        "unauthorized-actor, actor, closed_as, delivery_id). Fails closed on "
-        "purpose: an authorized user's `the-loop cleanup` is the remedy "
-        "(issue-186)."
-    ),
-    "session.harness_terminated": (
-        "The harness process inside a retained tmux session was ended when the "
-        "work item closed, so the pane stays readable but can no longer be "
-        "typed into (work_item, harness, tmux_target, ok, error) — "
-        "routing.tmux.killHarnessOnClose: false skips it."
-    ),
+    "work_item.commented",
+    "work_item.pr_opened",
+    "work_item.pr_labelled",
+    "work_item.pr_merged",
+    "work_item.pr_ready",
+    "work_item.ticket_closed",
+    "work_item.thread_resolved",
+    "work_item.merge_refused",
+    "cleanup.deferred",
+    "session.harness_terminated",
     # -- the handoff pick-up (issue-517; source: the dispatcher's arming path) ---
-    "handoff.honoured": (
-        "A GitHub issue not yet on the graph was armed with a handoff record "
-        "(work_item, stage, enter, author, carried_by, branch, record): its "
-        "checkout is made on the record's spec branch and Runtime.start freezes "
-        "the record into work-item-state.json."
-    ),
-    "handoff.ignored": (
-        "One or more handoff records on a work item were not honoured "
-        "(work_item, reasons: each record's URL and why — author not authorized, "
-        "unknown version, malformed, item already on the graph). The item arms "
-        "as one with no handoff."
-    ),
-    "handoff.unreadable": (
-        "The comments of a work item being armed could not be listed, so no "
-        "handoff record was read (work_item, error). Warning-level; the item "
-        "arms as one with no handoff — fail closed, never a guessed stage."
-    ),
-    "handoff.imported": (
-        "`the-loop handoff import` materialized a handed-off item's carried "
-        "files into its spec folder (work_item, written, refused: counts). "
-        "Warning-level when any file was refused; the import-handoff hook then "
-        "demotes the walk."
-    ),
-    "handoff.demoted": (
-        "The import-handoff hook refused a carried artifact (missing, a sha256 "
-        "mismatch, or a failed section check), so the runtime un-skipped the "
-        "nodes from its producing node up to the record's enter node "
-        "(work_item, nodes). The item starts earlier, never later; the refusal "
-        "is in work-item-state.json's handoffDemoted."
-    ),
-    "arm.refused": (
-        "A work item was not armed (work_item, reason). reason=mirror: a Jira "
-        "copy labelled the-loop-mirror — the GitHub issue it mirrors runs the "
-        "loop (issue-517). Settled, never retried."
-    ),
-    "workspace.prepared": (
-        "A per-work-item checkout was made ready for a spawned session "
-        "(work_item, strategy: worktree | clone, checkout, branch)."
-    ),
-    "workspace.cleaned": (
-        "A work item's checkout was removed — when its session closed, or when "
-        "its local resources were released by `the-loop cleanup` (work_item, "
-        "strategy). Uncommitted work in that checkout went with it."
-    ),
-    "workspace.trusted": (
-        "A spawned session's environment was pre-seeded in the harness's own "
-        "config so it starts unattended and with the loop loaded — workspace "
-        "trust, the bypass-permissions disclaimer when that mode is configured, "
-        "and the-loop's own plugin (work_item, harness, cwd, applied) — "
-        "issue-90 / routing.harnessTrust, issue-143 / routing.harnessPlugins."
-    ),
-    "workspace.trust_failed": (
-        "Pre-seeding the harness's config failed (work_item, harness, cwd, "
-        "error); the spawn still proceeds, but the session may stop on an "
-        "interactive dialog or run without the-loop's plugin."
-    ),
+    "handoff.honoured",
+    "handoff.ignored",
+    "handoff.unreadable",
+    "handoff.imported",
+    "handoff.demoted",
+    "arm.refused",
+    "workspace.prepared",
+    "workspace.cleaned",
+    "workspace.trusted",
+    "workspace.trust_failed",
     # -- poller (source: poll) ------------------------------------------------
-    "poll.cycle": (
-        "One poll cycle finished (items_seen, spawns, comments_forwarded, "
-        "closures, errors; scopes_polled and scopes_degraded — the repositories "
-        "that answered, and the ones that failed or were skipped, issue-315; "
-        "ledger_checks — how many ledger-only records were asked whether they "
-        "ended, issue-332; ci_forwarded — how many new CI results from "
-        "`polling.ci` were handed to the dispatcher's CI gate, issue-462)."
-    ),
-    "poll.closure_detected": (
-        "A poll cycle found that a tracked work item — one with a session "
-        "record of any status, or a portable record that is armed, frozen or "
-        "has a roster — or a ledger-only record absent from the listing for a "
-        "window (issue-332) had ended upstream and closed it (work_item, "
-        "state: closed | merged, kind); only ever after a successful listing, "
-        "never on an unanswerable state, and never twice for a stamped record "
-        "(issue-94, issue-329)."
-    ),
-    "poll.provider_error": (
-        "Asking a provider for its work items failed; retried next cycle "
-        "(provider, error, will_retry)."
-    ),
-    "poll.item_error": (
-        "Processing one polled work item failed; retried next cycle "
-        "(work_item, error, will_retry)."
-    ),
-    "poll.scope_error": (
-        "One scope of a source — a repository, for GitHub — could not be listed; "
-        "the source's other scopes were still polled, and nothing in this one "
-        "is reconciled as closed (provider, scope, error, will_retry=True) — "
-        "issue-315. Before it, one repository's failure was the whole "
-        "provider's, and every repository stopped being polled."
-    ),
-    "poll.scope_degraded": (
-        "A scope's listing failed with a condition no retry changes — for "
-        "GitHub, a repository whose Issues are disabled. Surfaced ONCE, at "
-        "warning level: the poller stops asking it for issues (its pull "
-        "requests are still polled), re-probes it every retry_after_cycles "
-        "cycles, on a config reload and on restart, and `the-loop status` shows "
-        "it as degraded meanwhile (provider, scope, error, retry_after_cycles) "
-        "— issue-315."
-    ),
-    "poll.scope_recovered": (
-        "A degraded scope answered again on a re-probe and is polled normally "
-        "(provider, scope) — issue-315."
-    ),
-    "poll.unauthorized": (
-        "A polled item was not started by the poller itself: its author is not "
-        "an authorized user and nobody has armed it. Its comments are still "
-        "acted on, judged by their own authors (work_item, actor)."
-    ),
-    "poll.comment_forwarded": (
-        "A new authorized comment was forwarded to the item's session "
-        "(work_item, comment_id, actor, attempt: which retry this was)."
-    ),
-    "poll.spawn_failed": (
-        "The poller gave up spawning a session for an item after exhausting the "
-        "retry budget (polling.maxRetries); later polls ignore it until new "
-        "activity re-arms it (work_item, attempts, will_retry=False)."
-    ),
-    "poll.rearmed": (
-        "Comments abandoned by a spent retry budget under a DIFFERENT the-loop "
-        "version were un-resolved for one more full budget (work_item, comments, "
-        "version) — issue-146, so a work item stranded by a bug an upgrade fixed "
-        "is picked up instead of staying stuck. Never emitted for a give-up the "
-        "running version recorded."
-    ),
-    "poll.attempts_released": (
-        "A shutdown returned the retry budget of dispatches that were still "
-        "queued and never delivered (released) — issue-159, so restarting the "
-        "poller does not accumulate toward `polling.maxRetries`."
-    ),
-    "poll.comment_settled": (
-        "A forwarded comment was resolved because the dispatcher is FINISHED "
-        "with its delivery, not because it was delivered (work_item, "
-        "comment_id, actor, outcome: awaiting-start | session-paused | "
-        "collaborator-no-spawn | control-executed | control-rejected | "
-        "parked-at-human-start-gate | mirror-refused | "
-        "addressed-elsewhere | unaddressed | "
-        "instance-locked | ambiguous-address | ci-not-actionable | "
-        "ci-autofix-exhausted | ci-review-loop, "
-        "will_retry=False) — issue-270. (The three `ci-*` outcomes are the CI "
-        "gate's, issue-462 and issue-524: settled CI events. The poller lists no CI, so they "
-        "complete the dispatcher's vocabulary rather than occur here today.) Either the event was suppressed on "
-        "purpose (the work item is not started, or its session is paused), or it "
-        "WAS a control command, executed here and never forwarded, or its start "
-        "was accepted and parked at a human gate (issue-449), or (issue-322) "
-        "it was outside THIS instance's scope — another instance may own the "
-        "work item, so the refusal is final and leaves no mark. The comment "
-        "is baselined rather than retried or abandoned: it is not written to "
-        "`gaveUp`, so no later version re-arms it, and nothing is replayed when "
-        "the item is started or resumed — a spawned session reads the thread "
-        "itself, which the spawn prompt tells it to do."
-    ),
-    "poll.comment_failed": (
-        "The poller gave up forwarding a comment after exhausting the retry "
-        "budget (polling.maxRetries); later polls ignore it (work_item, "
-        "comment_id, actor, attempts, will_retry=False)."
-    ),
-    "poll.giveup_reported": (
-        "A give-up (`poll.comment_failed`) was reported on the work item, so "
-        "the human who wrote the comment learns it never reached the session "
-        "(work_item, comment_id, attempts) — issue-240."
-    ),
-    "poll.giveup_report_failed": (
-        "The give-up notice could not be posted — no `gh` on PATH, a "
-        "non-GitHub work item, or an API error (work_item, comment_id, error). "
-        "Best-effort: the give-up itself is recorded regardless."
-    ),
+    "poll.cycle",
+    "poll.closure_detected",
+    "poll.provider_error",
+    "poll.item_error",
+    "poll.scope_error",
+    "poll.scope_degraded",
+    "poll.scope_recovered",
+    "poll.unauthorized",
+    "poll.comment_forwarded",
+    "poll.spawn_failed",
+    "poll.rearmed",
+    "poll.attempts_released",
+    "poll.comment_settled",
+    "poll.comment_failed",
+    "poll.giveup_reported",
+    "poll.giveup_report_failed",
     # -- process lifecycle (source: gh-webhook or poll) -----------------------
-    "server.started": "The webhook receiver started (host, port, path, routing).",
-    "server.stopped": "The webhook receiver shut down.",
-    "poller.started": "The poller started (interval_seconds, sources).",
-    "poller.stopped": "The poller shut down.",
-    "poller.blocked": (
-        "A poller refused to start because another one already holds the "
-        "single-instance lock on the state root (pidfile, holder) — issue-159. "
-        "Two pollers on one ledger interleave read-modify-write and "
-        "re-forward each other's comments, so the second one does not run."
-    ),
-    "config.reloaded": (
-        "A config edit was hot-reloaded into a running process (detail). The "
-        "service emits it too when the edit changed WHICH ingresses it hosts "
-        "(issue-395): detail names what was stopped and started."
-    ),
+    "server.started",
+    "server.stopped",
+    "poller.started",
+    "poller.stopped",
+    "poller.blocked",
+    "config.reloaded",
     # -- process graph (source: any; issue-109) -------------------------------
-    "graph.started": (
-        "A work item entered the graph's start node, running its entry chain "
-        "(work_item, node). Emitted by the ingress coupling on spawn "
-        "(issue-113) and by anything else calling `Runtime.start`."
-    ),
-    "graph.advanced": (
-        "A work item's exit chain passed and the matching edge was taken "
-        "(work_item, node, to, outcome)."
-    ),
-    "graph.blocked": (
-        "A node's exit chain was blocked by a hook; the node did not advance "
-        "and the finding went back to the harness (work_item, node, hook)."
-    ),
-    "graph.parked": (
-        "A node is waiting on a human; its exit chain re-runs on the next "
-        "inbound event (work_item, node)."
-    ),
-    "graph.escalated": (
-        "A node exhausted its attempts, or repeated the same finding, and "
-        "stopped advancing (work_item, node, attempts, repeated)."
-    ),
-    "graph.no_edge": (
-        "No declared edge matched a node's outcome, so the work item was "
-        "parked rather than guessed at (work_item, node, outcome)."
-    ),
-    "graph.hook_degraded": (
-        "A best-effort hook passed the node while recording that its outbound "
-        "call did not happen — a checklist not posted, a phase label not "
-        "synced (work_item, node, hook, error). issue-194: the node's verdict "
-        "and the edge taken are unaffected, which is the whole point of "
-        "best-effort; what is NOT acceptable is a work item parked on a "
-        "question the ticket never received. The CLI prints the same fact as "
-        "a warning line; this is where the daemon's operator finds it."
-    ),
-    "graph.quiz_refused": (
-        "A quiz box was ticked by someone who may not answer the gate, or by "
-        "an editor GitHub could not name — the gate keeps waiting "
-        "(work_item, node, editor, comment). issue-488 abuse case 1."
-    ),
-    "graph.completed": ("A work item reached a terminal node (work_item, node)."),
-    "graph.cleaned": (
-        "A work item entered the terminal `cleanup` node because the-loop was "
-        "about to release its local resources (work_item, from: the node it "
-        "stood on, reason) — issue-186. Not a force: no gate is bypassed and no "
-        "verdict is claimed, so `check --recompute` still reports whatever never "
-        "ran."
-    ),
-    "graph.spec_tree_excluded": (
-        "A guest loop — a contribution or a review — started in a repository "
-        "the-loop does not own, so its spec tree was written into the checkout's "
-        "git exclude file — working state the contribution PR can never carry "
-        "(work_item, path). issue-185, PR #187 review; keyed on the loop since "
-        "issue-352."
-    ),
-    "graph.skipped": (
-        "The ingress→graph coupling declined to touch a work item's graph, so a "
-        "successful delivery moved nothing (work_item, action: start | advance, "
-        "reason: no-spec-dir | spec-dir-outside-checkout, spec_dir: the directory "
-        "`routing.graph.specDir` resolves to, default `docs/specs`). The answer to "
-        "'it is labelled, armed and spawned — why is its graph still at node "
-        "one?'. issue-123, issue-352."
-    ),
-    "graph.link_failed": (
-        "The ingress→graph coupling raised and was swallowed so the event was "
-        "still delivered; the graph did not move (work_item, action, error). "
-        "issue-113."
-    ),
-    "graph.forced": (
-        "An operator forced a transition regardless of gates — the escape "
-        "hatch. The pointer moved; the bypassed gate keeps its real verdict, "
-        "so `check --recompute` still reports it (work_item, from, to, actor, "
-        "reason)."
-    ),
-    "graph.repos_declared": (
-        "The agent declared which repositories this work item raises pull "
-        "requests in (work_item, repos) — `the-loop graph repos`, called once "
-        "design.md and tasks.md say what the change spans. `await-inner-loops` "
-        "then holds `implementation` until each has an inner loop AND every "
-        "started loop has finished. The flags are the full set, so this event "
-        "is the whole declaration, not an addition to it. issue-365."
-    ),
+    "graph.started",
+    "graph.advanced",
+    "graph.blocked",
+    "graph.parked",
+    "graph.escalated",
+    "graph.no_edge",
+    "graph.hook_degraded",
+    "graph.quiz_refused",
+    "graph.completed",
+    "graph.cleaned",
+    "graph.spec_tree_excluded",
+    "graph.skipped",
+    "graph.link_failed",
+    "graph.forced",
+    "graph.repos_declared",
     # -- declared skips (issue-177) --------------------------------------------
-    "graph.skips_declared": (
-        "A human declared phases skipped for a work item — the `phase-selection` "
-        "gate's authorized reply, or the `graph skip` verb (work_item, "
-        "via: selection | cli, nodes; cli adds actor and reason). A declaration, "
-        "never a verdict: `check` reports the nodes as skipped-by-declaration."
-    ),
-    "graph.opt_ins_selected": (
-        "A human selected one or more OPT-IN phases for a work item at the "
-        "`phase-selection` gate (work_item, via: selection, nodes). The mirror "
-        "of graph.skips_declared: those phases are off by default, so this is "
-        "the record of somebody asking for them. issue-188."
-    ),
-    "graph.skips_rejected": (
-        "A skip token was refused — unknown, outside the skip vocabulary, or "
-        "(cli) naming a node the pointer already reached (work_item, token, "
-        "via, why). The declaration never takes effect; the full process runs."
-    ),
-    "graph.pull_request_linked": (
-        "A pull request was recorded in the WORK ITEM's own checked-in state as "
-        "delivering it (work_item, pull_request, via: session | event) — "
-        "issue-368. The repository's half of the fact `session.pr_linked` "
-        "records on this machine: a pull request is an object of the "
-        "repository, so it travels on the work item's branch with its "
-        "repository, number, URL, inner-loop directory and upstream state, "
-        "instead of existing only in a session record that never leaves the "
-        "machine that wrote it."
-    ),
-    "graph.node_skipped": (
-        "The pointer routed around a declared-skipped node along its "
-        "`on: skipped` edge — none of the node's hooks ran (work_item, node, "
-        "plus the declaration's via/token/by/reason). issue-177. Distinct from "
-        "graph.skipped, which is the ingress coupling declining to touch a "
-        "graph at all."
-    ),
-    "graph.gate_session": (
-        "A human gate was entered and its session resolved per `session: "
-        "inherit` — inherited, or fresh-with-artifacts when the producing "
-        "session is gone (work_item, node, resolution, session). issue-148."
-    ),
+    "graph.skips_declared",
+    "graph.opt_ins_selected",
+    "graph.skips_rejected",
+    "graph.pull_request_linked",
+    "graph.node_skipped",
+    "graph.gate_session",
     # -- control-plane API service (source: service) — issue-161 --------------
-    "api.request": (
-        "One control-plane API operation completed (method, path, status). "
-        "Every mutating and reading route lands here; /health is exempt. "
-        "Debug level (issue-283): a polling dashboard's own reads must not "
-        "drown the events an operator reads the log for."
-    ),
-    "mcp.call": (
-        "An MCP tool call was served over the control-plane's HTTP endpoint "
-        "(tool, ok). Same authorization and audit trail as the REST surface."
-    ),
-    "config.updated": (
-        "The CLI config was changed through the control plane (path, keys). "
-        "The **key paths** are recorded and the values are not: a value names "
-        "people, hosts and binaries, and this trail is as readable as the event "
-        "log is. issue-222."
-    ),
+    "api.request",
+    "mcp.call",
+    "config.updated",
     # -- the fleet a manager serves (source: service) — issue-374 --------------
-    "instance.registered": (
-        "An instance was added to this manager's registry (instance: its name) — "
-        "through the API, the dashboard's Instances tab or `the-loop instances "
-        "register`, all of which write `instance.manager.instances` through the "
-        "same splice a hand edit would. The URL is not recorded: names only."
-    ),
-    "instance.unregistered": (
-        "An instance was removed from this manager's registry (instance)."
-    ),
-    "instance.unreachable": (
-        "A registered instance stopped answering (instance, reason) — a transport "
-        "failure or a timeout on its probe. Once per transition, at level error; "
-        "its rows are left out of every list read until `instance.recovered`."
-    ),
-    "instance.recovered": (
-        "A registered instance answers to its name again (instance) after being "
-        "unreachable or mismatched."
-    ),
-    "instance.mismatched": (
-        "The host at a registered URL answers as a different instance (instance: "
-        "the registered name, reported: the name it gave, role: the role it gave). "
-        "Fail closed: nothing is served from it or sent to it until it answers to "
-        "its name as a worker. At level error."
-    ),
-    "instance.malformed": (
-        "A member's answer was dropped (instance, operation, reason): oversized, "
-        "not JSON, or not the shape the contract promises. The manager answers "
-        "from the rest and never passes the body on."
-    ),
-    "aggregate.partial": (
-        "A list read on a manager answered without every member (operation, "
-        "left_out). Debug level: the response header "
-        "`The-Loop-Instances-Unreachable` and `GET /api/v1/instances` carry the "
-        "same fact for clients."
-    ),
+    "instance.registered",
+    "instance.unregistered",
+    "instance.unreachable",
+    "instance.recovered",
+    "instance.mismatched",
+    "instance.malformed",
+    "aggregate.partial",
     # -- the server-push stream (source: service) — issue-239 ------------------
-    "stream.subscribed": (
-        "A client opened GET /api/v1/stream (subscribers: how many are now open, "
-        "work_items / transcripts: the filters it asked for, cursor: where it "
-        "resumed from, or absent for a fresh connection). The answer to 'who is "
-        "watching this workstation?'."
-    ),
-    "stream.refused": (
-        "A stream connection was refused and never accepted (reason: disabled | "
-        "at-capacity | bad-cursor | bad-filter, subscribers). `at-capacity` means "
-        "`service.stream.maxSubscribers` is reached — the bound that keeps an open "
-        "dashboard from starving the REST surface; the others are caller errors, "
-        "refused rather than widened to an unfiltered stream."
-    ),
-    "stream.desync": (
-        "A subscriber was told to refetch everything rather than served a partial "
-        "history (reason: truncated | rotated | replay-window | queue-overflow). "
-        "Not an error — the self-healing path — but the signal that the log was "
-        "rotated under the service, or that a client is reading slower than the "
-        "workstation emits."
-    ),
-    "stream.disconnected": (
-        "A subscriber's connection ended (frames: how many were delivered, "
-        "reason: client | shutdown). The slot is released, and the tailer stops "
-        "when the last subscriber leaves."
-    ),
-    "service.started": "The control-plane API service came up (host, port).",
-    "service.stopped": "The control-plane API service shut down.",
-    "restart.scheduled": (
-        "A whole-system restart was scheduled (issue-228): a detached "
-        "`the-loop restart` was spawned (pid, logfile, withUpgrade). Emitted by "
-        "POST /api/v1/restart — the service cannot stop itself synchronously "
-        "and still answer, so the API's contract is scheduling."
-    ),
-    "restart.completed": (
-        "A `the-loop restart` finished (ok, withUpgrade): every running service "
-        "stopped, the optional CLI upgrade ran, every enabled service started. "
-        "Per-service outcomes are in the command's output/logfile. issue-228."
-    ),
-    "ingress.hosted": (
-        "The control-plane service is hosting this ingress (poller | "
-        "gh-webhook | slack-listener) as an in-process task (`service.hostIngresses`, "
-        "issue-231). Its pidfile lock is held by the service's pid. `reason` is "
-        "`startup`, or `config` when a config edit newly enabled it (issue-395)."
-    ),
-    "ingress.hosted_failed": (
-        "An ENABLED ingress (poller | gh-webhook | slack-listener) did not start "
-        "inside the control-plane service (ingress, reason). The service keeps "
-        "serving, so the reason stays reachable over the API. Before issue-339 this "
-        "was a logfile line and nothing else, so a poller that never came up was "
-        "visible only as the absence of a `poller.started`."
-    ),
-    "ingress.hosted_stopped": (
-        "A hosted ingress was stopped by the service and its lock released "
-        "(issue-231). `reason` is `shutdown`, or `config` when a config edit no "
-        "longer enables it — a `read.mode: off` stops the listener without a "
-        "restart (issue-395)."
-    ),
-    "diagnosis.detected": (
-        "Self-diagnosis (issue-242, opt-in) accepted a NEW failure fingerprint "
-        "for diagnosis (fingerprint, trigger: the event type that raised it). "
-        "Emitted once per fingerprint, on its first attempt."
-    ),
-    "diagnosis.posted": (
-        "Self-diagnosis filed the issue (fingerprint, trigger, url) on the "
-        "configured repository, labeled and self-authored — never armed."
-    ),
-    "diagnosis.deferred": (
-        "Self-diagnosis hit the rolling daily cap (selfDiagnosis.maxIssuesPerDay) "
-        "and left this candidate for a later scan (fingerprint, trigger). "
-        "Deferred, not dropped."
-    ),
-    "diagnosis.failed": (
-        "A diagnosis attempt failed (fingerprint, trigger, stage: agent | post, "
-        "attempt, error — scrubbed). Warning-level on purpose: diagnosis.* is "
-        "excluded from candidacy, and the level makes that belt-and-braces. "
-        "After selfDiagnosis.maxRetries failures the fingerprint is abandoned."
-    ),
+    "stream.subscribed",
+    "stream.refused",
+    "stream.desync",
+    "stream.disconnected",
+    "service.started",
+    "service.stopped",
+    "restart.scheduled",
+    "restart.completed",
+    "ingress.hosted",
+    "ingress.hosted_failed",
+    "ingress.hosted_stopped",
+    "diagnosis.detected",
+    "diagnosis.posted",
+    "diagnosis.deferred",
+    "diagnosis.failed",
     # -- the gateway (issue-496; source: gateway, or the instance's client) -------------
-    "gateway.started": (
-        "The gateway process came up (listen, store, ingresses: the enabled set)."
-    ),
-    "gateway.stopped": "The gateway process stopped (reason).",
-    "gateway.received": (
-        "An ingress accepted a provider delivery (provider, source, kind, delivery_id, "
-        "subject, event_id). Length-capped summary only; the payload is never logged."
-    ),
-    "gateway.dropped": (
-        "An ingress refused or discarded a delivery before storing it (provider, "
-        "reason: bad-signature | replay-window | invalid-payload | unbound | "
-        "undeclared-repository | duplicate, delivery_id). Nothing was stored."
-    ),
-    "gateway.slack_call": (
-        "The gateway made one Slack Web API call for an instance (instance, method, "
-        "channel, status, ok) — issue-519. The pass-through: the call's text and the "
-        "bot token never reach a line; a refused method or an unavailable posting is a "
-        "gateway.refused instead."
-    ),
-    "gateway.slack_download": (
-        "The gateway fetched a message's file for an instance with its bot token "
-        "(instance, host, status, size — or reason: off-host | over-cap | "
-        "transfer-failed) — issue-519."
-    ),
-    "gateway.refused": (
-        "The consumer API refused a request (instance, reason: duplicate-instance | "
-        "duplicate-actor | duplicate-room | commit-undelivered | unknown-instance, holder, "
-        "peer; channel for duplicate-room). On the "
-        "client side the same event records the 409 it received, with `holder`."
-    ),
-    "gateway.reloaded": (
-        "gateway-config.yaml was re-read and the enabled ingress set applied (detail)."
-    ),
-    "config.reload-failed": (
-        "A config edit could not be loaded and the previous configuration keeps "
-        "running (path, error). Never stops an ingress on a bad edit (issue-496 R8.5)."
-    ),
-    "gateway.claimed": (
-        "An instance published a claim on a subject (subject, instance, role, routed: "
-        "how many held events the claim routed onto its queue)."
-    ),
-    "gateway.released": "An instance released its claim (subject, instance).",
-    "gateway.bound": (
-        "An instance published a binding — an object (a pull request, a Slack thread) "
-        "belongs to a work item (instance, provider, key, ref, routed: how many held "
-        "events it routed). Recorded so a binding that redirects a subject is never "
-        "anonymous (issue-496, security review SEC-2)."
-    ),
-    "gateway.rooms": (
-        "An instance published its rooms — the Slack collaboration channels its work "
-        "items declared (instance, rooms: how many it now holds, routed: held events "
-        "drained, refused: channels another live instance keeps) (issue-505)."
-    ),
-    "gateway.registered": (
-        "An instance registered the actors it works for (instance, actors: counts per "
-        "provider)."
-    ),
-    "gateway.unreachable": (
-        "The instance's gateway client could not reach the gateway (url, error). Once per "
-        "outage; the instance keeps running and never falls back to its own ingresses."
-    ),
-    "gateway.connected": (
-        "The instance's gateway client reached the gateway (url, instance, peer), at start "
-        "or after an outage."
-    ),
-    "subject.appended": (
-        "An event was stored on a subject (event_id, subject, provider, kind, "
-        "delivery_id). Written BEFORE the provider is acknowledged."
-    ),
-    "subject.routed": (
-        "The stored event's consumers were resolved (event_id, subject, to: the instance "
-        "list, or `unassigned` when none; by: claim | actor | hold | binding | room | late, when a binding or room "
-        "published between the resolve and the append routed it)."
-    ),
-    "subject.committed": (
-        "An instance committed a delivery (instance, seq, event_id, outcome)."
-    ),
-    "subject.redelivered": (
-        "A fetch returned a delivery again (instance, seq, event_id, attempt): the "
-        "previous attempt was never committed."
-    ),
-    "subject.dead-lettered": (
-        "A delivery exceeded store.maxAttempts and was committed as dead-lettered "
-        "(instance, seq, event_id, attempts). Kept for inspection."
-    ),
-    "subject.expired": (
-        "Retention dropped an uncommitted delivery or a held event (subject, event_id, "
-        "instance, age_s)."
-    ),
-}
+    "gateway.started",
+    "gateway.stopped",
+    "gateway.received",
+    "gateway.dropped",
+    "gateway.slack_call",
+    "gateway.slack_download",
+    "gateway.refused",
+    "gateway.reloaded",
+    "config.reload-failed",
+    "gateway.claimed",
+    "gateway.released",
+    "gateway.bound",
+    "gateway.rooms",
+    "gateway.registered",
+    "gateway.unreachable",
+    "gateway.connected",
+    "subject.appended",
+    "subject.routed",
+    "subject.committed",
+    "subject.redelivered",
+    "subject.dead-lettered",
+    "subject.expired",
+)
+
+#: Each event type's description, in the catalog's order (issue-540: the prose is
+#: in ``strings/en.json``; the names stay here).
+EVENT_TYPES: Dict[str, str] = {name: _EVENT_TYPE_TEXT[name] for name in _EVENT_NAMES}
 
 
 def _utcnow() -> str:

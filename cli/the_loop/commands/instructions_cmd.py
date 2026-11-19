@@ -30,12 +30,19 @@ from pathlib import Path
 from typing import Any, List, Mapping, Sequence
 
 from .base import Command, register
+from .. import strings
 from ..client.routing import routed, service_error
 from ..core import repo as core_repo
 
 logger = logging.getLogger("the-loop.instructions")
 
-_HEADERS = ["#", "State", "Path", "Resolved", "Notes"]
+_HEADERS = [
+    "#",
+    strings.t("cli.instructions.table.header.state"),
+    strings.t("cli.instructions.table.header.path"),
+    strings.t("cli.instructions.table.header.resolved"),
+    strings.t("cli.instructions.table.header.notes"),
+]
 
 
 def _rows(docs: Sequence[Mapping[str, Any]]) -> List[List[str]]:
@@ -117,22 +124,26 @@ def _parse_doc(value: str):
     try:
         entry = json.loads(text)
     except json.JSONDecodeError as exc:
-        raise ValueError(f"--doc {value!r} is not valid JSON: {exc}") from None
+        raise ValueError(
+            strings.t("cli.instructions.parse-doc.invalid-json", value=value, exc=exc)
+        ) from None
     if not isinstance(entry, dict):
-        raise ValueError(f"--doc {value!r} must be a JSON object with a `path`")
+        raise ValueError(
+            strings.t("cli.instructions.parse-doc.not-an-object", value=value)
+        )
     return entry
 
 
 @register
 class InstructionsCommand(Command):
     name = "instructions"
-    help = "Report the custom instruction docs this repo registers, and whether they resolve"
+    help = strings.t("cli.instructions.help")
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
             "--root",
             default=".",
-            help="Repository root relative paths resolve against (default: current directory).",
+            help=strings.t("cli.instructions.root.help"),
         )
         parser.add_argument(
             "--doc",
@@ -140,23 +151,19 @@ class InstructionsCommand(Command):
             dest="docs",
             default=[],
             metavar="PATH",
-            help=(
-                "A registered instruction doc (repeatable) — an entry of the harness "
-                "config's customInstructions.docs, as the agent read it: a path, or "
-                'a JSON object {"path": ..., "notes": ...} to carry its notes.'
-            ),
+            help=strings.t("cli.instructions.doc.help"),
         )
         parser.add_argument(
             "--on-missing",
             choices=("warn", "error", "ignore"),
             default="warn",
-            help="The customInstructions.onMissing policy that grades the report.",
+            help=strings.t("cli.instructions.on-missing.help"),
         )
         parser.add_argument(
             "--format",
             choices=sorted(_RENDERERS),
             default="table",
-            help="Output format (default: table).",
+            help=strings.t("cli.instructions.format.help"),
         )
 
     def run(self, args: argparse.Namespace) -> int:
@@ -164,7 +171,7 @@ class InstructionsCommand(Command):
         try:
             docs = [_parse_doc(value) for value in (args.docs or [])]
         except ValueError as exc:
-            print(f"error: {exc}", file=sys.stderr)
+            print(strings.t("cli.instructions.run.error", exc=exc), file=sys.stderr)
             return 2
         try:
             report = routed(
@@ -179,7 +186,7 @@ class InstructionsCommand(Command):
         except Exception as exc:  # noqa: BLE001 — mapped, or re-raised below
             mapped = service_error(exc)
             if mapped is None:
-                mapped = (f"error: {exc}", 2)
+                mapped = (strings.t("cli.instructions.run.error", exc=exc), 2)
             print(mapped[0], file=sys.stderr)
             return mapped[1]
 

@@ -405,7 +405,7 @@
   "parked": {
     "node": "human-approval",
     "reason": "`classify-feedback` did not pass:\n- feedback so far is not decisive; the gate stays open",
-    "since": "2026-11-18T23:28:53+00:00"
+    "since": "2026-11-19T01:09:56+00:00"
   },
   "completions": {
     "requirements-definition": {

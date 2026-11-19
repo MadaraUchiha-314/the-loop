@@ -81,39 +81,39 @@ Each group moves every human-facing string in its modules to `en.json` (or every
 agent-facing one to `prompts/`), keeps the rendered text byte-identical, and runs its own
 modules' tests. The groups are disjoint, so they can run in parallel.
 
-- [ ] 11. `commands/` — CLI output and `argparse` help (`cli.*` keys)
+- [x] 11. `commands/` — CLI output and `argparse` help (`cli.*` keys)
   - _Depends on:_ 2
   - _Requirements:_ R2.5, R2.7
   - _Test:_ T2 — the `tests/test_*_cmd.py` and CLI scenario tests stay green
-- [ ] 12. Top-level modules (`cli/the_loop/*.py`) — comment bodies, CLI output
+- [x] 12. Top-level modules (`cli/the_loop/*.py`) — comment bodies, CLI output
   - _Depends on:_ 2
   - _Requirements:_ R2.5, R2.7
   - _Test:_ T2
-- [ ] 13. `channels/` — Slack, Jira and GitHub message bodies, replies, digests
+- [x] 13. `channels/` — Slack, Jira and GitHub message bodies, replies, digests
   - _Depends on:_ 2
   - _Requirements:_ R2.5, R2.7
   - _Test:_ T2 — `tests/test_channels*.py`, `tests/test_slack*.py`
-- [ ] 14. `core/`, `sessions/`, `lifecycle/`, `harness/`, `client/` — reports, announces, notices
+- [x] 14. `core/`, `sessions/`, `lifecycle/`, `harness/`, `client/` — reports, announces, notices
   - _Depends on:_ 2
   - _Requirements:_ R2.5, R2.7
   - _Test:_ T2
-- [ ] 15. `webhook/`, `poller/`, `gateway/` — posted replies, refusals, status output
+- [x] 15. `webhook/`, `poller/`, `gateway/` — posted replies, refusals, status output
   - _Depends on:_ 2
   - _Requirements:_ R2.5, R2.7
   - _Test:_ T2
-- [ ] 16. `graph/` — the phase-selection checklist, quiz, review and side-effect comment bodies
+- [x] 16. `graph/` — the phase-selection checklist, quiz, review and side-effect comment bodies
   - _Depends on:_ 2
   - _Requirements:_ R2.5, R2.7
   - _Test:_ T2 — `tests/test_graph*.py`, `tests/test_selection*.py`
-- [ ] 17. `api/`, `manager/`, `sdk/`, `scenarios/` + MCP tool descriptions → `prompts/mcp/tools/` + stop hook → `hooks/prompts/gate-feedback.md`
+- [x] 17. `api/`, `manager/`, `sdk/`, `scenarios/` + MCP tool descriptions → `prompts/mcp/tools/` + stop hook → `hooks/prompts/gate-feedback.md`
   - _Depends on:_ 1, 2
   - _Requirements:_ R1.1, R2.5
   - _Test:_ T2, T16 — `tests/test_mcp*.py`, `tests/test_api*.py`, `tests/test_sdk*.py`, `tests/test_harness_gate.py`
-- [ ] 18. UI — `ui/src/i18n.ts` + every component string → `ui.*` keys
+- [x] 18. UI — `ui/src/i18n.ts` + every component string → `ui.*` keys
   - _Depends on:_ 2
   - _Requirements:_ R2.5, R3.2
   - _Test:_ T10
-- [ ] 19. Integrate: catalog tests (the `ui.` prefix is owned by the UI test), capability doc, full suite, `make check`
+- [x] 19. Integrate: catalog tests (the `ui.` prefix is owned by the UI test), capability doc, full suite, `make check`
   - _Depends on:_ 11–18
   - _Requirements:_ R2.6, R3.3
   - _Test:_ T2, T7, T10

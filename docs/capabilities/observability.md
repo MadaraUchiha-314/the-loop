@@ -34,7 +34,9 @@ for humans, coding agents and any dashboarding built on top.
   `--level`/`--since`, output `table|json|jsonl`, tail with `--follow`, and list the
   documented event-type catalog with `--types`.
 - The catalog (`EVENT_TYPES` in `cli/the_loop/eventlog.py`) SHALL be the enforced
-  single source of truth for event types (a unit test fails on drift).
+  single source of truth for event types (a unit test fails on drift). The type names
+  and their order live there; each description is the string catalog's
+  `eventlog.event-type.<type>` entry in `cli/the_loop/strings/en.json` (issue-540).
 - Writes SHALL be append-only and multi-process safe; a broken log SHALL never break
   ingress; emission SHALL be a no-op in library/test use until a CLI entry point
   configures it; `eventLog.enabled: false` in the **CLI config** SHALL disable it
@@ -52,6 +54,7 @@ for humans, coding agents and any dashboarding built on top.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-540 | Event-type descriptions moved to the string catalog (`eventlog.event-type.<type>` in `strings/en.json`); names and order stay in `EVENT_TYPES` | [spec](../specs/issue-540/), [prompts-and-strings](prompts-and-strings.md) |
 | issue-496 | The gateway (2026-10-19): the `gateway.*` and `subject.*` families, `config.reload-failed`, `gateway_event_id` on `dispatch.*`, `eventlog.context` and `eventlog.correlate` | [spec](../specs/issue-496/), [gateway](gateway.md) |
 | issue-409 | Three `channel.*` rows for delivery that did **not** happen — `undelivered` (`warning`: an event every asked channel refused, now queued; names the type, the work item, the channels and the queue depth), `delivered_late` (a queued event a later attempt landed, with its attempts and how long it waited) and `undelivered_dropped` (`warning`: the queue was full and its oldest entry went). `session.awaiting_input` gains `channels_posted`. Ids and counts only, the rule unchanged: the queued message text lives in the outbox, never in the log. Before this, delivering to nobody was one `debug` line with `posted: 0` | [spec](../specs/issue-409/), [channels](channels.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/409) |
 | issue-377 | `session.spawned` and `session.respawned` carry the argv the session was launched with — `harness_args`, `model`, `effort`, each omitted when empty — and `session.pr_spawned` carries `harness_args`, so "was this session launched with the flag the config declares?" is answerable from `events.jsonl` alone, which is the regression check the issue asked for | [spec](../specs/issue-377/), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/377) |

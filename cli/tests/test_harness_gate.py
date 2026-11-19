@@ -214,6 +214,52 @@ class TestHarnessProtocols:
         assert captured.err == ""
 
 
+class TestFeedbackText:
+    """The words come from `hooks/prompts/gate-feedback.md` (issue-540)."""
+
+    def test_the_rendered_text_is_pinned(self, gate):
+        node = {"messages": ["design.md missing", "a {brace} $x"]}
+        assert gate.feedback_text(node, 1, 3) == (
+            "the-loop: this step is not complete.\n"
+            "  · design.md missing\n"
+            "  · a {brace} $x\n"
+            "\n"
+            "Fix the above, then finish. (attempt 1/3)"
+        )
+
+    def test_a_node_without_messages_still_says_why_it_stops(self, gate):
+        assert gate.feedback_text({"messages": None}, 2, 5) == (
+            "the-loop: this step is not complete.\n"
+            "\n"
+            "Fix the above, then finish. (attempt 2/5)"
+        )
+
+    def test_the_prompt_file_ships_beside_the_script(self, gate):
+        assert gate.FEEDBACK_PROMPT == GATE.parent / "prompts" / "gate-feedback.md"
+        assert gate.FEEDBACK_PROMPT.is_file()
+
+    def test_a_missing_prompt_file_still_blocks_with_the_checks_own_messages(
+        self, gate, monkeypatch, tmp_path, capsys
+    ):
+        """A broken install must neither crash a stop nor switch the gate off."""
+        monkeypatch.setattr(gate, "FEEDBACK_PROMPT", tmp_path / "absent.md")
+        assert gate.feedback_text({"messages": ["missing X"]}, 1, 3) == "missing X"
+        assert gate.feedback_text({"messages": []}, 1, 3) == "the-loop check: unmet"
+        assert gate.give_up_text("issue-1", 3) == ""
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("THE_LOOP_WORK_ITEM", "issue-1")
+        monkeypatch.setattr(gate, "run_check", lambda _: report(ok=False))
+        gate.main(["gate", "codex"])
+        out = capsys.readouterr().out
+        assert json.loads(out) == {"decision": "block", "reason": "missing X"}
+
+    def test_the_give_up_line_is_pinned(self, gate):
+        assert gate.give_up_text("issue-1", 3) == (
+            "the-loop: issue-1 is still incomplete after 3 attempts; letting the "
+            "turn end. `the-loop check` will still report it, and CI gates the merge."
+        )
+
+
 class TestAttemptsFile:
     def test_two_repos_on_the_same_work_item_do_not_share_a_counter(self, gate):
         """The bash version keyed on the work-item id alone.

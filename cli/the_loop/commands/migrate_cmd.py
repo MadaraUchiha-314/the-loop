@@ -16,23 +16,24 @@ import argparse
 from pathlib import Path
 
 from .base import Command, register
+from .. import strings
 
 
 @register
 class MigrateConfigCommand(Command):
     name = "migrate-config"
-    help = "Migrate a CLI config to the current schema version (idempotent)."
+    help = strings.t("cli.migrate.migrate-config.help")
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
             "--path",
             default="",
-            help="cli-config.yaml to migrate (default: the resolved CLI config)",
+            help=strings.t("cli.migrate.migrate-config.path.help"),
         )
         parser.add_argument(
             "--dry-run",
             action="store_true",
-            help="print the report and the migrated YAML without writing",
+            help=strings.t("cli.migrate.migrate-config.dry-run.help"),
         )
 
     def run(self, args: argparse.Namespace) -> int:
@@ -43,13 +44,17 @@ class MigrateConfigCommand(Command):
 
         path = Path(args.path) if args.path else cli_config.default_cli_config_path()
         if not path.is_file():
-            print(f"error: {path} not found")
+            print(strings.t("cli.migrate.migrate-config.run.not-found", path=path))
             return 2
 
         try:
             data = cli_config._load_cli_config_raw(path, strict=True)
         except Exception as exc:  # noqa: BLE001
-            print(f"error: could not parse {path}: {exc}")
+            print(
+                strings.t(
+                    "cli.migrate.migrate-config.run.could-not-parse", path=path, exc=exc
+                )
+            )
             return 2
 
         report = migrate_cli_config(data)
@@ -59,7 +64,11 @@ class MigrateConfigCommand(Command):
 
         rendered = yaml.safe_dump(report.config, sort_keys=False)
         if args.dry_run:
-            print(f"\n--- {path} (preview, not written) ---")
+            print(
+                strings.t(
+                    "cli.migrate.migrate-config.run.preview-not-written", path=path
+                )
+            )
             print(rendered)
             return 0
 
@@ -68,5 +77,11 @@ class MigrateConfigCommand(Command):
         backup = path.with_suffix(path.suffix + ".bak")
         backup.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
         path.write_text(rendered, encoding="utf-8")
-        print(f"\nwrote {path} (previous version kept at {backup})")
+        print(
+            strings.t(
+                "cli.migrate.migrate-config.run.wrote-previous-version-kept-at",
+                path=path,
+                backup=backup,
+            )
+        )
         return 0

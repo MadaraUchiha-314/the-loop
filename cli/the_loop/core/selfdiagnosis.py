@@ -52,6 +52,7 @@ from ..ghapi import GitHubApiConfig, GitHubClient
 from ..redact import defang_control_keywords, scrub
 from ..runlock import RunLock
 from .. import sessioncreds
+from .. import strings
 from ..state import layout_from_config
 
 logger = logging.getLogger("the-loop.selfdiagnosis")
@@ -275,24 +276,26 @@ def compose_issue(
         return defang_control_keywords(masked, keywords)
 
     raw_title = clean(findings.get("title", "")).splitlines()[0].strip()
-    title = f"[self-diagnosed] {raw_title}"[:TITLE_MAX_CHARS]
+    title = strings.t("core.selfdiagnosis.issue.title", title=raw_title)[
+        :TITLE_MAX_CHARS
+    ]
 
     def section(heading: str, key: str) -> str:
         value = findings.get(key)
-        text = clean(value).strip() if value else "_not provided_"
+        text = (
+            clean(value).strip()
+            if value
+            else strings.t("core.selfdiagnosis.issue.not-provided")
+        )
         return f"## {heading}\n\n{text}\n"
 
+    heading = strings.section("core.selfdiagnosis.issue.heading")
     body = (
-        f"{section('Summary', 'summary')}\n"
-        f"{section('Root cause hypothesis', 'root_cause')}\n"
-        f"{section('Suggested fix', 'suggested_fix')}\n"
-        f"## Trigger\n\n{clean(dossier)}\n"
-        "---\n\n"
-        "Filed automatically by the-loop's **self-diagnosis** "
-        "([issue-242](https://github.com/MadaraUchiha-314/the-loop/issues/242), "
-        "opt-in). All PII and environment data were redacted before posting. "
-        f"Intended label: `{config.label}`. This issue is never armed for "
-        "autonomous execution by the-loop itself.\n"
+        f"{section(heading['summary'], 'summary')}\n"
+        f"{section(heading['root-cause'], 'root_cause')}\n"
+        f"{section(heading['suggested-fix'], 'suggested_fix')}\n"
+        f"## {heading['trigger']}\n\n{clean(dossier)}\n"
+        "---\n\n" + strings.t("core.selfdiagnosis.issue.footer", label=config.label)
     )
     return title, mark_self_authored(body)
 

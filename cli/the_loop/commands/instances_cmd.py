@@ -20,7 +20,7 @@ import sys
 from typing import Any, Dict, List
 
 from .base import Command, register
-from .. import cli_config, eventlog
+from .. import cli_config, eventlog, strings
 from ..client.routing import routed, service_error
 from ..core import instances as core_instances
 
@@ -33,9 +33,9 @@ def _report(exc: Exception) -> int:
     mapped = service_error(exc)
     if mapped is None:
         if isinstance(exc, ValueError):
-            mapped = (f"error: {exc}", 2)
+            mapped = (strings.t("cli.instances.report.error", exc=exc), 2)
         elif isinstance(exc, LookupError):
-            mapped = (f"error: {exc}", 1)
+            mapped = (strings.t("cli.instances.report.error", exc=exc), 1)
         else:
             raise exc
     message, code = mapped
@@ -53,16 +53,33 @@ def instance_lines(doc: Dict[str, Any]) -> List[str]:
     rows = doc.get("instances") or []
     if not rows:
         return []
-    table = [("name", "url", "state", "version", "mode", "managed", "sessions", "")]
+    table = [
+        (
+            strings.t("cli.instances.table.header.name"),
+            strings.t("cli.instances.table.header.url"),
+            strings.t("cli.instances.table.header.state"),
+            strings.t("cli.instances.table.header.version"),
+            strings.t("cli.instances.table.header.mode"),
+            strings.t("cli.instances.table.header.managed"),
+            strings.t("cli.instances.table.header.sessions"),
+            "",
+        )
+    ]
     own = doc.get("name") or ""
     for index, row in enumerate(rows):
         live = row.get("state") == "live"
-        note = "(this instance)" if index == 0 and row.get("name") == own else ""
+        note = (
+            strings.t("cli.instances.instance-lines.this-instance")
+            if index == 0 and row.get("name") == own
+            else ""
+        )
         if not live:
             note = str(row.get("detail") or "")
         table.append(
             (
-                str(row.get("name") or "(unnamed)"),
+                str(
+                    row.get("name") or strings.t("cli.instances.instance-lines.unnamed")
+                ),
                 str(row.get("url") or ""),
                 str(row.get("state") or ""),
                 str(row.get("version") or "") if live else "—",
@@ -82,19 +99,17 @@ def instance_lines(doc: Dict[str, Any]) -> List[str]:
 @register
 class InstancesCommand(Command):
     name = "instances"
-    help = "List the fleet a manager serves, and register or unregister an instance"
+    help = strings.t("cli.instances.help")
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         sub = parser.add_subparsers(dest="_command", metavar="<action>")
-        listing = sub.add_parser("list", help="Every instance, this one first")
+        listing = sub.add_parser("list", help=strings.t("cli.instances.list.help"))
         listing.add_argument("--format", choices=["text", "json"], default="text")
-        reg = sub.add_parser(
-            "register", help="Add an instance to this manager's registry"
-        )
-        reg.add_argument("name", help="The member's own instance.name")
-        reg.add_argument("url", help="Its service address, as this manager reaches it")
+        reg = sub.add_parser("register", help=strings.t("cli.instances.register.help"))
+        reg.add_argument("name", help=strings.t("cli.instances.register.name.help"))
+        reg.add_argument("url", help=strings.t("cli.instances.register.url.help"))
         unreg = sub.add_parser(
-            "unregister", help="Remove an instance from this manager's registry"
+            "unregister", help=strings.t("cli.instances.unregister.help")
         )
         unreg.add_argument("name")
 
@@ -102,7 +117,7 @@ class InstancesCommand(Command):
         action = getattr(args, "_command", None)
         if not action:
             print(
-                "error: `the-loop instances` needs an action (list|register|unregister)",
+                strings.t("cli.instances.run.the-loop-instances-needs-an"),
                 file=sys.stderr,
             )
             return 2
@@ -142,7 +157,11 @@ class InstancesCommand(Command):
             ),
         )
         print(
-            f"registered {result.get('instance') or args.name} in {result.get('path')}"
+            strings.t(
+                "cli.instances.register.registered-in",
+                instance=result.get("instance") or args.name,
+                path=result.get("path"),
+            )
         )
         return 0
 
@@ -157,6 +176,10 @@ class InstancesCommand(Command):
             ),
         )
         print(
-            f"unregistered {result.get('instance') or args.name} from {result.get('path')}"
+            strings.t(
+                "cli.instances.unregister.unregistered-from",
+                instance=result.get("instance") or args.name,
+                path=result.get("path"),
+            )
         )
         return 0

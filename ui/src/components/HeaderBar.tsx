@@ -11,6 +11,7 @@
 import type { ReactNode } from "react";
 
 import type { Theme } from "../state/settings.ts";
+import { t } from "../i18n.ts";
 import { MoonIcon, PanelLeftOpenIcon, SunIcon } from "./Icons.tsx";
 import { IconButton } from "./primitives.tsx";
 
@@ -40,7 +41,7 @@ export function HeaderBar({
   return (
     <header className="flex flex-wrap items-start gap-4 border-b border-border px-6 py-4">
       {chrome.sidebarOpen ? null : (
-        <IconButton label="Open sidebar" onClick={chrome.onOpenSidebar}>
+        <IconButton label={t("ui.header.open-sidebar")} onClick={chrome.onOpenSidebar}>
           <PanelLeftOpenIcon className="h-4 w-4" />
         </IconButton>
       )}
@@ -50,7 +51,7 @@ export function HeaderBar({
       </div>
       <div className="ml-auto flex flex-wrap items-center gap-1">
         {actions}
-        <IconButton label={chrome.theme === "dark" ? "Switch to light theme" : "Switch to dark theme"} onClick={chrome.onToggleTheme}>
+        <IconButton label={chrome.theme === "dark" ? t("ui.header.theme.to-light") : t("ui.header.theme.to-dark")} onClick={chrome.onToggleTheme}>
           {chrome.theme === "dark" ? <SunIcon className="h-4 w-4" /> : <MoonIcon className="h-4 w-4" />}
         </IconButton>
         {trailing}

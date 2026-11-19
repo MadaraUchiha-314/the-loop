@@ -93,8 +93,9 @@ trail), `gh_event` + `action`, `actor`, `harness`, `harness_session_id`, `reason
 `error`, `will_retry`.
 
 The **full catalog** of event types with descriptions is `the-loop events --types`
-(source of truth: `EVENT_TYPES` in `cli/the_loop/eventlog.py`; a unit test keeps
-emitted types and the catalog in sync).
+(source of truth: `EVENT_TYPES` in `cli/the_loop/eventlog.py` for the types, with each
+description in `cli/the_loop/strings/en.json` under `eventlog.event-type.<type>`; a unit
+test keeps emitted types and the catalog in sync).
 
 ### Querying it (humans and agents)
 

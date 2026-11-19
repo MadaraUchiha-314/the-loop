@@ -53,7 +53,7 @@ from typing import Any, Callable, Dict, List, Optional
 from .base import Command, register
 from ..poller.daemon import _build_dispatcher
 from ..webhook.daemon import _state_layout
-from .. import cli_config, eventlog
+from .. import cli_config, eventlog, strings
 from ..client.routing import routed, service_error
 from ..control import CLEANUP, PAUSE, RESUME, START, STOP, ControlStore
 from ..core import sessions as core_sessions
@@ -210,11 +210,11 @@ def attach_session(
     try:
         ref = WorkItemRef.parse(work_item)
     except ValueError as exc:
-        print(f"error: {exc}", file=sys.stderr)
+        print(strings.t("cli.sessions.error", error=exc), file=sys.stderr)
         return 2
     session = registry.find_by_work_item(ref, include_closed=True)
     if session is None:
-        print(f"error: no session recorded for {ref.ref}", file=sys.stderr)
+        print(strings.t("cli.sessions.attach.no-session", ref=ref.ref), file=sys.stderr)
         return 1
     if session.status != "active":
         # The work item finished but its tmux session was retained (issue-86):
@@ -222,30 +222,20 @@ def attach_session(
         # *record*, so it is always attached read-only — a closed work item's
         # terminal must not take input (issue-94).
         read_only = True
-        print(
-            f"note: the session for {ref.ref} is closed; attaching read-only to "
-            "its retained tmux session",
-            file=sys.stderr,
-        )
+        print(strings.t("cli.sessions.attach.closed", ref=ref.ref), file=sys.stderr)
     if not session.tmux_target:
-        print(
-            f"error: no tmux session recorded yet for {ref.ref} — one is "
-            "spawned when its next event is dispatched (a self-registered or "
-            "pre-tmux-only record starts without one)",
-            file=sys.stderr,
-        )
+        print(strings.t("cli.sessions.attach.no-tmux", ref=ref.ref), file=sys.stderr)
         return 1
     runner = TmuxRunner()
     if not runner.is_available():
         from ..runner import check_dependencies
 
         for line in check_dependencies(web_enabled=False):
-            print(f"error: {line}", file=sys.stderr)
+            print(strings.t("cli.sessions.error", error=line), file=sys.stderr)
         return 1
     if not runner.has_session(session.tmux_target):
         print(
-            f"error: tmux session {session.tmux_target} not found (crashed or "
-            "was killed) — check `the-loop sessions list` for live sessions",
+            strings.t("cli.sessions.attach.tmux-gone", target=session.tmux_target),
             file=sys.stderr,
         )
         return 1
@@ -257,7 +247,7 @@ def attach_session(
 @register
 class SessionsCommand(Command):
     name = "sessions"
-    help = "Manage work-item ↔ harness-session registrations (webhook routing)"
+    help = strings.t("cli.sessions.help")
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         registry_dir = _default_registry_dir()
@@ -266,12 +256,12 @@ class SessionsCommand(Command):
         actions.required = True
 
         reg = actions.add_parser(
-            "register", help="Register the session working a work item"
+            "register", help=strings.t("cli.sessions.register.help")
         )
         reg.add_argument(
             "--work-item",
             required=True,
-            help="Work-item ref, e.g. github:OWNER/REPO#15",
+            help=strings.t("cli.sessions.work-item.help"),
         )
         reg.add_argument(
             "--harness", required=True, choices=sorted(core_sessions.HARNESS_BINARIES)
@@ -279,17 +269,17 @@ class SessionsCommand(Command):
         reg.add_argument(
             "--harness-session-id",
             required=True,
-            help="Claude session id ($CLAUDE_SESSION_ID) or Cursor chat id.",
+            help=strings.t("cli.sessions.register.harness-session-id.help"),
         )
         reg.add_argument(
             "--cwd",
             default=".",
-            help="Directory the session runs in (resume is scoped to it).",
+            help=strings.t("cli.sessions.register.cwd.help"),
         )
         reg.add_argument(
             "--force",
             action="store_true",
-            help="Replace an existing active registration for this work item.",
+            help=strings.t("cli.sessions.register.force.help"),
         )
         reg.add_argument("--registry-dir", default=registry_dir)
         reg.add_argument("--portable-dir", default=portable_dir)
@@ -297,61 +287,45 @@ class SessionsCommand(Command):
 
         link = actions.add_parser(
             "link-pr",
-            help=(
-                "Record a pull request as delivering a work item, so its "
-                "comments/reviews/CI route back to that work item's session"
-            ),
+            help=strings.t("cli.sessions.link-pr.help"),
         )
         link.add_argument(
             "--work-item",
             required=True,
-            help="Work-item ref, e.g. github:OWNER/REPO#15",
+            help=strings.t("cli.sessions.work-item.help"),
         )
         which = link.add_mutually_exclusive_group(required=True)
         which.add_argument(
             "--pull-request",
             metavar="REF|N",
-            help=(
-                "The pull request that delivers it: its number in the work "
-                "item's own repository, or a full ref for one in another "
-                "repository (github:OWNER/REPO#16)."
-            ),
+            help=strings.t("cli.sessions.link-pr.pull-request.help"),
         )
         which.add_argument(
             "--discover",
             action="store_true",
-            help=(
-                "Ask GitHub instead (issue-447): link every open pull request "
-                "whose head is this checkout's branch, in its origin repository."
-            ),
+            help=strings.t("cli.sessions.link-pr.discover.help"),
         )
         link.add_argument(
             "--branch",
             default="",
-            help="With --discover: the head branch (default: the checked-out one).",
+            help=strings.t("cli.sessions.link-pr.branch.help"),
         )
         link.add_argument(
             "--head-owner",
             default="",
-            help=(
-                "With --discover: the owner of the head branch, when it is a "
-                "fork's (default: the repository's owner)."
-            ),
+            help=strings.t("cli.sessions.link-pr.head-owner.help"),
         )
         link.add_argument(
             "--repository",
             default="",
             metavar="[HOST/]OWNER/REPO",
-            help=(
-                "With --discover: where to look (default: the checkout's origin, "
-                "else the work item's repository)."
-            ),
+            help=strings.t("cli.sessions.link-pr.repository.help"),
         )
         link.add_argument("--registry-dir", default=registry_dir)
         link.add_argument("--portable-dir", default=portable_dir)
         link.set_defaults(_action=self._link_pr)
 
-        lst = actions.add_parser("list", help="List registered sessions")
+        lst = actions.add_parser("list", help=strings.t("cli.sessions.list.help"))
         lst.add_argument("--status", choices=["active", "paused", "closed"])
         lst.add_argument("--format", choices=["table", "json"], default="table")
         lst.add_argument("--registry-dir", default=registry_dir)
@@ -359,13 +333,13 @@ class SessionsCommand(Command):
         lst.set_defaults(_action=self._list)
 
         attach = actions.add_parser(
-            "attach", help="Attach this terminal to a tmux-mode session"
+            "attach", help=strings.t("cli.sessions.attach.help")
         )
         attach.add_argument("--work-item", required=True)
         attach.add_argument(
             "--read-only",
             action="store_true",
-            help="Observe without a keyboard (tmux attach -r).",
+            help=strings.t("cli.sessions.attach.read-only.help"),
         )
         attach.add_argument("--registry-dir", default=registry_dir)
         attach.add_argument("--portable-dir", default=portable_dir)
@@ -375,21 +349,11 @@ class SessionsCommand(Command):
         # The same four commands an authorized user issues by keyword, from the
         # machine running the-loop. Each posts its keyword back to the ticket.
         control_help = {
-            START: (
-                "Start execution for a work item (spawns a session, or resumes "
-                "a paused one)"
-            ),
-            PAUSE: "Pause delivery to a work item's session (it keeps its state)",
-            RESUME: "Resume delivery to a paused session",
-            STOP: "Stop execution: close the session and end its harness",
-            CLEANUP: (
-                "Release a finished work item's LOCAL resources: kill its tmux "
-                "sessions, remove its workspace checkout (uncommitted work in it "
-                "is gone) and delete its machine-local session record. Ignores "
-                "the keepSessionOnClose/keepCheckoutOnClose retention settings, "
-                "keeps the portable record (control, poll, graph), and touches "
-                "nothing remote."
-            ),
+            START: strings.t("cli.sessions.control.start.help"),
+            PAUSE: strings.t("cli.sessions.control.pause.help"),
+            RESUME: strings.t("cli.sessions.control.resume.help"),
+            STOP: strings.t("cli.sessions.control.stop.help"),
+            CLEANUP: strings.t("cli.sessions.control.cleanup.help"),
         }
         for command in (START, PAUSE, RESUME, STOP, CLEANUP):
             sub = actions.add_parser(command, help=control_help[command])
@@ -400,10 +364,7 @@ class SessionsCommand(Command):
                 "--comment",
                 action=argparse.BooleanOptionalAction,
                 default=True,
-                help=(
-                    "Post the equivalent keyword comment on the work item so the "
-                    "thread records this action (default: on; best-effort)."
-                ),
+                help=strings.t("cli.sessions.control.comment.help"),
             )
             sub.set_defaults(_action=self._control, _command=command)
 
@@ -413,36 +374,30 @@ class SessionsCommand(Command):
         # code the operator has just fixed.
         reset = actions.add_parser(
             "reset",
-            help=(
-                "Forget this machine's state for a work item (session record, "
-                "control + poll sections) so it starts from scratch"
-            ),
+            help=strings.t("cli.sessions.reset.help"),
         )
         reset.add_argument(
             "--work-item",
             action="append",
             metavar="REF",
-            help="Which work item to reset. Repeatable.",
+            help=strings.t("cli.sessions.reset.work-item.help"),
         )
         reset.add_argument(
             "--all",
             dest="all_items",
             action="store_true",
-            help=(
-                "Reset every work item this machine holds state for. Must be "
-                "asked for explicitly — a bare `reset` never means this."
-            ),
+            help=strings.t("cli.sessions.reset.all.help"),
         )
         reset.add_argument(
             "--dry-run",
             action="store_true",
-            help="Report what would be removed, and change nothing.",
+            help=strings.t("cli.sessions.reset.dry-run.help"),
         )
         reset.add_argument("--registry-dir", default=registry_dir)
         reset.add_argument("--portable-dir", default=portable_dir)
         reset.set_defaults(_action=self._reset)
 
-        close = actions.add_parser("close", help="Close a work item's session")
+        close = actions.add_parser("close", help=strings.t("cli.sessions.close.help"))
         close.add_argument("--work-item", required=True)
         close.add_argument("--registry-dir", default=registry_dir)
         close.add_argument("--portable-dir", default=portable_dir)
@@ -452,50 +407,36 @@ class SessionsCommand(Command):
             dest="keep_tmux",
             action="store_true",
             default=None,
-            help=(
-                "Keep the tmux session so its transcript stays readable; the "
-                "harness inside it is still ended unless "
-                "routing.tmux.killHarnessOnClose is false "
-                "(default: routing.tmux.keepSessionOnClose)."
-            ),
+            help=strings.t("cli.sessions.close.keep-tmux.help"),
         )
         tmux_fate.add_argument(
             "--kill-tmux",
             dest="keep_tmux",
             action="store_false",
-            help="Kill the tmux session along with the registry entry.",
+            help=strings.t("cli.sessions.close.kill-tmux.help"),
         )
         close.set_defaults(_action=self._close)
 
         restart = actions.add_parser(
             "restart",
-            help=(
-                "Relaunch running sessions on the environment env.file declares "
-                "now (after a credential rotation)"
-            ),
+            help=strings.t("cli.sessions.restart.help"),
         )
         restart.add_argument(
             "--work-item",
             action="append",
             default=[],
-            help=(
-                "The work item whose session to relaunch; repeatable. Either this "
-                "or --all."
-            ),
+            help=strings.t("cli.sessions.restart.work-item.help"),
         )
         restart.add_argument(
             "--all",
             dest="all_sessions",
             action="store_true",
-            help="Relaunch every running session this machine manages.",
+            help=strings.t("cli.sessions.restart.all.help"),
         )
         restart.add_argument(
             "--dry-run",
             action="store_true",
-            help=(
-                "Report which sessions would be relaunched, and why the rest would "
-                "not, without touching a pane."
-            ),
+            help=strings.t("cli.sessions.restart.dry-run.help"),
         )
         restart.add_argument("--format", choices=["text", "json"], default="text")
         restart.add_argument("--registry-dir", default=registry_dir)
@@ -575,10 +516,7 @@ class SessionsCommand(Command):
         cwd = Path.cwd()
         branch = args.branch or current_branch(cwd)
         if not branch:
-            print(
-                "error: no branch is checked out here (detached HEAD?); pass --branch",
-                file=sys.stderr,
-            )
+            print(strings.t("cli.sessions.link-pr.no-branch"), file=sys.stderr)
             return 2
         # The origin only when it is on a GitHub host this instance trusts;
         # otherwise the work item's own repository (core's default for "").
@@ -631,14 +569,14 @@ class SessionsCommand(Command):
             return 0
         rows = [
             (
-                "Work item",
-                "Harness",
-                "Model",
-                "Session id",
-                "Tmux",
-                "Status",
-                "Control",
-                "Last event",
+                strings.t("cli.sessions.list.column.work-item"),
+                strings.t("cli.sessions.list.column.harness"),
+                strings.t("cli.sessions.list.column.model"),
+                strings.t("cli.sessions.list.column.session-id"),
+                strings.t("cli.sessions.list.column.tmux"),
+                strings.t("cli.sessions.list.column.status"),
+                strings.t("cli.sessions.list.column.control"),
+                strings.t("cli.sessions.list.column.last-event"),
             )
         ]
         for s in sessions:
@@ -674,14 +612,14 @@ class SessionsCommand(Command):
             for s in sessions
         ]
         if any(held):
-            rows = [rows[0] + ("Credentials",)] + [
+            rows = [rows[0] + (strings.t("cli.sessions.list.column.credentials"),)] + [
                 row + (cell or "-",) for row, cell in zip(rows[1:], held)
             ]
         widths = [max(len(row[i]) for row in rows) for i in range(len(rows[0]))]
         for row in rows:
             print("  ".join(cell.ljust(widths[i]) for i, cell in enumerate(row)))
         if not sessions:
-            print("(no registered sessions)", file=sys.stderr)
+            print(strings.t("cli.sessions.list.empty"), file=sys.stderr)
         return 0
 
     def _restart(self, args: argparse.Namespace) -> int:
@@ -721,7 +659,7 @@ class SessionsCommand(Command):
         mapped = service_error(exc)
         if mapped is None:
             if isinstance(exc, ValueError):
-                mapped = (f"error: {exc}", 2)
+                mapped = (strings.t("cli.sessions.error", error=exc), 2)
             else:
                 raise exc
         print(mapped[0], file=sys.stderr)
@@ -776,18 +714,10 @@ class SessionsCommand(Command):
         which order.
         """
         if args.work_item and args.all_items:
-            print(
-                "error: --work-item and --all are mutually exclusive; name the "
-                "work items, or ask for all of them",
-                file=sys.stderr,
-            )
+            print(strings.t("cli.sessions.reset.exclusive"), file=sys.stderr)
             return 2
         if not args.work_item and not args.all_items:
-            print(
-                "error: pass --work-item <ref> (repeatable) or --all; a bare "
-                "reset never means 'reset everything'",
-                file=sys.stderr,
-            )
+            print(strings.t("cli.sessions.reset.no-selector"), file=sys.stderr)
             return 2
 
         registry = SessionRegistry(args.registry_dir)
@@ -796,10 +726,7 @@ class SessionsCommand(Command):
         if args.all_items:
             items = work_items_with_state(registry, store)
             if not items:
-                print(
-                    "nothing to reset: this machine holds no work-item state",
-                    file=sys.stderr,
-                )
+                print(strings.t("cli.sessions.reset.nothing-held"), file=sys.stderr)
                 return 1
         else:
             # Validated all-or-nothing: a typo in the third of four refs must
@@ -818,7 +745,7 @@ class SessionsCommand(Command):
                     items.append(item)
             if invalid:
                 for line in invalid:
-                    print(f"error: {line}", file=sys.stderr)
+                    print(strings.t("cli.sessions.error", error=line), file=sys.stderr)
                 return 2
 
         for warning in self._reset_warnings():
@@ -847,33 +774,53 @@ class SessionsCommand(Command):
                 closer.stop()
 
         done = [outcome for outcome in outcomes if outcome.ok]
-        noun = "work item" if len(done) == 1 else "work items"
+        noun = (
+            strings.t("cli.sessions.reset.noun-one")
+            if len(done) == 1
+            else strings.t("cli.sessions.reset.noun-many")
+        )
         if args.dry_run:
-            print(f"would reset {len(done)} {noun} (dry run — nothing was changed)")
+            print(
+                strings.t("cli.sessions.reset.would-reset", count=len(done), noun=noun)
+            )
         elif done:
-            print(f"reset {len(done)} {noun}")
+            print(strings.t("cli.sessions.reset.done", count=len(done), noun=noun))
         return 0 if len(done) == len(outcomes) else 1
 
     def _report_reset(self, outcome, dry_run: bool) -> None:
         """One work item's result. The irreversible facts get their own lines."""
         if outcome.was_live:
             print(
-                f"{outcome.ref}: "
-                + ("would end a live session" if dry_run else "ended a live session")
+                strings.t("cli.sessions.reset.would-end-live", ref=outcome.ref)
+                if dry_run
+                else strings.t("cli.sessions.reset.ended-live", ref=outcome.ref)
             )
         if WORKSPACE in outcome.removed:
-            print(
-                f"{outcome.ref}: removed the workspace checkout — uncommitted "
-                "work in it is gone"
-            )
+            print(strings.t("cli.sessions.reset.removed-workspace", ref=outcome.ref))
         pieces = [piece for piece in outcome.removed if piece != WORKSPACE]
         if pieces:
-            verb = "would remove" if dry_run else "reset — removed"
-            print(f"{outcome.ref}: {verb} {', '.join(pieces)}")
+            joined = ", ".join(pieces)
+            print(
+                strings.t(
+                    "cli.sessions.reset.would-remove", ref=outcome.ref, pieces=joined
+                )
+                if dry_run
+                else strings.t(
+                    "cli.sessions.reset.removed", ref=outcome.ref, pieces=joined
+                )
+            )
         for error in outcome.errors:
-            print(f"{outcome.ref}: error: {error}", file=sys.stderr)
+            print(
+                strings.t(
+                    "cli.sessions.reset.item-error", ref=outcome.ref, error=error
+                ),
+                file=sys.stderr,
+            )
         if not outcome.found:
-            print(f"{outcome.ref}: nothing to reset", file=sys.stderr)
+            print(
+                strings.t("cli.sessions.reset.nothing-for-item", ref=outcome.ref),
+                file=sys.stderr,
+            )
 
     def _warn_about_the_checkout(self, outcome) -> None:
         """Say in the *rehearsal* that a real run would remove the checkout.
@@ -888,8 +835,11 @@ class SessionsCommand(Command):
         if not workspace.root or workspace.keep_checkout_on_close:
             return
         print(
-            f"{outcome.ref}: would also remove its workspace checkout under "
-            f"{workspace.root} — uncommitted work in it would be gone"
+            strings.t(
+                "cli.sessions.reset.would-remove-workspace",
+                ref=outcome.ref,
+                root=workspace.root,
+            )
         )
 
     def _reset_warnings(self) -> List[str]:
@@ -902,20 +852,15 @@ class SessionsCommand(Command):
         warnings = []
         pid = _running_receiver_pid()
         if pid is not None:
-            warnings.append(
-                f"warning: the gh-webhook receiver looks like it is running (pid "
-                f"{pid}); it holds poll state in memory and can write it back "
-                "after this reset — stop it first for a clean slate"
-            )
+            warnings.append(strings.t("cli.sessions.reset.receiver-running", pid=pid))
         routing = _routing_config()
         if not routing.control.require_start_command and (
             routing.spawn_on_unmatched != "never"
         ):
             warnings.append(
-                "warning: routing.control.requireStartCommand is false and "
-                f"spawnOnUnmatched is {routing.spawn_on_unmatched!r}, so a reset "
-                "work item is first-sight again and may re-spawn on the next "
-                "poll cycle rather than waiting for a start"
+                strings.t(
+                    "cli.sessions.reset.may-respawn", spawn=routing.spawn_on_unmatched
+                )
             )
         return warnings
 

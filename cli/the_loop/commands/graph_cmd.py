@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from .base import Command, register
+from .. import strings
 from ..client.routing import routed, service_error
 from ..core import graphs as core_graphs
 
@@ -31,7 +32,7 @@ def _report(exc: Exception) -> int:
     """
     mapped = service_error(exc)
     if mapped is None:
-        mapped = (f"error: {exc}", 2)
+        mapped = (strings.t("cli.graph.error", error=exc), 2)
     print(mapped[0])
     return mapped[1]
 
@@ -343,14 +344,14 @@ def _render_table(reports, ahead=()) -> str:
         mark = {"pass": "ok", "skip": "--", "wait": "wait", "block": "BLOCK"}.get(
             status, status.upper()
         )
-        flag = " (forced)" if report.get("forced") else ""
+        flag = strings.t("cli.graph.table.forced") if report.get("forced") else ""
         lines.append(f"  {mark:<6} {report['node']}{flag}")
         for message in report.get("messages") or []:
             lines.append(f"         · {message}")
     pending = [r for r in ahead if r["status"] not in ("pass", "skip")]
     if pending:
         lines.append(
-            f"  ····   {len(pending)} node(s) not reached yet: "
+            strings.t("cli.graph.table.not-reached", count=len(pending))
             + ", ".join(r["node"] for r in pending)
         )
     return "\n".join(lines)
@@ -359,13 +360,13 @@ def _render_table(reports, ahead=()) -> str:
 @register
 class CheckCommand(Command):
     name = "check"
-    help = "Evaluate a work item's nodes against its checked-in artifacts (read-only)."
+    help = strings.t("cli.check.help")
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
             "work_item",
             nargs="?",
-            help="work item id (issue-109) or ref (github:OWNER/REPO#109)",
+            help=strings.t("cli.check.work-item.help"),
         )
         _add_repo_flag(parser)
         _add_spec_dir_flag(parser)
@@ -373,25 +374,18 @@ class CheckCommand(Command):
         parser.add_argument(
             "--all",
             action="store_true",
-            help="evaluate every work item and report drift",
+            help=strings.t("cli.check.all.help"),
         )
         parser.add_argument(
             "--recompute",
             action="store_true",
-            help="ignore work-item state; derive completion from the artifacts alone",
+            help=strings.t("cli.check.recompute.help"),
         )
         parser.add_argument(
             "--fail-on",
             choices=["unmet", "block"],
             default="unmet",
-            help=(
-                "what makes this command exit non-zero. 'unmet' (default) is any "
-                "node that is not satisfied, including one waiting on a human — "
-                "what you want when asking where something stands. 'block' is only "
-                "a node an agent can actually fix, which is what an automated gate "
-                "wants: a PR waiting on its reviewer is the normal state of an open "
-                "PR, and failing CI for it would make the gate red by construction."
-            ),
+            help=strings.t("cli.check.fail-on.help"),
         )
 
     def run(self, args: argparse.Namespace) -> int:
@@ -411,7 +405,7 @@ class CheckCommand(Command):
             root, note = _resolve_read_root(args.repo, args.work_item, args.spec_dir)
             items = [args.work_item]
         else:
-            print("error: give a work item id, or --all")
+            print(strings.t("cli.check.need-item"))
             return 2
 
         payload = []
@@ -431,15 +425,30 @@ class CheckCommand(Command):
                 # with no findings under it, which looks like a work item with
                 # no nodes rather than a repository that is not there.
                 if report.get("repoResolved") is False:
-                    print(f"{report['workItem']}: UNREAD — {root} is not a directory")
+                    print(
+                        strings.t(
+                            "cli.check.unread", work_item=report["workItem"], root=root
+                        )
+                    )
                     continue
                 if report.get("archived"):
                     # Ended and cleaned up (issue-452): the archive is the
                     # answer, and there are no node findings to list.
                     _print_archived(report, note)
                     continue
-                state = "ok" if report["ok"] else "UNMET"
-                print(f"{report['workItem']}: {state} (at {report['currentNode']})")
+                state = (
+                    strings.t("cli.check.state-ok")
+                    if report["ok"]
+                    else strings.t("cli.check.state-unmet")
+                )
+                print(
+                    strings.t(
+                        "cli.check.row",
+                        work_item=report["workItem"],
+                        state=state,
+                        node=report["currentNode"],
+                    )
+                )
                 if not args.all:
                     # Which file the answer came from (issue-396). `--all` is a
                     # drift summary — one line per item, as before.
@@ -466,9 +475,15 @@ class CheckCommand(Command):
                     if r["status"] not in ("pass", "skip")
                 ]
                 if ahead and not args.all:
-                    print(f"  ····   {len(ahead)} node(s) not reached yet")
+                    print(strings.t("cli.check.not-reached", count=len(ahead)))
             if args.all:
-                print(f"\n{len(payload) - failing}/{len(payload)} work items satisfied")
+                print(
+                    strings.t(
+                        "cli.check.summary",
+                        satisfied=len(payload) - failing,
+                        total=len(payload),
+                    )
+                )
         return 1 if failing else 0
 
 
@@ -477,11 +492,7 @@ def _add_repo_flag(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--repo",
         default="",
-        help=(
-            "repository root (default: the current directory; for `status` and "
-            "`check`, the checkout the work item's session runs in when the "
-            "current directory does not hold the work item — issue-396)"
-        ),
+        help=strings.t("cli.graph.repo.help"),
     )
 
 
@@ -517,7 +528,7 @@ def _resolve_read_root(repo: str, work_item: str, spec_dir: str) -> Tuple[Path, 
     checkout = _session_checkout(work_item)
     if checkout is None:
         return cwd, ""
-    return checkout, f"repo: {checkout} (from the session registry)"
+    return checkout, strings.t("cli.graph.registry-note", checkout=checkout)
 
 
 def _session_checkout(work_item: str) -> Optional[Path]:
@@ -577,30 +588,49 @@ def _archived_lines(report: Dict[str, Any]) -> List[str]:
     """
     archived = report["archived"]
     node = str(report.get("currentNode") or "")
-    head = f"{report['workItem']}: ARCHIVED — {archived.get('outcome') or 'unknown'}"
-    lines = [head + (f" (at {node})" if node else "")]
-    actor = str(archived.get("actor") or "") or "an unnamed actor"
+    head = strings.t(
+        "cli.graph.archived.head",
+        work_item=report["workItem"],
+        outcome=archived.get("outcome")
+        or strings.t("cli.graph.archived.unknown-outcome"),
+    )
+    lines = [head + (strings.t("cli.graph.archived.at", node=node) if node else "")]
+    actor = str(archived.get("actor") or "") or strings.t(
+        "cli.graph.archived.unnamed-actor"
+    )
     lines.append(
-        f"  ended: {archived.get('state') or 'closed'} by {actor} at "
-        f"{archived.get('at') or '?'} ({archived.get('reason') or 'no reason'})"
+        strings.t(
+            "cli.graph.archived.ended",
+            state=archived.get("state")
+            or strings.t("cli.graph.archived.default-state"),
+            actor=actor,
+            at=archived.get("at") or "?",
+            reason=archived.get("reason") or strings.t("cli.graph.archived.no-reason"),
+        )
     )
     terminal = archived.get("terminal")
     if not isinstance(terminal, dict):
-        lines.append(
-            "  detail: unavailable — no terminal record was kept when it closed "
-            "(it closed before issue-452, or its checkout could not be read), so "
-            "its graph position is not known here"
-        )
+        lines.append(strings.t("cli.graph.archived.no-detail"))
         return lines
     if terminal.get("completedAt"):
-        lines.append(f"  completed: {terminal['completedAt']}")
+        lines.append(
+            strings.t("cli.graph.archived.completed", at=terminal["completedAt"])
+        )
     selections = terminal.get("selections") or {}
     skipped = selections.get("skipped") or []
     opted = selections.get("optedIn") or []
     lines.append(
-        "  selections: "
-        + (f"skipped {', '.join(skipped)}" if skipped else "no phase skipped")
-        + (f"; opted in {', '.join(opted)}" if opted else "")
+        strings.t("cli.graph.archived.selections")
+        + (
+            strings.t("cli.graph.archived.skipped", phases=", ".join(skipped))
+            if skipped
+            else strings.t("cli.graph.archived.none-skipped")
+        )
+        + (
+            strings.t("cli.graph.archived.opted-in", phases=", ".join(opted))
+            if opted
+            else ""
+        )
     )
     chosen = [
         f"{key} {selections[key]}"
@@ -612,15 +642,26 @@ def _archived_lines(report: Dict[str, Any]) -> List[str]:
     if selections.get("claudeDoc") is True:
         chosen.append("claude-doc")  # issue-536
     if chosen:
-        lines.append(f"  choices: {', '.join(chosen)}")
+        lines.append(strings.t("cli.graph.archived.choices", choices=", ".join(chosen)))
     for pr in terminal.get("pullRequests") or []:
         url = f" {pr['url']}" if pr.get("url") else ""
-        lines.append(f"  pull request: {pr.get('ref')} ({pr.get('state') or '?'}){url}")
+        lines.append(
+            strings.t(
+                "cli.graph.archived.pull-request",
+                ref=pr.get("ref"),
+                state=pr.get("state") or "?",
+                url=url,
+            )
+        )
     evidence = terminal.get("evidence") or []
     if terminal.get("specDir"):
         lines.append(
-            f"  evidence: {terminal['specDir']}/evidence/"
-            + (f" — {', '.join(evidence)}" if evidence else " — none recorded")
+            strings.t("cli.graph.archived.evidence", spec_dir=terminal["specDir"])
+            + (
+                strings.t("cli.graph.archived.evidence-list", files=", ".join(evidence))
+                if evidence
+                else strings.t("cli.graph.archived.evidence-none")
+            )
         )
     return lines
 
@@ -645,10 +686,7 @@ def _state_line(report: Dict[str, Any], recompute: bool = False) -> str:
     """
     path = str(report.get("statePath") or "")
     if report.get("archived"):
-        return (
-            f"state: {path} (not found; reporting the terminal record this "
-            "machine kept when the work item ended — issue-452)"
-        )
+        return strings.t("cli.graph.state.archived", path=path)
     if report.get("stateFound"):
         pointer = str(report.get("pointer") or "")
         if recompute and pointer and pointer != report.get("currentNode"):
@@ -656,20 +694,16 @@ def _state_line(report: Dict[str, Any], recompute: bool = False) -> str:
             # artifacts place the item further along than it was ever
             # advanced. Say both, or `check` and the stop gate read as if
             # they contradict each other.
-            return f"state: {path} (pointer at {pointer}; position derived from the artifacts)"
-        return f"state: {path}"
+            return strings.t(
+                "cli.graph.state.pointer-differs", path=path, pointer=pointer
+            )
+        return strings.t("cli.graph.state.found", path=path)
     parent = Path(path).parent
     if not parent.is_dir():
-        return (
-            f"state: {path} (not found; {parent} does not exist — is this the "
-            "work item's checkout? run from it, or pass --repo)"
-        )
+        return strings.t("cli.graph.state.no-dir", path=path, parent=parent)
     if recompute:
-        return f"state: {path} (not found; position derived from the artifacts)"
-    return (
-        f"state: {path} (not found — the work item has not entered the graph; "
-        "reporting its start node)"
-    )
+        return strings.t("cli.graph.state.recompute", path=path)
+    return strings.t("cli.graph.state.not-entered", path=path)
 
 
 def _add_spec_dir_flag(parser: argparse.ArgumentParser) -> None:
@@ -683,10 +717,7 @@ def _add_spec_dir_flag(parser: argparse.ArgumentParser) -> None:
         "--spec-dir",
         default="",
         dest="spec_dir",
-        help=(
-            "where the specs live, relative to the repository root "
-            "(default: routing.graph.specDir from the CLI config, else docs/specs)"
-        ),
+        help=strings.t("cli.graph.spec-dir.help"),
     )
 
 
@@ -704,12 +735,12 @@ def _add_pr_flags(parser: argparse.ArgumentParser) -> None:
         "--pr",
         type=int,
         default=None,
-        help="walk this pull request's inner loop (pdlc-pr-loop, state under pr-loops/pr-<n>/) instead of the work item's outer loop",
+        help=strings.t("cli.graph.pr.help"),
     )
     parser.add_argument(
         "--pr-repo",
         default="",
-        help="the repository --pr is in, when it is not the repository the ticket was created in (state under pr-loops/<owner>__<repo>/pr-<n>/)",
+        help=strings.t("cli.graph.pr-repo.help"),
     )
 
 
@@ -753,28 +784,40 @@ def _report_hooks(root: Path, fmt: str) -> int:
         print(json.dumps(report, indent=2))
         return 0
     shipped = report["shipped"]
-    print(f"shipped hooks ({len(shipped)}): {', '.join(shipped)}")
+    print(
+        strings.t(
+            "cli.graph.hooks.shipped", count=len(shipped), names=", ".join(shipped)
+        )
+    )
     modules, attach = report["modules"], report["attach"]
     if not modules and not attach:
-        print("no graph hooks declared (`routing.graph.hooks` in the CLI config)")
+        print(strings.t("cli.graph.hooks.none"))
         return 0
     print(
-        f"\nthe CLI config declares {len(modules)} module(s) and "
-        f"{len(attach)} attachment(s) — nothing here has been imported:"
+        strings.t(
+            "cli.graph.hooks.declares", modules=len(modules), attachments=len(attach)
+        )
     )
     for ref in modules:
-        print(f"  module  {ref['path'] or ref['module']}")
+        print(strings.t("cli.graph.hooks.module", module=ref["path"] or ref["module"]))
     for entry in attach:
-        suffix = f"  with: {entry['with']}" if entry["with"] else ""
-        if entry.get("loops"):
-            suffix += f"  in: {', '.join(entry['loops'])}"
-        print(
-            f"  attach  {entry['hook']} → {entry['node']} ({entry['boundary']}){suffix}"
+        suffix = (
+            strings.t("cli.graph.hooks.with", params=entry["with"])
+            if entry["with"]
+            else ""
         )
-    print(
-        "\n`the-loop check <work item>` is what loads them; a declaration that "
-        "cannot load fails there rather than being skipped."
-    )
+        if entry.get("loops"):
+            suffix += strings.t("cli.graph.hooks.in", loops=", ".join(entry["loops"]))
+        print(
+            strings.t(
+                "cli.graph.hooks.attach",
+                hook=entry["hook"],
+                node=entry["node"],
+                boundary=entry["boundary"],
+                suffix=suffix,
+            )
+        )
+    print(strings.t("cli.graph.hooks.footer"))
     return 0
 
 
@@ -897,7 +940,7 @@ def _report_loops(fmt: str) -> int:
         print(json.dumps(report, indent=2))
         return 1 if failed else 0
     if report["error"]:
-        print(f"the CLI config's graphs cannot be read: {report['error']}")
+        print(strings.t("cli.graph.loops.unreadable", error=report["error"]))
         return 1
     for row in report["loops"]:
         commands = ", ".join(row["commands"]) or "—"
@@ -905,92 +948,87 @@ def _report_loops(fmt: str) -> int:
         if row["guest"]:
             traits.append("guest")
         if row["inner"]:
-            traits.append("inner loop, one per pull request")
+            traits.append(strings.t("cli.graph.loops.inner-trait"))
         print(f"{row['name']}  ({', '.join(traits)})")
-        print(f"  armed by: {commands}")
+        print(strings.t("cli.graph.loops.armed-by", commands=commands))
         if row["kind"] == "declared":
-            print(f"  file:     {row['path']}")
+            print(strings.t("cli.graph.loops.file", path=row["path"]))
             if row["status"] == "ok":
                 hooks = ", ".join(row["extensionHooks"])
                 print(
-                    "  compiles: ok"
+                    strings.t("cli.graph.loops.compiles-ok")
                     + (
-                        f" — names {hooks} (bound when a work item loads it)"
+                        strings.t("cli.graph.loops.names-hooks", hooks=hooks)
                         if hooks
                         else ""
                     )
                 )
             else:
-                print(f"  compiles: NO — {row['error']}")
+                print(strings.t("cli.graph.loops.compiles-no", error=row["error"]))
     if not any(row["kind"] == "declared" for row in report["loops"]):
-        print("\nno graphs of your own declared (top-level `graphs` in the CLI config)")
+        print(strings.t("cli.graph.loops.none-declared"))
     return 1 if failed else 0
 
 
 @register
 class GraphCommand(Command):
     name = "graph"
-    help = "Inspect and drive the-loop's process graph."
+    help = strings.t("cli.graph.help")
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         _add_repo_flag(parser)
         _add_spec_dir_flag(parser)
         sub = parser.add_subparsers(dest="action", required=True)
 
-        show = sub.add_parser("show", help="print the shipped graph")
+        show = sub.add_parser("show", help=strings.t("cli.graph.show.help"))
         show.add_argument("--format", choices=["text", "json"], default="text")
         _add_pr_flags(show)
 
-        status = sub.add_parser("status", help="where a work item is")
+        status = sub.add_parser("status", help=strings.t("cli.graph.status.help"))
         status.add_argument("work_item")
         _add_pr_flags(status)
 
-        advance = sub.add_parser("advance", help="evaluate and take the matching edge")
+        advance = sub.add_parser("advance", help=strings.t("cli.graph.advance.help"))
         advance.add_argument("work_item")
-        advance.add_argument("--ref", default="", help="work item ref for integrations")
+        advance.add_argument("--ref", default="", help=strings.t("cli.graph.ref.help"))
         _add_pr_flags(advance)
 
         complete = sub.add_parser(
             "complete",
-            help=(
-                "claim the current node's work is done: evaluate its exit chain "
-                "and advance if it passes (issue-148). The claim is a prompt to "
-                "evaluate, never a verdict — output is one JSON envelope."
-            ),
+            help=strings.t("cli.graph.complete.help"),
         )
         complete.add_argument("work_item")
         complete.add_argument(
             "--node",
             default="",
-            help="the node being claimed (default: the current node)",
+            help=strings.t("cli.graph.complete.node.help"),
         )
+        complete.add_argument("--ref", default="", help=strings.t("cli.graph.ref.help"))
         complete.add_argument(
-            "--ref", default="", help="work item ref for integrations"
+            "--actor", default="", help=strings.t("cli.graph.complete.actor.help")
         )
-        complete.add_argument("--actor", default="", help="who is claiming completion")
         _add_pr_flags(complete)
 
         forced = sub.add_parser(
             "force",
-            help="move a work item to a node regardless of gates (escape hatch)",
+            help=strings.t("cli.graph.force.help"),
         )
         forced.add_argument("work_item")
-        forced.add_argument("--to", required=True, help="target node id")
-        forced.add_argument("--reason", required=True, help="why (required)")
-        forced.add_argument("--actor", default="", help="who is forcing this")
+        forced.add_argument(
+            "--to", required=True, help=strings.t("cli.graph.force.to.help")
+        )
+        forced.add_argument(
+            "--reason", required=True, help=strings.t("cli.graph.reason.help")
+        )
+        forced.add_argument(
+            "--actor", default="", help=strings.t("cli.graph.force.actor.help")
+        )
         forced.add_argument("--ref", default="")
         _add_pr_flags(forced)
 
         skip = sub.add_parser(
             "skip",
-            help=(
-                "declare phases skipped for a work item (issue-177). Tokens are "
-                "skippable node ids or shipped skip-set names (e.g. spec-chain); "
-                "protected gates are not in the vocabulary, and a node the "
-                "pointer already reached is refused. A declaration routes the "
-                "pointer around the node and is reported as 'skipped by "
-                "declaration' — never as a pass."
-            ),
+            help=strings.t("cli.graph.skip.help"),
         )
         skip.add_argument("work_item")
         skip.add_argument(
@@ -998,24 +1036,20 @@ class GraphCommand(Command):
             action="append",
             required=True,
             dest="nodes",
-            help="a skippable node id or skip-set name (repeatable)",
+            help=strings.t("cli.graph.skip.node.help"),
         )
-        skip.add_argument("--reason", required=True, help="why (required)")
-        skip.add_argument("--actor", default="", help="who is declaring this")
-        skip.add_argument("--ref", default="", help="work item ref for integrations")
+        skip.add_argument(
+            "--reason", required=True, help=strings.t("cli.graph.reason.help")
+        )
+        skip.add_argument(
+            "--actor", default="", help=strings.t("cli.graph.skip.actor.help")
+        )
+        skip.add_argument("--ref", default="", help=strings.t("cli.graph.ref.help"))
         _add_pr_flags(skip)
 
         repos = sub.add_parser(
             "repos",
-            help=(
-                "declare the repositories this work item raises pull requests "
-                "in (issue-183). THE AGENT'S verb, called once design.md and "
-                "tasks.md say what the change spans — `await-inner-loops` then "
-                "holds `implementation` until each declared repository has an "
-                "inner loop and every started loop has finished. The flags are "
-                "the full set, not an append; with no --repo it prints what is "
-                "declared."
-            ),
+            help=strings.t("cli.graph.repos.help"),
         )
         repos.add_argument("work_item")
         # `--repository`, not `--repo`: the parent parser's `--repo` is the
@@ -1025,50 +1059,39 @@ class GraphCommand(Command):
             "--repository",
             action="append",
             dest="repositories",
-            help=(
-                "<owner>/<repo> this work item contributes code to (repeatable; "
-                "the flags are the full set, not an append)"
-            ),
+            help=strings.t("cli.graph.repos.repository.help"),
         )
         repos.add_argument(
             "--clear",
             action="store_true",
-            help="declare none — the default, and what a single-repository item wants",
+            help=strings.t("cli.graph.repos.clear.help"),
         )
-        repos.add_argument("--ref", default="", help="work item ref for integrations")
+        repos.add_argument("--ref", default="", help=strings.t("cli.graph.ref.help"))
         _add_pr_flags(repos)
 
         sub.add_parser(
             "hooks",
-            help=(
-                "report the shipped hooks and the CLI config's own declarations "
-                "(routing.graph.hooks, issue-248) — WITHOUT importing any of "
-                "the declared code"
-            ),
+            help=strings.t("cli.graph.hooks.help"),
         ).add_argument("--format", choices=["text", "json"], default="text")
 
         sub.add_parser(
             "loops",
-            help=(
-                "list every loop this machine can walk — the shipped ones and "
-                "your own (top-level graphs, issue-343) — with the commands "
-                "that arm each, compiling your graphs without importing any hook "
-                "module; exits 1 when one does not compile"
-            ),
+            help=strings.t("cli.graph.loops.help"),
         ).add_argument("--format", choices=["text", "json"], default="text")
 
-        run = sub.add_parser(
-            "run", help="drive a work item until it waits, escalates or completes"
-        )
+        run = sub.add_parser("run", help=strings.t("cli.graph.run.help"))
         run.add_argument("work_item")
         run.add_argument("--ref", default="")
         run.add_argument(
-            "--max-nodes", type=int, default=20, help="safety bound on advances"
+            "--max-nodes",
+            type=int,
+            default=20,
+            help=strings.t("cli.graph.run.max-nodes.help"),
         )
         run.add_argument(
             "--dry-run",
             action="store_true",
-            help="report what would happen without writing state",
+            help=strings.t("cli.graph.run.dry-run.help"),
         )
 
     def run(self, args: argparse.Namespace) -> int:
@@ -1104,7 +1127,13 @@ class GraphCommand(Command):
                     )
                 )
                 return 0
-            print(f"graph v{graph['version']}, start: {graph['start']}")
+            print(
+                strings.t(
+                    "cli.graph.show.head",
+                    version=graph["version"],
+                    start=graph["start"],
+                )
+            )
             edges = graph["edges"]
             for node in graph["nodes"]:
                 flags = []
@@ -1140,7 +1169,13 @@ class GraphCommand(Command):
                 _print_archived(report, note)
                 return 0 if report["ok"] else 1
             reached, ahead = _split_at_pointer(report["nodes"], report["currentNode"])
-            print(f"{report['workItem']}: at {report['currentNode']}")
+            print(
+                strings.t(
+                    "cli.graph.status.at",
+                    work_item=report["workItem"],
+                    node=report["currentNode"],
+                )
+            )
             if note:
                 print(f"  {note}")
             print(f"  {_state_line(report)}")
@@ -1197,22 +1232,24 @@ class GraphCommand(Command):
                 # CLI — same contract as a refused force.
                 if not _is_bad_request(exc) and service_error(exc) is not None:
                     raise
-                print(f"refused: {_detail(exc)}")
+                print(strings.t("cli.graph.refused", detail=_detail(exc)))
                 return 2
             for node in result["declared"]:
-                print(f"declared: {node} will be skipped")
+                print(strings.t("cli.graph.skip.declared", node=node))
             for entry in result["rejected"]:
-                print(f"rejected: {entry['token']} — {entry['why']}")
+                print(
+                    strings.t(
+                        "cli.graph.skip.rejected",
+                        token=entry["token"],
+                        why=entry["why"],
+                    )
+                )
             for warning in result.get("warnings") or []:
                 # Same voice as `force`'s: the declaration took effect, but part
                 # of its paper trail did not (issue-194).
-                print(f"  WARNING: {warning}")
+                print(strings.t("cli.graph.warning", warning=warning))
             if result["declared"]:
-                print(
-                    "  note: these are declarations, not verdicts — `the-loop "
-                    "check` reports each node as 'skipped by declaration', and "
-                    "the never-skippable gates still run."
-                )
+                print(strings.t("cli.graph.skip.note"))
             return 0 if result["declared"] else 1
 
         if args.action == "repos":
@@ -1230,26 +1267,31 @@ class GraphCommand(Command):
             except Exception as exc:  # noqa: BLE001
                 if not _is_bad_request(exc) and service_error(exc) is not None:
                     raise
-                print(f"refused: {_detail(exc)}")
+                print(strings.t("cli.graph.refused", detail=_detail(exc)))
                 return 2
             for entry in result["rejected"]:
-                print(f"rejected: {entry['repo']} — {entry['why']}")
+                print(
+                    strings.t(
+                        "cli.graph.repos.rejected", repo=entry["repo"], why=entry["why"]
+                    )
+                )
             if result["rejected"]:
                 # All or nothing: a partial declaration is a gate waiting on a
                 # set nobody chose, so nothing was written.
-                print("  nothing was declared; fix the entries and re-run")
+                print(strings.t("cli.graph.repos.nothing-declared"))
                 return 2
             reading = args.repositories is None and not args.clear
             if not result["declared"]:
-                print("no repositories declared for this work item")
+                print(strings.t("cli.graph.repos.none"))
                 return 0
             for name in result["declared"]:
-                print(f"{'declared' if not reading else 'repository'}: {name}")
-            if not reading:
                 print(
-                    "  note: `implementation` now waits until each of these has "
-                    "an inner loop AND every started loop has finished."
+                    strings.t("cli.graph.repos.repository", name=name)
+                    if reading
+                    else strings.t("cli.graph.repos.declared", name=name)
                 )
+            if not reading:
+                print(strings.t("cli.graph.repos.note"))
             return 0
 
         if args.action == "run":
@@ -1274,18 +1316,20 @@ class GraphCommand(Command):
                 # service) falls through to the shared "error:" mapping.
                 if not _is_bad_request(exc) and service_error(exc) is not None:
                     raise
-                print(f"refused: {_detail(exc)}")
+                print(strings.t("cli.graph.refused", detail=_detail(exc)))
                 return 2
             print(
-                f"forced {result['workItem']}: {result['fromNode']} → {result['toNode']}"
+                strings.t(
+                    "cli.graph.force.done",
+                    work_item=result["workItem"],
+                    from_node=result["fromNode"],
+                    to_node=result["toNode"],
+                )
             )
-            print(f"  reason: {result['reason']}")
+            print(strings.t("cli.graph.force.reason", reason=result["reason"]))
             for warning in result["warnings"]:
-                print(f"  WARNING: {warning}")
-            print(
-                "  note: this moved the pointer only — the bypassed gate keeps its "
-                "real verdict, so `the-loop check --recompute` will still report it."
-            )
+                print(strings.t("cli.graph.warning", warning=warning))
+            print(strings.t("cli.graph.force.note"))
             return 0
 
         return 2
@@ -1302,7 +1346,11 @@ class GraphCommand(Command):
             report = _check(root, args.work_item)
             reached, ahead = _split_at_pointer(report["nodes"], report["currentNode"])
             print(
-                f"{args.work_item}: at {report['currentNode']} (dry run — nothing written)"
+                strings.t(
+                    "cli.graph.run.dry-run",
+                    work_item=args.work_item,
+                    node=report["currentNode"],
+                )
             )
             print(_render_table(reached, ahead))
             return 0 if report["ok"] else 1
@@ -1316,15 +1364,32 @@ class GraphCommand(Command):
                 print(f"      · {message}")
             if result["status"] in ("wait", "block", "escalated"):
                 print(
-                    f"{args.work_item}: stopped at {result['node']} ({result['status']})"
+                    strings.t(
+                        "cli.graph.run.stopped",
+                        work_item=args.work_item,
+                        node=result["node"],
+                        status=result["status"],
+                    )
                 )
                 return 0 if result["status"] == "wait" else 1
             if result["node"] in terminal:
-                print(f"{args.work_item}: complete")
+                print(strings.t("cli.graph.run.complete", work_item=args.work_item))
                 return 0
             seen.append(result["node"])
             if seen.count(result["node"]) > 2:
-                print(f"{args.work_item}: looping on {result['node']}; stopping")
+                print(
+                    strings.t(
+                        "cli.graph.run.looping",
+                        work_item=args.work_item,
+                        node=result["node"],
+                    )
+                )
                 return 1
-        print(f"{args.work_item}: hit --max-nodes ({args.max_nodes}); stopping")
+        print(
+            strings.t(
+                "cli.graph.run.max-nodes",
+                work_item=args.work_item,
+                max_nodes=args.max_nodes,
+            )
+        )
         return 1

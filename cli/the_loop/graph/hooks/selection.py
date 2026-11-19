@@ -93,6 +93,7 @@ import logging
 import re
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
+from ... import strings
 from ...authz import mark_self_authored
 from ...modelchoice import (
     candidate_harnesses,
@@ -234,12 +235,11 @@ PR_SESSIONS_TOKENS = {f"pr-sessions-{mode}": mode for mode in SESSION_PER_PR_MOD
 #: What each row says it does, in the order the modes are declared — narrowest
 #: first, so a reader scanning down sees the choice widen.
 PR_SESSIONS_ROW_TEXT = {
-    SESSION_PER_PR_NEVER: "every pull request's events land in **this** work "
-    "item's one session.",
-    SESSION_PER_PR_CROSS_REPOSITORY: "only a pull request in **another** repository "
-    "gets its own session; one in this repository is this work item's own delivery.",
-    SESSION_PER_PR_ALWAYS: "**every** pull request delivering this work item gets "
-    "its own session, this repository's included.",
+    SESSION_PER_PR_NEVER: strings.t("graph.selection.pr-sessions-row.never"),
+    SESSION_PER_PR_CROSS_REPOSITORY: strings.t(
+        "graph.selection.pr-sessions-row.cross-repository"
+    ),
+    SESSION_PER_PR_ALWAYS: strings.t("graph.selection.pr-sessions-row.always"),
 }
 
 #: The two choice sections (issue-358). A model row is `model-<provider's name>`
@@ -441,30 +441,28 @@ def _channel_lines(ctx: HookContext) -> List[str]:
     back to the person about to sign the selection.
     """
     declared = _declared_channels(ctx)
-    lines = ["#### 💬 Is this work item worked in a channel of its own?", ""]
+    lines = ["#### " + strings.t("graph.selection.channel.heading"), ""]
     if declared:
         lines += [
-            "**Declared:** " + ", ".join(f"`{ref}`" for ref in declared) + ".",
+            strings.t(
+                "graph.selection.channel.declared",
+                refs=", ".join(f"`{ref}`" for ref in declared),
+            ),
             "",
-            "Reply `the-loop remove-channel <type>@<target>` to undeclare one, or "
-            "`the-loop add-channel <type>@<target>` to move the conversation.",
+            strings.t("graph.selection.channel.declared-hint"),
             "",
         ]
     else:
         lines += [
-            "**Default:** none declared — this item's updates go to the operator's "
-            "central channel.",
+            strings.t("graph.selection.channel.default"),
             "",
-            "Reply `the-loop add-channel slack@C0123ABCD` (its conversation id, not "
-            "`#name`) to give it a room of its own.",
+            strings.t("graph.selection.channel.default-hint"),
             "",
         ]
     lines += _collapsed(
-        "ℹ️ What this means",
-        "Not a phase — it is where the-loop posts this item's updates, and where "
-        "messages from authorized users reach it.",
-        "Declare it in a comment of its own, before or after this gate — the "
-        "order does not matter, and a comment may carry only one keyword.",
+        strings.t("graph.selection.details.what-this-means"),
+        strings.t("graph.selection.channel.about"),
+        strings.t("graph.selection.channel.about-order"),
     )
     return lines
 
@@ -495,32 +493,35 @@ def _choice_lines(ctx: HookContext) -> List[str]:
             "harness",
             HARNESS_PREFIX,
             _harness_rows(ctx),
-            "🛠️ Which harness should this work item run on?",
-            f"`{harness}`, this deployment's default.",
-            "Not a phase — it is the agent CLI its session is. A model or effort "
-            "ticked below is kept only if the harness it ends up on can run it.",
+            strings.t("graph.selection.choice.harness.heading"),
+            strings.t("graph.selection.choice.harness.default", harness=harness),
+            strings.t("graph.selection.choice.harness.about"),
             harness,
         ),
         (
             "model",
             MODEL_PREFIX,
             _model_rows(ctx),
-            "🧠 Which model should this work item run on?",
+            strings.t("graph.selection.choice.model.heading"),
             (
-                f"`{fallback}`, the `{harness}` harness's default model."
+                strings.t(
+                    "graph.selection.choice.model.default",
+                    fallback=fallback,
+                    harness=harness,
+                )
                 if fallback
-                else "the model this harness is configured with."
+                else strings.t("graph.selection.choice.model.default-unset")
             ),
-            "Not a phase — it is what the session is.",
+            strings.t("graph.selection.choice.model.about"),
             fallback,
         ),
         (
             "effort",
             EFFORT_PREFIX,
             _effort_rows(ctx),
-            "🎚️ How hard should it think?",
-            "the harness's own default effort.",
-            "Not a phase, and independent of the model above.",
+            strings.t("graph.selection.choice.effort.heading"),
+            strings.t("graph.selection.choice.effort.default"),
+            strings.t("graph.selection.choice.effort.about"),
             DEFAULT_EFFORT,
         ),
     ):
@@ -534,10 +535,9 @@ def _choice_lines(ctx: HookContext) -> List[str]:
             f"#### {heading}",
             "",
             (
-                f"**Default:** `{preset}` — already ticked. **Tick at most one**: "
-                "untick it and tick another to change it."
+                strings.t("graph.selection.choice.preset", preset=preset)
                 if preset
-                else f"**Default:** {default} **Tick at most one** to change it."
+                else strings.t("graph.selection.choice.no-preset", default=default)
             ),
             "",
         ]
@@ -549,17 +549,16 @@ def _choice_lines(ctx: HookContext) -> List[str]:
             )
         if len(names) > CANDIDATE_LIMIT:
             lines.append(
-                f"- …and {len(names) - CANDIDATE_LIMIT} more not shown "
-                f"(`the-loop models check` lists them all)."
+                "- "
+                + strings.t(
+                    "graph.selection.choice.more", n=len(names) - CANDIDATE_LIMIT
+                )
             )
         lines += [""]
         lines += _collapsed(
-            "ℹ️ What this means",
+            strings.t("graph.selection.details.what-this-means"),
             about,
-            "Leave them alone and the ticked default stands. Unticking every row, "
-            "or ticking more than one, falls back to the harness's own setting — two "
-            "ticks are not a choice, and guessing which one you meant is how a work "
-            "item ends up somewhere nobody asked for.",
+            strings.t("graph.selection.choice.leave-alone"),
         )
     return lines
 
@@ -680,10 +679,12 @@ def _describe(ctx: HookContext, node_id: str) -> str:
 
 #: A handoff stage in the words the developer picked it in (issue-517, R6 table).
 HANDOFF_STAGE_WORDS = {
-    "exploring": "still exploring",
-    "brainstorm-settled": "brainstorm settled",
-    "requirements-settled": "requirements settled",
-    "design-settled": "design settled",
+    "exploring": strings.t("graph.selection.handoff-stage.exploring"),
+    "brainstorm-settled": strings.t("graph.selection.handoff-stage.brainstorm-settled"),
+    "requirements-settled": strings.t(
+        "graph.selection.handoff-stage.requirements-settled"
+    ),
+    "design-settled": strings.t("graph.selection.handoff-stage.design-settled"),
 }
 
 #: What may be linked as the record (issue-517): a comment on GitHub, over https,
@@ -724,11 +725,18 @@ def _handoff_url(handoff: Dict[str, Any]) -> str:
 def _handoff_line(handoff: Dict[str, Any]) -> str:
     """The one line a handed-off checklist gains above its phase rows (C7)."""
     author = str(handoff.get("author") or "").lstrip("@")
-    who = f"@{author}" if _LOGIN.match(author) else "a developer"
-    stage = HANDOFF_STAGE_WORDS.get(str(handoff.get("stage") or ""), "a later stage")
+    who = (
+        f"@{author}"
+        if _LOGIN.match(author)
+        else strings.t("graph.selection.handoff.who-unknown")
+    )
+    stage = HANDOFF_STAGE_WORDS.get(
+        str(handoff.get("stage") or ""),
+        strings.t("graph.selection.handoff.stage-unknown"),
+    )
     url = _handoff_url(handoff)
-    link = f" ([record]({url}))" if url else ""
-    return f"Handed off by {who} at *{stage}*{link} — earlier phases are unticked."
+    link = strings.t("graph.selection.handoff.record-link", url=url) if url else ""
+    return strings.t("graph.selection.handoff.line", who=who, stage=stage, link=link)
 
 
 def _collapsed(summary: str, *paragraphs: str) -> List[str]:
@@ -756,38 +764,30 @@ def _checklist_body(ctx: HookContext) -> str:
     skippable, opt_in, protected = _phase_rows(ctx)
     keyword = _execute_keyword(ctx)
     lines = [
-        "## 🤖 the-loop — which phases does this work item need?",
+        "## " + strings.t("graph.selection.checklist.heading"),
         "",
-        f"> **⚡ Quick start:** reply `{keyword}` with the boxes untouched to run "
-        "the full process"
+        "> "
+        + strings.t("graph.selection.checklist.quick-start", keyword=keyword)
         + (
-            " — every phase that is already ticked, and none of the optional ones."
-            if opt_in
-            else "."
+            strings.t("graph.selection.checklist.quick-start-opt-in") if opt_in else "."
         ),
         ">",
-        "> **✏️ To tailor it:** untick anything this work item does not need"
-        + (", tick anything optional it does want" if opt_in else "")
-        + f", then reply `{keyword}`.",
+        "> "
+        + strings.t("graph.selection.checklist.tailor")
+        + (strings.t("graph.selection.checklist.tailor-opt-in") if opt_in else "")
+        + strings.t("graph.selection.checklist.tailor-end", keyword=keyword),
         "",
     ]
     lines += _collapsed(
-        "ℹ️ How this works",
-        f"Nothing runs until an authorized user replies `{keyword}`. The tick state "
-        "at that moment is frozen and becomes the graph this item walks.",
-        "A doc fix usually needs little more than implementation and verification; "
-        "a feature usually needs every phase.",
-        f"Start your reply with `{keyword}` — a keyword anywhere else is read as "
-        "conversation. You can also put the list in the reply itself, below the "
-        "keyword: a checklist there wins over the boxes here. Either way the "
-        "**authorization is your reply**: the tick state is a proposal, and saying "
-        "the keyword is what makes it yours.",
-        "Only the boxes under **Phases** change what work is done. Everything under "
-        "**Settings** is about how and where it is done, and each has a default.",
+        strings.t("graph.selection.checklist.how.summary"),
+        strings.t("graph.selection.checklist.how.frozen", keyword=keyword),
+        strings.t("graph.selection.checklist.how.examples"),
+        strings.t("graph.selection.checklist.how.reply", keyword=keyword),
+        strings.t("graph.selection.checklist.how.groups"),
     )
     if skippable or opt_in or protected:
         # No graph in context means no truthful rows, so no empty heading either.
-        lines += ["### 🧩 Phases — ticked ones run", ""]
+        lines += ["### " + strings.t("graph.selection.checklist.phases-heading"), ""]
         # A handoff (issue-517, C7) replaces the default: the phases before its
         # starting step are unticked and every other one is ticked — including a
         # default-off brainstorm the record starts at. Still only a proposal:
@@ -807,7 +807,10 @@ def _checklist_body(ctx: HookContext) -> str:
         # own, because a reader scanning boxes must never have to work out which
         # way a given row leans: above, unticking removes work; here, ticking
         # adds it.
-        lines += ["#### ➕ Optional phases — off unless you tick them", ""]
+        lines += [
+            "#### " + strings.t("graph.selection.checklist.optional-heading"),
+            "",
+        ]
         for node in opt_in:
             about = _describe(ctx, node)
             lines.append(f"- [ ] {node}" + (f" — {about}" if about else ""))
@@ -818,9 +821,18 @@ def _checklist_body(ctx: HookContext) -> str:
         # "always runs" (`channels/slack.py`'s `_PLAIN_ROW`).
         many = len(protected) != 1
         lines += _collapsed(
-            f"🔒 {len(protected)} more {'phases' if many else 'phase'} always "
-            f"{'run and are' if many else 'runs and is'} not selectable",
-            "They are what keeps a lighter work item honest:",
+            (
+                strings.t(
+                    "graph.selection.checklist.protected.summary-many",
+                    n=len(protected),
+                )
+                if many
+                else strings.t(
+                    "graph.selection.checklist.protected.summary-one",
+                    n=len(protected),
+                )
+            ),
+            strings.t("graph.selection.checklist.protected.intro"),
             "\n".join(f"- {node}" for node in protected),
         )
     elif skippable:
@@ -831,118 +843,95 @@ def _checklist_body(ctx: HookContext) -> str:
         # plainly (issue-393 R9.5): the choice is recorded — in the work item's
         # state, in the confirmation here, in every `the-loop check` — and that
         # record is the whole of it; no threat rides on the sentence.
-        lines += [
-            "⚠️ **Every phase of this loop is selectable — including the reviews, "
-            "the security review and the approval gate.** Nothing but this "
-            "question is mandatory.",
-            "",
-        ]
+        lines += [strings.t("graph.selection.checklist.all-selectable"), ""]
         lines += _collapsed(
-            "ℹ️ How a skipped phase is recorded",
-            "The phases this item skips are recorded as its own declared choice — "
-            "in its work-item state, in a confirmation comment here, and in every "
-            "`the-loop check` from now on — so a lighter run is always a visible one.",
+            strings.t("graph.selection.checklist.skip-recorded.summary"),
+            strings.t("graph.selection.checklist.skip-recorded.text"),
         )
     lines += [
-        "### ⚙️ Settings — not phases; each has a default",
+        "### " + strings.t("graph.selection.checklist.settings-heading"),
         "",
-        "These decide how and where the work happens, not what work is done. "
-        "Leave alone any you do not care about.",
+        strings.t("graph.selection.checklist.settings-intro"),
         "",
     ]
     if _asks_surface(ctx):
         lines += [
-            "#### 📍 Where should the outer loop happen?",
+            "#### " + strings.t("graph.selection.surface.heading"),
             "",
-            "**Default:** on a **pull request** — already ticked. Untick the box to "
-            "keep it here, on this work item.",
+            strings.t("graph.selection.surface.default"),
             "",
-            f"- [x] `{SURFACE_TOKEN}` — on a pull request in this repository.",
+            f"- [x] `{SURFACE_TOKEN}` — " + strings.t("graph.selection.surface.row"),
             "",
         ]
         lines += _collapsed(
-            "ℹ️ What this means",
-            "Not a phase — it is where the requirements, design, testing plan and "
-            "task list are iterated with you. Leave it ticked (the default) and "
-            "they happen on a **pull request**. Untick it and they happen **on this "
-            "work item**, here, instead.",
-            "Either way the artifacts are committed files linked from here, and each "
-            "repository this work item contributes code to gets its own pull request "
-            "for the inner loop.",
+            strings.t("graph.selection.details.what-this-means"),
+            strings.t("graph.selection.surface.about"),
+            strings.t("graph.selection.surface.about-repos"),
         )
         # Offered where there is a spec chain to publish (issue-471), which is
         # exactly where the surface question is asked. The doc is the default
         # (issue-536) — unless the handoff already published a spec-chain
         # artifact (issue-517), which the session then republishes to.
         artifact_default = _artifact_is_default(ctx)
-        default_name = "a Claude artifact" if artifact_default else "a Claude doc"
-        other_name = "the doc" if artifact_default else "the artifact"
+        default_name = (
+            strings.t("graph.selection.publish.artifact-name")
+            if artifact_default
+            else strings.t("graph.selection.publish.doc-name")
+        )
+        other_name = (
+            strings.t("graph.selection.publish.other-doc")
+            if artifact_default
+            else strings.t("graph.selection.publish.other-artifact")
+        )
         lines += [
-            "#### 📄 Publish the spec chain as a Claude artifact or a Claude doc too?",
+            "#### " + strings.t("graph.selection.publish.heading"),
             "",
-            f"**Default:** {default_name} — already ticked. **Tick at most one**: "
-            f"untick it and tick {other_name} to change it, or untick both for the "
-            f"markdown files only. Only the `{CLAUDE_HARNESS}` harness can publish "
-            "either.",
+            strings.t(
+                "graph.selection.publish.default",
+                default_name=default_name,
+                other_name=other_name,
+                harness=CLAUDE_HARNESS,
+            ),
             "",
-            f"- [{'x' if artifact_default else ' '}] `{CLAUDE_ARTIFACT_TOKEN}` — one "
-            f"Claude artifact for this work item (`{CLAUDE_HARNESS}` harness only).",
-            f"- [{' ' if artifact_default else 'x'}] `{CLAUDE_DOC_TOKEN}` — one "
-            "Claude doc for this work item, a tab "
-            "per file, which people can edit and comment on "
-            f"(`{CLAUDE_HARNESS}` harness only).",
+            f"- [{'x' if artifact_default else ' '}] `{CLAUDE_ARTIFACT_TOKEN}` — "
+            + strings.t("graph.selection.publish.artifact-row", harness=CLAUDE_HARNESS),
+            f"- [{' ' if artifact_default else 'x'}] `{CLAUDE_DOC_TOKEN}` — "
+            + strings.t("graph.selection.publish.doc-row", harness=CLAUDE_HARNESS),
             "",
         ]
         lines += _collapsed(
-            "ℹ️ What this means",
-            "Not phases. The requirements, design, testing plan and task list "
-            "become one page (an artifact you read and comment on) or one document "
-            "(a doc you and others edit and comment on), with a tab per file.",
-            "Ticking both uses the default — the ticked one above. On any "
-            "other harness the-loop ignores these boxes. The markdown files stay "
-            "the source of truth either way, every gate still reads them, and an "
-            "edit made in the doc is feedback the session folds into the file.",
+            strings.t("graph.selection.details.what-this-means"),
+            strings.t("graph.selection.publish.about"),
+            strings.t("graph.selection.publish.about-harness"),
         )
         if _explainer_nodes(ctx):
             lines += [
-                "#### 🎓 Explain the change and quiz the author?",
+                "#### " + strings.t("graph.selection.explainer.heading"),
                 "",
-                "**Default:** yes — already ticked. Untick it to skip all three.",
+                strings.t("graph.selection.explainer.default"),
                 "",
-                f"- [x] `{EXPLAINER_TOKEN}` — a spec explainer and quiz before code "
-                "generation, an explainer of the change for the reviewer, and a code "
-                "quiz before review is requested.",
+                f"- [x] `{EXPLAINER_TOKEN}` — "
+                + strings.t("graph.selection.explainer.row"),
                 "",
             ]
             lines += _collapsed(
-                "ℹ️ What this means",
-                "The author reads a plain-language explainer of the approved spec "
-                "and takes a short quiz before any code is generated, then the same "
-                "for the finished change before review is requested — each time by "
-                "ticking one box on the-loop's comment. The reviewer starts from "
-                "the explainer of the change.",
-                "Unticked, the four nodes behind it (`"
-                + "`, `".join(_explainer_nodes(ctx))
-                + "`) are declared skipped in your name, like any phase.",
+                strings.t("graph.selection.details.what-this-means"),
+                strings.t("graph.selection.explainer.about"),
+                strings.t(
+                    "graph.selection.explainer.about-skip",
+                    nodes="`, `".join(_explainer_nodes(ctx)),
+                ),
             )
     else:
         # A contribution has no outer loop to place (issue-199), so there is no
         # box here — but say where the conversation happens anyway, rather than
         # leaving a reader of somebody else's ticket to guess.
-        lines += [
-            "There is no outer loop to place on this one: the-loop is "
-            "**contributing** to a work item somebody else is already running, "
-            "so its plan and its results are posted on this thread, and the "
-            "code it writes arrives as an ordinary pull request on the "
-            "repository it targets.",
-            "",
-        ]
+        lines += [strings.t("graph.selection.surface.contribution"), ""]
     default_mode = _pr_sessions_default(ctx)
     lines += [
-        "#### 🧵 How many sessions should this work item's pull requests get?",
+        "#### " + strings.t("graph.selection.pr-sessions.heading"),
         "",
-        f"**Default:** `{default_mode}`, already ticked. **Tick exactly one** to "
-        "change it.",
+        strings.t("graph.selection.pr-sessions.default", mode=default_mode),
         "",
     ]
     for token, mode in PR_SESSIONS_TOKENS.items():
@@ -950,22 +939,17 @@ def _checklist_body(ctx: HookContext) -> str:
         lines.append(f"- [{mark}] `{token}` — {PR_SESSIONS_ROW_TEXT[mode]}")
     lines += [""]
     lines += _collapsed(
-        "ℹ️ What this means",
-        "Not a phase — it is how many harness conversations run for this item.",
-        f"Leave them alone and `{default_mode}` stands — the operator's "
-        "`routing.tmux.sessionPerPr`. Ticking none, or more than one, means the "
-        "same thing.",
-        "A pull request only ever gets a session when it can get a **working tree "
-        "of its own**, in every mode: where it cannot, the event is delivered into "
-        "this work item's session and recorded as `session.pr_session_declined`.",
+        strings.t("graph.selection.details.what-this-means"),
+        strings.t("graph.selection.pr-sessions.about"),
+        strings.t("graph.selection.pr-sessions.about-default", mode=default_mode),
+        strings.t("graph.selection.pr-sessions.about-worktree"),
     )
     lines += _channel_lines(ctx)
     lines += _choice_lines(ctx)
     lines += [
-        "### ✅ Ready?",
+        "### " + strings.t("graph.selection.checklist.ready-heading"),
         "",
-        f"Reply `{keyword}`. The boxes as they stand at that moment are frozen as "
-        "this work item's selection.",
+        strings.t("graph.selection.checklist.ready", keyword=keyword),
         "",
         SELECTION_MARKER,
     ]
@@ -1260,62 +1244,64 @@ def _confirmation(
     both_ticked: bool = False,
     explainer: Optional[bool] = None,
 ) -> str:
-    lines = ["🤖 _the-loop_ — **phase selection recorded**", ""]
+    lines = [strings.t("graph.selection.confirm.heading"), ""]
     if skips:
         lines += [
-            f"Skipping, as declared by @{actor}: " + ", ".join(f"`{s}`" for s in skips),
+            strings.t(
+                "graph.selection.confirm.skipping",
+                actor=actor,
+                nodes=", ".join(f"`{s}`" for s in skips),
+            ),
             "",
-            "These are declarations, not verdicts: `the-loop check` reports each "
-            "as *skipped by declaration*, and every other phase still gates this "
-            "work item.",
+            strings.t("graph.selection.confirm.skipping-note"),
         ]
         handed = [s for s in skips if s in set(_before_enter(ctx, _handoff(ctx)))]
         if handed:
             # issue-517 (R6.3): the ones the handoff unticked say so.
             lines += [
                 "",
-                "Of these, "
-                + ", ".join(f"`{s}`" for s in handed)
-                + " come before the handoff's starting step and are reported as "
-                "*skipped by handoff* instead.",
+                strings.t(
+                    "graph.selection.confirm.handed",
+                    nodes=", ".join(f"`{s}`" for s in handed),
+                ),
             ]
     else:
-        lines.append(
-            f"@{actor} kept every phase that runs by default — the full process runs."
-        )
+        lines.append(strings.t("graph.selection.confirm.kept-all", actor=actor))
     # The opt-in half of the same answer (issue-188). An offered phase that
     # nobody chose is said out loud too: silence about it would be
     # indistinguishable from never having been offered it.
     if opt_ins:
         lines += [
             "",
-            f"Also running, as @{actor} asked: "
-            + ", ".join(f"`{o}`" for o in opt_ins)
-            + " — optional phases, off unless selected.",
+            strings.t(
+                "graph.selection.confirm.opt-ins",
+                actor=actor,
+                nodes=", ".join(f"`{o}`" for o in opt_ins),
+            ),
         ]
     elif offered:
         lines += [
             "",
-            "Not running (offered, not selected): "
-            + ", ".join(f"`{o}`" for o in offered)
-            + ".",
+            strings.t(
+                "graph.selection.confirm.not-selected",
+                nodes=", ".join(f"`{o}`" for o in offered),
+            ),
         ]
     if refused:
         lines += [
             "",
-            "**Refused** (these phases are not selectable and will run): "
-            + ", ".join(f"`{r}`" for r in refused),
+            strings.t(
+                "graph.selection.confirm.refused",
+                nodes=", ".join(f"`{r}`" for r in refused),
+            ),
         ]
     if surface:
         lines += [
             "",
             (
-                "The outer loop happens **on a pull request** in this "
-                f"repository, as @{actor} chose."
+                strings.t("graph.selection.confirm.surface-pr", actor=actor)
                 if surface == SURFACE_PULL_REQUEST
-                else "The outer loop happens **here, on this work item**. Each "
-                "repository this item contributes code to gets "
-                "its own pull request for the inner loop."
+                else strings.t("graph.selection.confirm.surface-here")
             ),
         ]
     # Named in all three directions (issue-471), and only where it was offered:
@@ -1328,55 +1314,61 @@ def _confirmation(
             else CLAUDE_ARTIFACT_TOKEN
         )
         if claude_doc:
-            line = (
-                "Spec artifacts: also published as **one Claude doc** (a tab per "
-                f"file), as @{actor} chose. The markdown files stay the source of "
-                "truth; an edit made in the doc is feedback folded into them."
-            )
+            line = strings.t("graph.selection.confirm.spec-doc", actor=actor)
         elif claude_artifact:
-            line = (
-                "Spec artifacts: also published as **one Claude artifact** (a tab "
-                f"per file), as @{actor} chose. The markdown files stay the source "
-                "of truth."
-            )
+            line = strings.t("graph.selection.confirm.spec-artifact", actor=actor)
         elif claude_artifact_requested or claude_doc_requested:
-            kind = "doc" if chosen_row == CLAUDE_DOC_TOKEN else "artifact"
-            line = (
-                f"Not applied: `{chosen_row}` — this work item runs on "
-                f"`{resolved_harness}`, which cannot publish a Claude {kind}. The "
-                "spec chain stays in markdown files only."
+            kind = (
+                strings.t("graph.selection.confirm.spec-kind-doc")
+                if chosen_row == CLAUDE_DOC_TOKEN
+                else strings.t("graph.selection.confirm.spec-kind-artifact")
+            )
+            line = strings.t(
+                "graph.selection.confirm.spec-not-applied",
+                row=chosen_row,
+                harness=resolved_harness,
+                kind=kind,
             )
         else:
-            line = "Spec artifacts: markdown files only."
+            line = strings.t("graph.selection.confirm.spec-markdown")
         if both_ticked:
             # issue-536 (R2.3): two ticks are not a choice — the default stands,
             # and the reply is told which one that was.
             line = (
-                f"`{CLAUDE_ARTIFACT_TOKEN}` and `{CLAUDE_DOC_TOKEN}` were both "
-                f"ticked, so the default, `{chosen_row}`, is used. " + line
+                strings.t(
+                    "graph.selection.confirm.spec-both",
+                    artifact_row=CLAUDE_ARTIFACT_TOKEN,
+                    doc_row=CLAUDE_DOC_TOKEN,
+                    row=chosen_row,
+                )
+                + line
             )
         lines += ["", line]
     # The explainer row, in both directions (issue-488, R1.5).
     if explainer is True:
         lines += [
             "",
-            "Explainer and quizzes: **on** — a spec quiz before code generation, an "
-            "explainer of the change for the reviewer, and a code quiz before review.",
+            strings.t("graph.selection.confirm.explainer-on"),
         ]
     elif explainer is False:
         lines += [
             "",
-            f"Explainer and quizzes: **off**, as declared by @{actor} — "
-            + ", ".join(f"`{n}`" for n in _explainer_nodes(ctx))
-            + " skipped.",
+            strings.t(
+                "graph.selection.confirm.explainer-off",
+                actor=actor,
+                nodes=", ".join(f"`{n}`" for n in _explainer_nodes(ctx)),
+            ),
         ]
     # A loop that was never asked the surface question confirms nothing about
     # it (issue-199): claiming a default here would report a choice the human
     # was never offered.
     lines += [
         "",
-        f"Pull requests delivering this work item: **`{session_per_pr}`** — "
-        + PR_SESSIONS_ROW_TEXT[session_per_pr],
+        strings.t(
+            "graph.selection.confirm.pr-sessions",
+            mode=session_per_pr,
+            text=PR_SESSIONS_ROW_TEXT[session_per_pr],
+        ),
     ]
     # The harness first (issue-440, R1.5): the model and effort below were
     # resolved against it. Named in both directions, like them.
@@ -1384,10 +1376,11 @@ def _confirmation(
         lines += [
             "",
             (
-                f"Harness: **`{harness}`**."
+                strings.t("graph.selection.confirm.harness", harness=harness)
                 if harness
-                else f"Harness: **`{default_harness}`**, this deployment's default "
-                "— no single row was ticked."
+                else strings.t(
+                    "graph.selection.confirm.harness-default", harness=default_harness
+                )
             ),
         ]
     # The model a work item runs on when it resolved none (issue-451): the
@@ -1397,12 +1390,21 @@ def _confirmation(
     for kind, name in dropped or []:
         lines += [
             "",
-            f"Not applied: {kind} `{name}` — the `{resolved}` harness does not "
-            "offer it, so "
-            + (
-                f"its default model `{fallback}` stands."
+            (
+                strings.t(
+                    "graph.selection.confirm.dropped-model",
+                    kind=kind,
+                    name=name,
+                    harness=resolved,
+                    fallback=fallback,
+                )
                 if kind == "model" and fallback
-                else "the harness's own stands."
+                else strings.t(
+                    "graph.selection.confirm.dropped",
+                    kind=kind,
+                    name=name,
+                    harness=resolved,
+                )
             ),
         ]
     # Named in BOTH directions (issue-358, R1.6): "the harness's own default" is
@@ -1413,21 +1415,24 @@ def _confirmation(
         lines += [
             "",
             (
-                f"Model: **`{model}`**."
+                strings.t("graph.selection.confirm.model", model=model)
                 if model
-                else f"Model: **`{fallback}`**, the `{resolved}` harness's default "
-                "— no single row was ticked."
+                else strings.t(
+                    "graph.selection.confirm.model-default",
+                    fallback=fallback,
+                    harness=resolved,
+                )
                 if fallback
-                else "Model: **the harness's own** — no single row was ticked."
+                else strings.t("graph.selection.confirm.model-own")
             ),
         ]
     if effort_offered:
         lines += [
             "",
             (
-                f"Effort: **`{effort}`**."
+                strings.t("graph.selection.confirm.effort", effort=effort)
                 if effort
-                else "Effort: **the harness's own** — no single row was ticked."
+                else strings.t("graph.selection.confirm.effort-own")
             ),
         ]
     # Named in both directions (issue-375), for the reason the model is: a work
@@ -1436,19 +1441,17 @@ def _confirmation(
     lines += [
         "",
         (
-            "Collaboration channel: "
-            + ", ".join(f"**`{ref}`**" for ref in channels)
-            + " — this item's updates go there, and messages there from "
-            "authorized users reach it."
+            strings.t(
+                "graph.selection.confirm.channels",
+                refs=", ".join(f"**`{ref}`**" for ref in channels),
+            )
             if channels
-            else "Collaboration channel: **none** — this item's updates go to "
-            "the operator's central channel. `the-loop add-channel "
-            "<type>@<target>` still declares one at any time."
+            else strings.t("graph.selection.confirm.channels-none")
         ),
     ]
     lines += [
         "",
-        "Starting the loop.",
+        strings.t("graph.selection.confirm.starting"),
     ]
     return mark_self_authored("\n".join(lines))
 

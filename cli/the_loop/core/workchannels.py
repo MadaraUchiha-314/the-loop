@@ -23,6 +23,7 @@ import logging
 from typing import Any, Dict, List, Optional, Tuple
 
 from .. import eventlog
+from .. import strings
 from ..comments import post_issue_comment
 from ..control import ADD_CHANNEL, REMOVE_CHANNEL, command_comment
 from ..sessions import WorkItemRef
@@ -178,27 +179,35 @@ def _line(
     listen: str = DEFAULT_LISTEN,
 ) -> str:
     if effect == "declared":
-        moved = f" (it was {replaced.ref})" if replaced else ""
-        hears = (
-            "every message there reaches the work item"
-            if listen == "all"
-            else "messages there reach the work item when the-loop is mentioned"
+        moved = (
+            strings.t("core.workchannels.declared-moved", previous=replaced.ref)
+            if replaced
+            else ""
         )
-        return (
-            f"{channel.ref} is now {work_item.ref}'s collaboration channel{moved}, "
-            f"listening to {listen}: its updates are posted there, and {hears}"
+        hears = (
+            strings.t("core.workchannels.hears-all")
+            if listen == "all"
+            else strings.t("core.workchannels.hears-mentions")
+        )
+        return strings.t(
+            "core.workchannels.declared",
+            channel=channel.ref,
+            ref=work_item.ref,
+            moved=moved,
+            listen=listen,
+            hears=hears,
         )
     if effect == "undeclared":
-        return (
-            f"{channel.ref} is no longer {work_item.ref}'s collaboration channel; "
-            "its conversation goes back to the central channel"
+        return strings.t(
+            "core.workchannels.undeclared", channel=channel.ref, ref=work_item.ref
         )
     if effect == "already-declared":
-        return (
-            f"{channel.ref} is already {work_item.ref}'s collaboration channel; "
-            "nothing changed"
+        return strings.t(
+            "core.workchannels.already-declared", channel=channel.ref, ref=work_item.ref
         )
-    return f"{channel.ref} is not declared on {work_item.ref}; nothing changed"
+    return strings.t(
+        "core.workchannels.not-declared", channel=channel.ref, ref=work_item.ref
+    )
 
 
 def _confirm_room(
@@ -225,17 +234,22 @@ def _confirm_room(
             messages.append(
                 {
                     "stream": "out",
-                    "text": f"confirmed the room on {result.channel}: {work_item.ref}'s "
-                    "conversation is open there",
+                    "text": strings.t(
+                        "core.workchannels.room-confirmed",
+                        channel=result.channel,
+                        ref=work_item.ref,
+                    ),
                 }
             )
         else:
             messages.append(
                 {
                     "stream": "err",
-                    "text": f"could not confirm the room on {result.channel}: "
-                    f"{result.error} (the declaration stands; the room hears "
-                    "about it at the next update)",
+                    "text": strings.t(
+                        "core.workchannels.room-unconfirmed",
+                        channel=result.channel,
+                        error=result.error,
+                    ),
                 }
             )
 
@@ -279,7 +293,12 @@ def _announce(
             messages.append(
                 {
                     "stream": "out",
-                    "text": f"commented {config.keyword(verb)!r} {ref} on {work_item.ref}",
+                    "text": strings.t(
+                        "core.workchannels.commented",
+                        keyword=config.keyword(verb),
+                        channel=ref,
+                        ref=work_item.ref,
+                    ),
                 }
             )
             eventlog.emit(
@@ -292,9 +311,8 @@ def _announce(
         messages.append(
             {
                 "stream": "err",
-                "text": (
-                    f"note: could not comment on {work_item.ref} ({error}); the "
-                    "declaration was still recorded locally"
+                "text": strings.t(
+                    "core.workchannels.comment-failed", ref=work_item.ref, error=error
                 ),
             }
         )

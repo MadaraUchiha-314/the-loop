@@ -33,6 +33,8 @@ import re
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
+from . import strings
+
 logger = logging.getLogger("the-loop.modelchoice")
 
 __all__ = [
@@ -450,10 +452,10 @@ def config_findings(
             Finding(
                 "error",
                 HARNESSES_KEY,
-                "two harnesses claim `default: true` ("
-                + ", ".join(str(d) for d in defaults)
-                + "); a work item's harness decides which models it may be offered, so "
-                "it cannot be ambiguous",
+                strings.t(
+                    "modelchoice.finding.two-defaults",
+                    names=", ".join(str(d) for d in defaults),
+                ),
             )
         )
 
@@ -470,8 +472,7 @@ def config_findings(
                     Finding(
                         "warning",
                         f"{MODELS_KEY}[{name}].{HARNESSES_KEY}",
-                        f"{harness!r} is not a declared harness, so this narrowing "
-                        "contributes nothing",
+                        strings.t("modelchoice.finding.undeclared", harness=harness),
                     )
                 )
 
@@ -482,8 +483,7 @@ def config_findings(
                 Finding(
                     "warning",
                     f"{HARNESSES_KEY}[{harness}]",
-                    "the-loop has no adapter for this harness, so nothing can be "
-                    "spawned on it",
+                    strings.t("modelchoice.finding.no-adapter"),
                 )
             )
             continue
@@ -492,9 +492,7 @@ def config_findings(
                 Finding(
                     "warning",
                     f"{HARNESSES_KEY}[{harness}].default",
-                    "this harness cannot host a work item's session, so it is not "
-                    "made the default; routing.defaultHarness is used instead "
-                    "(issue-440)",
+                    strings.t("modelchoice.finding.cannot-host"),
                 )
             )
         if default_model(config, harness) and not getattr(adapter, "model_flag", ""):
@@ -502,8 +500,7 @@ def config_findings(
                 Finding(
                     "warning",
                     f"{HARNESSES_KEY}[{harness}].{DEFAULT_MODEL_KEY}",
-                    "this harness has no model flag, so its default model cannot be "
-                    "applied (issue-451)",
+                    strings.t("modelchoice.finding.no-model-flag-default"),
                 )
             )
         if models and not getattr(adapter, "model_flag", ""):
@@ -511,8 +508,7 @@ def config_findings(
                 Finding(
                     "warning",
                     f"{HARNESSES_KEY}[{harness}]",
-                    "this harness has no model flag, so no model choice is offered "
-                    "for a work item on it",
+                    strings.t("modelchoice.finding.no-model-flag-choice"),
                 )
             )
         base = harness_args(config, harness, (routing_args or {}).get(harness) or ())
@@ -521,9 +517,7 @@ def config_findings(
                 Finding(
                     "warning",
                     f"{HARNESSES_KEY}[{harness}].args",
-                    f"wins over routing.harnessArgs.{harness}, which is deprecated and "
-                    "not read for this harness; drop the deprecated key so the two "
-                    "cannot disagree (issue-377)",
+                    strings.t("modelchoice.finding.args-win", harness=harness),
                 )
             )
         flag = str(getattr(adapter, "model_flag", "") or "")
@@ -532,9 +526,7 @@ def config_findings(
                 Finding(
                     "warning",
                     f"{HARNESSES_KEY}[{harness}].args",
-                    f"already carries {flag!r}; a work item's model is APPENDED after "
-                    "it, and whether the appended one wins is this harness's own "
-                    "argument-parsing rule, not the-loop's to assert",
+                    strings.t("modelchoice.finding.model-flag-in-args", flag=flag),
                 )
             )
     return findings
