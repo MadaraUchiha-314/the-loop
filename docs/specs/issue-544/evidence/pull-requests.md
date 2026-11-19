@@ -7,4 +7,4 @@ workItem: "github:MadaraUchiha-314/the-loop#544"
 
 | PR | Repository | Scope / tasks | Status |
 |----|------------|---------------|--------|
-| [#545](https://github.com/MadaraUchiha-314/the-loop/pull/545) | this one | the spec chain (outer loop), then the implementation | draft |
+| [#545](https://github.com/MadaraUchiha-314/the-loop/pull/545) | this one | the spec chain (outer loop), then the implementation | ready for review |
