@@ -13,6 +13,10 @@
     any string ends the block early and turns the rest into live markup.
   - Write tab content as escaped HTML of your own composing. Never paste ticket,
     comment or diff text as markup — escape it (& < > " ') or put it in <pre>.
+  - Slides and Flashcards are EXPERIMENT tabs: keep them only when the session
+    prompt names the experiment, otherwise delete the tab, its panel and its
+    JSON block. Fill SLIDES (one idea per slide) and CARDS (question on the
+    front) the way the quiz is filled, with every "<" written as \u003c.
   - Never edit the ENGINE script at the bottom.
 -->
 <html lang="en">
@@ -97,6 +101,20 @@
   .feedback.ok .verdict { color: var(--ok); }
   .feedback.no .verdict { color: var(--no); }
   .note { color: var(--muted); font-size: 14px; }
+  /* experiments: slides and flashcards (only on a page that carries them) */
+  .deck { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 28px 24px; min-height: 280px; display: flex; flex-direction: column; justify-content: center; }
+  .deck h2 { margin: 0 0 12px; font-size: 24px; line-height: 1.3; }
+  .deck p { margin: 0; font-size: 18px; color: var(--text); }
+  .deck .kicker { color: var(--accent); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 8px; }
+  .nav { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; }
+  .nav button { font: inherit; padding: 6px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; }
+  .nav button:disabled { opacity: .4; cursor: default; }
+  .nav button:focus-visible, .card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .card { width: 100%; font: inherit; text-align: left; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 12px; padding: 28px 24px; min-height: 220px; cursor: pointer; display: flex; flex-direction: column; justify-content: center; }
+  .card[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
+  .card .side { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 8px; }
+  .card .face { font-size: 19px; }
+  .exp { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px; font-size: 11px; background: var(--callout); border: 1px solid var(--callout-border); color: var(--text); vertical-align: middle; }
 </style>
 </head>
 <body>
@@ -112,6 +130,8 @@
     <button role="tab" id="tab-specquiz" aria-controls="panel-specquiz" aria-selected="false" tabindex="-1">Spec quiz</button>
     <button role="tab" id="tab-code" aria-controls="panel-code" aria-selected="false" tabindex="-1">Explainer</button>
     <button role="tab" id="tab-codequiz" aria-controls="panel-codequiz" aria-selected="false" tabindex="-1">Code quiz</button>
+    <button role="tab" id="tab-slides" aria-controls="panel-slides" aria-selected="false" tabindex="-1">Slides<span class="exp">experiment</span></button>
+    <button role="tab" id="tab-cards" aria-controls="panel-cards" aria-selected="false" tabindex="-1">Flashcards<span class="exp">experiment</span></button>
   </div>
 
   <!-- TAB CONTENT: Spec explainer (spec/plan form: Background = problem space,
@@ -157,6 +177,17 @@
     <div data-quiz="quiz-code"></div>
     <p class="note">When you are done, go back to the pull request and tick the box in the-loop's comment.</p>
   </section>
+
+  <!-- EXPERIMENT TABS: only when the session prompt names them. -->
+  <section role="tabpanel" id="panel-slides" aria-labelledby="tab-slides" hidden>
+    <p class="note">Use Previous and Next, or the arrow keys.</p>
+    <div data-slides="slides"></div>
+  </section>
+
+  <section role="tabpanel" id="panel-cards" aria-labelledby="tab-cards" hidden>
+    <p class="note">Click a card, or press Space, to flip it.</p>
+    <div data-cards="cards"></div>
+  </section>
 </main>
 
 <!-- QUIZ: one JSON block per quiz. "answer" is the index of the correct option.
@@ -171,6 +202,22 @@
 </script>
 <script type="application/json" id="quiz-code">
 {"questions": []}
+</script>
+
+<!-- SLIDES and CARDS: the experiment tabs' content. One idea per slide; a card
+     is a question on the front and its answer on the back. -->
+<script type="application/json" id="slides">
+{"slides": [
+  {"kicker": "{{The problem | The idea | The decision | What to check}}",
+   "title": "{{one idea, as a short sentence}}",
+   "body": "{{two or three sentences that explain it}}"}
+]}
+</script>
+<script type="application/json" id="cards">
+{"cards": [
+  {"q": "{{a question a reviewer should be able to answer}}",
+   "a": "{{its answer, in one or two sentences}}"}
+]}
 </script>
 
 <!-- ENGINE: do not edit per work item. Every agent-supplied string is set with
@@ -201,12 +248,78 @@
     });
   });
 
+  var start = document.getElementById("tab-" + location.hash.slice(1));
+  if (start && start.getAttribute("role") === "tab") select(start);
+
   function el(tag, cls, text) {
     var node = document.createElement(tag);
     if (cls) node.className = cls;
     if (text !== undefined) node.textContent = text;
     return node;
   }
+
+  function load(id, key, host) {
+    var source = document.getElementById(id);
+    try { return JSON.parse(source.textContent)[key] || []; } catch (err) {
+      host.appendChild(el("p", "note", "This section could not be loaded."));
+      return null;
+    }
+  }
+
+  function stepper(host, items, render, label) {
+    var i = 0, view = el("div"), nav = el("div", "nav");
+    var prev = el("button", null, "Previous"), next = el("button", null, "Next");
+    var count = el("span", "progress");
+    count.setAttribute("aria-live", "polite");
+    prev.type = next.type = "button";
+    nav.appendChild(prev); nav.appendChild(count); nav.appendChild(next);
+    host.appendChild(view); host.appendChild(nav);
+    function show() {
+      view.textContent = "";
+      view.appendChild(render(items[i]));
+      count.textContent = label + " " + (i + 1) + " / " + items.length;
+      prev.disabled = i === 0; next.disabled = i === items.length - 1;
+    }
+    prev.addEventListener("click", function () { if (i > 0) { i -= 1; show(); } });
+    next.addEventListener("click", function () { if (i < items.length - 1) { i += 1; show(); } });
+    host.addEventListener("keydown", function (e) {
+      if (e.target.closest && e.target.closest(".card") && (e.key === " " || e.key === "Enter")) return;
+      if (e.key === "ArrowRight") { next.click(); } else if (e.key === "ArrowLeft") { prev.click(); }
+    });
+    if (items.length) show(); else host.appendChild(el("p", "note", "Nothing here at this depth."));
+  }
+
+  document.querySelectorAll("[data-slides]").forEach(function (host) {
+    var items = load(host.getAttribute("data-slides"), "slides", host);
+    if (!items) return;
+    host.tabIndex = 0;
+    stepper(host, items, function (s) {
+      var d = el("div", "deck");
+      d.appendChild(el("div", "kicker", s.kicker || ""));
+      d.appendChild(el("h2", null, s.title));
+      d.appendChild(el("p", null, s.body));
+      return d;
+    }, "Slide");
+  });
+
+  document.querySelectorAll("[data-cards]").forEach(function (host) {
+    var items = load(host.getAttribute("data-cards"), "cards", host);
+    if (!items) return;
+    stepper(host, items, function (c) {
+      var b = el("button", "card");
+      b.type = "button";
+      b.setAttribute("aria-pressed", "false");
+      var side = el("span", "side", "Question"), face = el("span", "face", c.q);
+      b.appendChild(side); b.appendChild(face);
+      b.addEventListener("click", function () {
+        var flipped = b.getAttribute("aria-pressed") !== "true";
+        b.setAttribute("aria-pressed", flipped ? "true" : "false");
+        side.textContent = flipped ? "Answer" : "Question";
+        face.textContent = flipped ? c.a : c.q;
+      });
+      return b;
+    }, "Card");
+  });
 
   document.querySelectorAll("[data-quiz]").forEach(function (host) {
     var id = host.getAttribute("data-quiz");

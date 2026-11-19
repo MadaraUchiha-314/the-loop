@@ -26,7 +26,14 @@ from .contract import BLOCK, PASS, SKIP, WAIT, HookContext, WorkItem
 from .model import Graph, GraphConfigError, artifact_names, load_graph
 from ..sessions.refs import jira_site
 from .refs import derive_ref
-from .state import STATE_FILENAME, WorkItemState, StateLockBusy, state_lock, utc_now
+from .state import (
+    STATE_FILENAME,
+    StateLockBusy,
+    WorkItemState,
+    explainer_experiments,
+    state_lock,
+    utc_now,
+)
 
 logger = logging.getLogger("the-loop.graph")
 
@@ -724,6 +731,12 @@ class Runtime:
                     # Or as one Claude doc (issue-536); the hook never sets both.
                     record["claudeDoc"] = True
                     state.claude_doc = True
+                experiments = explainer_experiments(
+                    result.data.get("explainerExperiments")
+                )
+                if experiments:
+                    record["explainerExperiments"] = experiments
+                    state.explainer_experiments = experiments
                 goal = result.data.get("goal")
                 if goal:
                     # The contribution loop's goal gate (issue-185): the goal

@@ -709,6 +709,13 @@ ATTRIBUTES: Tuple[Attribute, ...] = (
     ),
     Attribute(
         REPOSITORY_FILE,
+        "explainerExperiments",
+        "human-decision",
+        "the explainer experiments chosen at selection (slides, flashcards) — "
+        "written only when one was chosen",
+    ),
+    Attribute(
+        REPOSITORY_FILE,
         "handoff",
         "human-decision",
         "the handoff record the item arrived with, its author and comment "

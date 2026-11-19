@@ -662,7 +662,24 @@ SURFACE_TOKEN = "outer-loop-on-pull-request"
 CLAUDE_ARTIFACT_TOKEN = "claude-artifact"
 CLAUDE_DOC_TOKEN = "claude-doc"
 EXPLAINER_TOKEN = "explainer"
-_NON_PHASE_PREFIXES = ("pr-sessions-", "harness-", "model-", "effort-")
+_NON_PHASE_PREFIXES = (
+    "pr-sessions-",
+    "harness-",
+    "model-",
+    "effort-",
+    f"{EXPLAINER_TOKEN}-",
+)
+
+
+def _is_setting_token(token: str) -> bool:
+    """Whether a checklist row is a setting rather than a phase."""
+    return token in (
+        SURFACE_TOKEN,
+        CLAUDE_ARTIFACT_TOKEN,
+        CLAUDE_DOC_TOKEN,
+        EXPLAINER_TOKEN,
+    ) or token.startswith(_NON_PHASE_PREFIXES)
+
 
 #: The control's own ids. A block id under :data:`SELECTION_BLOCK` is part of the
 #: control — the state a press carries is keyed by it, and the press report takes
@@ -759,11 +776,7 @@ def selection_rows(text: str) -> Optional[SelectionRows]:
         )
         if token == SURFACE_TOKEN:
             surface = row
-        elif token in (
-            CLAUDE_ARTIFACT_TOKEN,
-            CLAUDE_DOC_TOKEN,
-            EXPLAINER_TOKEN,
-        ) or token.startswith(_NON_PHASE_PREFIXES):
+        elif _is_setting_token(token):
             others.append(row)
         else:
             phases.append(row)

@@ -911,6 +911,80 @@
       "content": [
         {
           "type": "text",
+          "text": "🧪 Experiments, off unless you tick them (they need "
+        },
+        {
+          "type": "text",
+          "text": "explainer",
+          "marks": [
+            {
+              "type": "code"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " ticked):"
+        }
+      ]
+    },
+    {
+      "type": "taskList",
+      "attrs": {
+        "localId": "the-loop-tasks-6"
+      },
+      "content": [
+        {
+          "type": "taskItem",
+          "attrs": {
+            "localId": "the-loop-task-23",
+            "state": "TODO"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "explainer-slides",
+              "marks": [
+                {
+                  "type": "code"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "text": " — the explainer as a slide deck, one idea per slide."
+            }
+          ]
+        },
+        {
+          "type": "taskItem",
+          "attrs": {
+            "localId": "the-loop-task-24",
+            "state": "TODO"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "explainer-flashcards",
+              "marks": [
+                {
+                  "type": "code"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "text": " — flashcards on the spec and the change, question on the front."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
           "text": "ℹ️ What this means",
           "marks": [
             {
@@ -1049,13 +1123,13 @@
     {
       "type": "taskList",
       "attrs": {
-        "localId": "the-loop-tasks-6"
+        "localId": "the-loop-tasks-7"
       },
       "content": [
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-23",
+            "localId": "the-loop-task-25",
             "state": "TODO"
           },
           "content": [
@@ -1090,7 +1164,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-24",
+            "localId": "the-loop-task-26",
             "state": "DONE"
           },
           "content": [
@@ -1125,7 +1199,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-25",
+            "localId": "the-loop-task-27",
             "state": "TODO"
           },
           "content": [
@@ -1408,13 +1482,13 @@
     {
       "type": "taskList",
       "attrs": {
-        "localId": "the-loop-tasks-7"
+        "localId": "the-loop-tasks-8"
       },
       "content": [
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-26",
+            "localId": "the-loop-task-28",
             "state": "DONE"
           },
           "content": [
@@ -1432,7 +1506,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-27",
+            "localId": "the-loop-task-29",
             "state": "TODO"
           },
           "content": [
@@ -1540,13 +1614,13 @@
     {
       "type": "taskList",
       "attrs": {
-        "localId": "the-loop-tasks-8"
+        "localId": "the-loop-tasks-9"
       },
       "content": [
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-28",
+            "localId": "the-loop-task-30",
             "state": "TODO"
           },
           "content": [
@@ -1568,7 +1642,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-29",
+            "localId": "the-loop-task-31",
             "state": "DONE"
           },
           "content": [
@@ -1663,13 +1737,13 @@
     {
       "type": "taskList",
       "attrs": {
-        "localId": "the-loop-tasks-9"
+        "localId": "the-loop-tasks-10"
       },
       "content": [
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-30",
+            "localId": "the-loop-task-32",
             "state": "TODO"
           },
           "content": [
@@ -1687,7 +1761,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-31",
+            "localId": "the-loop-task-33",
             "state": "TODO"
           },
           "content": [

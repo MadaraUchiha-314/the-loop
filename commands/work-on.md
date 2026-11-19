@@ -131,8 +131,8 @@ a gate (`tasks.md`) advances on shape alone.
    The human review per phase is always on and is delivered by that gate.
 
 5. **Phase 2 — Design** (`design`). Create `docs/specs/<id>/design.md` derived from the
-   approved requirements: architecture, components/interfaces, data models, error
-   handling, testing strategy — **including the Security design section** stating how
+   approved requirements: the card, interfaces, architecture, technology choices and
+   testing strategy, with no code-level detail — **including the Security design section** stating how
    each requirements-phase trust boundary is enforced (a boundary left unenforced
    fails the gate). **If the work item has a user-facing
    surface**, also
@@ -213,9 +213,8 @@ a gate (`tasks.md`) advances on shape alone.
    **Before requesting human review, post/update the R10 reviewer briefing in the PR**
    (required gate item, fixed), produced from
    `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/pr-briefing.md`: a **condensed,
-   prioritized** summary saying
-   **where to focus first**, **mermaid** diagram(s) of the change, and the
-   spec→implementation insights + low-level decisions. Whenever you ask for input, give
+   prioritized** summary: the card, a **review-effort score**, a **guided tour** of the
+   diff, **mermaid** diagram(s) of the change, and the spec→implementation insights + low-level decisions. Whenever you ask for input, give
    enough context to decide, and **educate the user on the low-level design decisions —
    this is mandatory, not optional.**
 

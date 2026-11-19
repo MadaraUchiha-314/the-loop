@@ -21,6 +21,14 @@ overrides: {}
 > Phase 1 of 3 for a bug (bugfix → design → tasks). For simple bugs the design phase
 > may be minimal. This phase MUST be reviewed/approved before moving on.
 
+## The short version
+
+<!-- The card: what changes, why, and what to check. About 120 words is the
+     guide, not a limit. -->
+
+What breaks, for whom, and the fix in one or two sentences. Name what a
+reviewer should check first.
+
 ## Summary
 
 What is wrong, and the observed impact. Link the ticket.

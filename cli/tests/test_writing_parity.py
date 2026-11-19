@@ -222,3 +222,123 @@ def test_p4_no_p0_tell_in_shipped_prose() -> None:
             )
 
     assert not findings, "P0 writing tells in shipped prose:\n" + "\n".join(findings)
+
+
+# ------------------------------------------------------------------ P5–P10 (issue-544)
+#
+# The layered, story-first contract. Presence is still the only thing asserted: the
+# card has a fixed heading, the design template a fixed shape, the review reference
+# its standing checks. The card's ~120 words is a guide the skill states, and
+# nothing here measures it.
+
+CARD_HEADING = "## The short version"
+
+#: Templates that open with the card. The brainstorm is a scratchpad, but it is the
+#: first thing a reviewer meets, so it carries the card too.
+CARD_TEMPLATES = [
+    "brainstorm.md",
+    "requirements.md",
+    "bugfix.md",
+    "design.md",
+    "testing-plan.md",
+    "tasks.md",
+    "pr-briefing.md",
+]
+
+DESIGN_SECTIONS = [
+    "The short version",
+    "Interfaces",
+    "Architecture",
+    "Technology choices",
+    "UI/UX design",
+    "Security design",
+    "Testing strategy",
+    "Open questions",
+    "Review comments",
+]
+
+REVIEWING = SKILLS / "the-loop" / "reference" / "reviewing.md"
+EXPLAINER_REFERENCE = SKILLS / "the-loop" / "reference" / "explainer.md"
+WORKFLOW = SKILLS / "the-loop" / "reference" / "workflow.md"
+
+
+def _body(path: Path) -> str:
+    return _FRONT_MATTER.sub("", path.read_text(encoding="utf-8"), count=1)
+
+
+def _h2(text: str) -> List[str]:
+    return re.findall(r"^## (.+?)\s*$", text, re.MULTILINE)
+
+
+@pytest.mark.parametrize("filename", CARD_TEMPLATES)
+def test_p5_template_opens_with_the_card(filename: str) -> None:
+    """Requirement: docs/specs/issue-544/requirements.md R2 AC 1, AC 6."""
+    sections = _h2(_body(TEMPLATES / filename))
+    assert sections and sections[0] == CARD_HEADING[3:], (
+        f"{filename}: the first section must be `{CARD_HEADING}`, found {sections[:1]}"
+    )
+
+
+def test_p6_the_skill_states_the_layers_and_a_soft_card_guide() -> None:
+    """Requirement: docs/specs/issue-544/requirements.md R1, R2 AC 3–4."""
+    skill = WRITING_SKILL.read_text(encoding="utf-8")
+    assert CARD_HEADING[3:] in skill
+    assert "nothing measures it" in skill
+    assert "There is no word limit" in skill
+    for rule in (
+        "about 25 words",
+        "one idea in each sentence",
+        "more than three nouns",
+    ):
+        assert rule in skill, rule
+    assert "A linking sentence is information" in skill
+    assert "What `design.md` leaves out" in skill
+    assert "Not for code comments" not in skill
+
+
+def test_p7_the_design_template_has_the_new_shape() -> None:
+    """Requirement: docs/specs/issue-544/requirements.md R3 AC 1, 5, 6."""
+    text = _body(TEMPLATES / "design.md")
+    assert _h2(text) == DESIGN_SECTIONS
+    for gone in (
+        "Overview",
+        "Components & interfaces",
+        "Data models",
+        "Error handling",
+    ):
+        assert f"## {gone}" not in text, gone
+    assert "code snippets" in text
+    assert "no change" in text.lower()
+
+
+def test_p8_the_pr_briefing_has_review_effort_and_a_guided_tour() -> None:
+    """Requirement: docs/specs/issue-544/requirements.md R6."""
+    sections = _h2(_body(TEMPLATES / "pr-briefing.md"))
+    assert "Review effort" in sections
+    assert "Guided tour" in sections
+    assert not any(s.startswith("TL;DR") for s in sections)
+    for path in (WORKFLOW, REVIEWING, TEMPLATES / "pr-briefing.md"):
+        assert "where to focus first" not in path.read_text(encoding="utf-8").lower(), (
+            path.name
+        )
+
+
+def test_p9_the_review_reference_carries_the_standing_checks() -> None:
+    """Requirement: docs/specs/issue-544/requirements.md R3 AC 7, R4 AC 4."""
+    text = REVIEWING.read_text(encoding="utf-8")
+    assert "## Standing checks" in text
+    standing = text.split("## Standing checks", 1)[1].split("\n## ", 1)[0]
+    assert "production-code comment" in standing
+    assert "design.md" in standing and "code-level detail" in standing
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    assert "### Code comments" in workflow
+    assert "Requirement:" in workflow.split("### Code comments", 1)[1][:2000]
+
+
+def test_p10_archify_is_recommended_and_never_installed() -> None:
+    """Requirement: docs/specs/issue-544/requirements.md R7; abuse case 4."""
+    text = EXPLAINER_REFERENCE.read_text(encoding="utf-8")
+    assert "archify" in text
+    section = text[text.index("archify") - 400 : text.index("archify") + 800]
+    assert "mermaid" in section
+    assert not re.search(r"\binstall", section, re.IGNORECASE)

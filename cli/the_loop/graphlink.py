@@ -50,6 +50,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Sequence, 
 from . import eventlog, prompts
 from .authz import JIRA_GATE_PREFIX, JIRA_RELAY_GATE_AUTHOR, gate_authorized_users
 from .ghhost import repo_slug as _repo_slug
+from .graph.state import explainer_experiments
 from .control import START, ControlConfig, ControlStore
 from .sessions import WorkItemRef
 from .sessions.refs import UnknownJiraProject, origin_ref, origin_repository
@@ -385,6 +386,9 @@ class GraphContext:
     #: The spec-chain Claude doc the handoff imported (issue-536): the doc the
     #: session keeps in step rather than creating a second one.
     claude_doc_url: str = ""
+    #: The explainer experiments frozen at selection (``slides``,
+    #: ``flashcards``) — named in the prompt of the two explainer nodes only.
+    explainer_experiments: Tuple[str, ...] = ()
 
     @property
     def at_human_gate(self) -> bool:
@@ -449,6 +453,9 @@ CLAUDE_ARTIFACT_LINE = _line("claude-artifact")
 #: (issue-536). Fixed text, like the artifact line: the doc is a tool of the
 #: session (the Claude Docs connector), and the skill carries the procedure.
 CLAUDE_DOC_LINE = _line("claude-doc")
+
+#: The nodes that produce the explainer, and so its experiments.
+EXPLAINER_NODES = frozenset({"spec-explainer", "code-explainer"})
 
 
 def _claude_artifact_line(url: str) -> str:
@@ -616,6 +623,13 @@ def render_graph_context(
         elif ctx.claude_doc:
             # The same rule for the doc (issue-536): fixed text, one boolean.
             lines.append(_claude_doc_line(ctx.claude_doc_url))
+        experiments = explainer_experiments(ctx.explainer_experiments)
+        if experiments and ctx.current_node in EXPLAINER_NODES:
+            # Fixed text and closed values only: each name was checked against
+            # the known formats again before it is named.
+            lines.append(
+                _line("explainer-experiments", experiments=", ".join(experiments))
+            )
     lines.append(_line("complete", item_id=item_id, claim_suffix=claim_suffix))
     lines.append(_line("own-state"))
     return "\n".join(lines)
@@ -1453,6 +1467,9 @@ class GraphLink:
             handoff=dict(getattr(state, "handoff", None) or {}),
             claude_artifact_url=str(getattr(state, "claude_artifact_url", "") or ""),
             claude_doc_url=str(getattr(state, "claude_doc_url", "") or ""),
+            explainer_experiments=tuple(
+                explainer_experiments(getattr(state, "explainer_experiments", None))
+            ),
         )
 
     @staticmethod
@@ -1509,6 +1526,9 @@ class GraphLink:
             handoff=dict(getattr(state, "handoff", None) or {}),
             claude_artifact_url=str(getattr(state, "claude_artifact_url", "") or ""),
             claude_doc_url=str(getattr(state, "claude_doc_url", "") or ""),
+            explainer_experiments=tuple(
+                explainer_experiments(getattr(state, "explainer_experiments", None))
+            ),
         )
 
     @staticmethod

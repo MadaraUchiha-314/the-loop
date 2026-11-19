@@ -147,6 +147,43 @@ font. Copy it, then:
 - **Inside a `QUIZ` block, write every `<` as `\u003c`.** A literal `</script>` in any
   string ends the block early and turns the rest of the page into live markup.
 
+## Experiments: slides and flashcards (issue-544)
+
+Two more formats are offered as **experiments**: unticked rows `explainer-slides` and
+`explainer-flashcards` under the `explainer` row at `phase-selection`. They run only when
+`explainer` runs too. When the graph block of your prompt says *"also produce the
+explainer experiments chosen at phase-selection"*, add what it names to the page:
+
+| Experiment | What to write | On the page | In a Claude doc |
+|---|---|---|---|
+| `slides` | one idea per slide: a kicker, a short title, two or three sentences | the **Slides** tab, from the `slides` JSON block | a **Slides** tab, one heading per slide |
+| `flashcards` | a question on the front, its answer on the back | the **Flashcards** tab, from the `cards` JSON block | a **Flashcards** tab with the questions only; the answers go in **Quiz answers** |
+
+- **At `spec-explainer`** the slides and cards cover the spec. **At `code-explainer`**,
+  add slides and cards about the change to the same tabs.
+- **Same rules as the quiz.** The blocks are data, rendered as text by the engine. Write
+  every `<` as `\u003c`, and never paste untrusted text as markup.
+- **Not chosen, not there.** Delete the experiment tabs, their panels and their blocks
+  when the prompt does not name them.
+- **Record it.** The record (`evidence/spec-explainer.md`, `evidence/explainer.md`)
+  gains an **Experiments** line: what was produced, or why not.
+
+## Diagrams in a rich view
+
+A page or a doc tab can show a diagram better than a mermaid block can. Use the best
+renderer the session already has:
+
+1. **archify, when the archify skill is available in this harness.** Use it for
+   architecture, flow, sequence and data-model diagrams in an HTML view. It writes a
+   self-contained interactive diagram from a typed description.
+2. **The surface's own drawing**: an inline diagram on an artifact, a diagram block in
+   a Claude doc.
+3. **Otherwise mermaid**, as the spec files already carry it. Fall back to mermaid
+   without a warning; a missing renderer is not a finding.
+
+the-loop never adds archify to a harness or fetches it. It is a recommendation for a
+session that already has it, and the mermaid in the spec files stays the source.
+
 ## Publishing
 
 Try these in order:

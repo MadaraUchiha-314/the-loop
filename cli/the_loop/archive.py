@@ -40,6 +40,8 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
+from .graph.state import explainer_experiments
+
 logger = logging.getLogger("the-loop.archive")
 
 __all__ = [
@@ -281,6 +283,9 @@ def terminal_record(rt: Any, item_id: str) -> Optional[Dict[str, Any]]:
             "sessionPerPr": _plain(state.session_per_pr),
             "claudeArtifact": state.claude_artifact is True,
             "claudeDoc": getattr(state, "claude_doc", False) is True,
+            "explainerExperiments": explainer_experiments(
+                getattr(state, "explainer_experiments", None)
+            ),
             "repos": [r for r in (_plain(r) for r in state.repos) if r],
         },
         "pullRequests": _pull_requests(state),

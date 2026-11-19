@@ -98,8 +98,8 @@ spec files read from disk, not the drafting conversation (plan-mode style).
    review, **post/update the R10 reviewer briefing in the PR** — produced from
    the-loop's internal
    `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/pr-briefing.md`: a
-   condensed, prioritized summary (where to focus), **mermaid** diagram(s), and the
-   low-level decisions the harness made. This is a ready-to-ship gate item (fixed) —
+   condensed, prioritized summary (the card, a review-effort score and a guided tour of
+   the diff), **mermaid** diagram(s), and the low-level decisions the harness made. This is a ready-to-ship gate item (fixed) —
    educating the reviewer is mandatory, not optional; do not request review without it.
 
 6. **Next step:** once every task is checked and reviewed, `/the-loop:finish-tasks <id>`.

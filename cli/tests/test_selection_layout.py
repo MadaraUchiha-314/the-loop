@@ -212,6 +212,7 @@ def test_the_rows_read_back_exactly_as_the_graph_lists_them():
         selection.CLAUDE_ARTIFACT_TOKEN,
         selection.CLAUDE_DOC_TOKEN,
         selection.EXPLAINER_TOKEN,
+        *selection.EXPLAINER_EXPERIMENT_TOKENS,  # issue-544: unticked experiments
         *selection.PR_SESSIONS_TOKENS,
         "harness-claude",
         "harness-codex",

@@ -339,8 +339,9 @@ fixed — the `userInteraction` block left the harness config in issue-352.
   question, a design opinion, a review), include enough context that the user can make
   the right judgement call without digging.
 - **Condensed, prioritized PR summaries.** Every PR the-loop raises tells the reviewer
-  **where to focus and in what order** — reviewing a huge AI-authored PR top-to-bottom
-  is not realistic. Lead with the highest-priority items to scrutinize. This briefing is
+  **how much effort it needs and where to look, in what order** — a review-effort score
+  and a guided tour of the diff. Reviewing a huge AI-authored PR top-to-bottom is not
+  realistic. Lead with the highest-priority items to scrutinize. This briefing is
   produced from the-loop's internal
   `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/pr-briefing.md` and **posted/updated in the PR
   BEFORE human review is requested** — a required item of the ready-to-ship gate, so

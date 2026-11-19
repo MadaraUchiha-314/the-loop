@@ -152,6 +152,14 @@ def _is_missing_label(exc: Exception) -> bool:
     )
 
 
+def _focus_line(focus: object) -> str:
+    """Where a gate's review request points the reviewer first, by the ``focus``
+    name the graph gives the hook; ``""`` for a name the catalog has no line for."""
+    if not isinstance(focus, str) or not focus:
+        return ""
+    return strings.section("graph.sideeffects.request-review-focus").get(focus, "")
+
+
 @hook("request-review")
 def request_review(ctx: HookContext) -> HookResult:
     """Ask for the review that this gate is waiting on.
@@ -160,13 +168,15 @@ def request_review(ctx: HookContext) -> HookResult:
     own request back as new input.
     """
     name = "request-review"
-    body = mark_self_authored(
-        strings.t(
-            "graph.sideeffects.request-review",
-            node=ctx.node_id,
-            work_item=ctx.work_item.id,
-        )
+    text = strings.t(
+        "graph.sideeffects.request-review",
+        node=ctx.node_id,
+        work_item=ctx.work_item.id,
     )
+    focus = _focus_line(ctx.params.get("focus"))
+    if focus:
+        text += "\n\n" + focus
+    body = mark_self_authored(text)
     try:
         _integration(ctx).call("add-comment", ref=ctx.work_item.ref, body=body)
     except IntegrationError as exc:

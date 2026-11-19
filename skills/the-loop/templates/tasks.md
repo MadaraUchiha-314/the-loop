@@ -21,6 +21,14 @@ overrides: {}
 > reviewed/approved before implementation begins. Once approved, the-loop executes these
 > end-to-end with minimal/no intervention.
 
+## The short version
+
+<!-- The card: what changes, why, and what to check. About 120 words is the
+     guide, not a limit. -->
+
+The shape of the DAG in a few sentences: how many tasks, in which tracks,
+and where the risky ones sit.
+
 ## Task list
 
 Each task is a checkbox, references the requirement(s) it satisfies, declares its

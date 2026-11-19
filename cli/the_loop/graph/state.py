@@ -128,6 +128,20 @@ def _string(raw: Any) -> str:
     return raw.strip() if isinstance(raw, str) else ""
 
 
+#: The explainer experiments a work item can opt into, in the order they are
+#: recorded and named. A value outside this list is never loaded.
+EXPLAINER_EXPERIMENTS = ("slides", "flashcards")
+
+
+def explainer_experiments(raw: Any) -> List[str]:
+    """The known experiments in ``raw``, once each, in :data:`EXPLAINER_EXPERIMENTS`
+    order; ``[]`` for anything that is not a list of them."""
+    if not isinstance(raw, (list, tuple)):
+        return []
+    chosen = {entry for entry in raw if isinstance(entry, str)}
+    return [name for name in EXPLAINER_EXPERIMENTS if name in chosen]
+
+
 def _string_list(raw: Any) -> List[str]:
     """Non-empty strings from a list, or ``[]`` for anything that is not one."""
     if not isinstance(raw, (list, tuple)):
@@ -440,6 +454,10 @@ class WorkItemState:
     #: ``is True`` and never true beside :attr:`claude_artifact`: a hand-edited
     #: file that sets both keeps the artifact, the choice that existed first.
     claude_doc: bool = False
+    #: The explainer experiments chosen at selection — a subset of
+    #: :data:`EXPLAINER_EXPERIMENTS`, empty when none was chosen or the
+    #: explainer was declared away.
+    explainer_experiments: List[str] = field(default_factory=list)
     #: The handoff record this work item arrived with (issue-517): the parsed
     #: record plus ``author``, ``commentUrl`` and ``recordedAt``, written once by
     #: ``Runtime.start`` before the first save. ``{}`` is *no handoff*, and a
@@ -540,6 +558,9 @@ class WorkItemState:
             claude_artifact=data.get("claudeArtifact") is True,
             claude_doc=data.get("claudeDoc") is True
             and data.get("claudeArtifact") is not True,
+            explainer_experiments=explainer_experiments(
+                data.get("explainerExperiments")
+            ),
             handoff=_mapping(data.get("handoff")),
             handoff_demoted=_mapping_list(data.get("handoffDemoted")),
             claude_artifact_url=_string(data.get("claudeArtifactUrl")),
@@ -603,6 +624,8 @@ class WorkItemState:
             out["claudeDoc"] = True
         if self.claude_doc_url:
             out["claudeDocUrl"] = self.claude_doc_url
+        if self.explainer_experiments:
+            out["explainerExperiments"] = list(self.explainer_experiments)
         return out
 
     # -- pull requests (issue-368) --------------------------------------------

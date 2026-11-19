@@ -11,20 +11,30 @@
 
 # <PR title> — reviewer briefing
 
-## TL;DR
+## The short version
 
-One or two sentences: what this PR does and why.
+<!-- The card: what this PR does, why, and what to check. About 120 words is the
+     guide, not a limit. -->
+
+What this PR does and why, in a few plain sentences.
 
 **Start here:** the explainer of this change — `<Location from evidence/explainer.md>`.
 (Drop this line when the work item declared the `explainer` row away.)
 
-## Where to focus (in this order)
+## Review effort
 
-Prioritized so a reviewer of AI-authored work knows what to scrutinize first.
+**<1–5>** — one line on why. 1 is a few minutes (a doc fix, a one-file change); 5 is
+hours (a new subsystem, a migration, a security boundary).
 
-1. **<highest-priority area>** — `<path>` — why it matters / what to check.
-2. **<next>** — `<path>` — …
-3. **<lower-risk / skim>** — …
+## Guided tour
+
+Stops in the order to read them, so a reviewer of AI-authored work sees the riskiest
+change first. Each stop links a file and line in the diff, with one sentence on why it
+matters.
+
+1. [`<path>:<line>`](<link to the line in the PR diff>) — what to check here.
+2. [`<path>:<line>`](<link>) — …
+3. [`<path>:<line>`](<link>) — lower risk; skim.
 
 ## What changed (map)
 

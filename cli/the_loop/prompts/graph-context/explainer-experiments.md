@@ -1,0 +1,1 @@
+also produce the explainer experiments chosen at phase-selection: {experiments} — as extra tabs of the explainer (Slides, Flashcards), per the explainer reference; record what was produced, or why not, on the Experiments line of the explainer record

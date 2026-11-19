@@ -58,10 +58,10 @@ chain: `brainstorm.md` → `requirements.md` (or `bugfix.md` for a defect) → `
 
   | Artifact | Sections |
   |---|---|
-  | `brainstorm.md` | Problem / opportunity · Context & constraints · Ideas & options · Sketches & notes · Open questions · Working hypothesis |
-  | `requirements.md` | Introduction · Requirements (user story + EARS acceptance criteria each) · Non-functional requirements · Security considerations · Out of scope · Open questions · Review comments |
-  | `design.md` | Overview · Architecture (one mermaid diagram at least) · Components & interfaces · UI/UX design · Data models · Error handling · Security design · Testing strategy · Trade-offs & decisions · Open questions · Review comments |
-  | `testing-plan.md` | Test matrix · Scenarios & requirement trace · Verification environment · Evidence plan · Verification activities · Verification results · Review comments |
+  | `brainstorm.md` | The short version · Problem / opportunity · Context & constraints · Ideas & options · Sketches & notes · Open questions · Working hypothesis |
+  | `requirements.md` | The short version · Introduction · Requirements (user story + EARS acceptance criteria each) · Non-functional requirements · Security considerations · Out of scope · Open questions · Review comments |
+  | `design.md` | The short version · Interfaces · Architecture (one mermaid diagram at least) · Technology choices · UI/UX design · Security design · Testing strategy · Open questions · Review comments — no code-level detail |
+  | `testing-plan.md` | The short version · Test matrix · Scenarios & requirement trace · Verification environment · Evidence plan · Verification activities · Verification results · Review comments |
 
 - **The brainstorm keeps what was rejected.** A chat that never ran `/the-loop:brainstorm`
   still becomes a `brainstorm.md`; its *Ideas & options* lists every option the
