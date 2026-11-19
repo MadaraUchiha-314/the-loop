@@ -558,6 +558,9 @@ Granular commands (one step at a time; same flow `work-on` runs end-to-end):
 - `/the-loop:create-tasks-plan <id>` — requirements + design + testing plan → `tasks.md` DAG.
 - `/the-loop:execute-tasks <id>` — implement the DAG, self-check, self/critic-review.
 - `/the-loop:verify-work <id>` — execute the testing plan; record results and evidence.
+- `/the-loop:derive-pr-spec <id> --pr <n>` — at an inner loop's `pr-spec` node: derive the
+  pull request's scoped PR spec from the chain, commit it in its branch, and record it with
+  `the-loop graph pr-spec` (issue-543).
 - `/the-loop:finish-tasks <id>` — cleanup after all tasks (close the ticket; extensible).
 - `/the-loop:work-status <id>` — read-only status from the specs, tasks checkmarks and log.
 - `/the-loop:contribute-to <id>` — join an **existing, in-progress** work item as a

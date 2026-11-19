@@ -733,6 +733,9 @@ def test_the_graph_assigns_on_entering_the_inner_loop(checkout):
     assert (ref, pr_number) == (WI.ref, 16)
     assert "you are now at node: pr-spec" in text
     assert "the-loop graph complete issue-15 --pr 16" in text
+    # issue-543 R4.1: the node's instructions live in its command, which names
+    # the verb that records the PR spec before the claim above.
+    assert "/the-loop:derive-pr-spec" in text
 
 
 def test_the_outer_loop_assigns_without_a_pr(checkout):
@@ -767,3 +770,16 @@ def _ctx_for(spec_dir):
         boundary="exit",
         repo=spec_dir.parents[2],
     )
+
+
+def test_the_derive_pr_spec_command_names_both_verbs():
+    """issue-543 R4.1, R6: the `pr-spec` node's command exists, records with
+    `graph pr-spec`, reports back with `graph complete`, and routes feedback."""
+    from pathlib import Path
+
+    command = Path(__file__).resolve().parents[2] / "commands" / "derive-pr-spec.md"
+    text = command.read_text(encoding="utf-8")
+    assert "the-loop graph pr-spec" in text
+    assert "the-loop graph complete" in text
+    assert "--disclosure-approval" in text and "--still-valid" in text
+    assert "## Feedback on a PR spec" in text

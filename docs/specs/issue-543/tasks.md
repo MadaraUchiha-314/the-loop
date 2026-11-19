@@ -160,7 +160,7 @@ All code lands in this repository, so no repository is declared beyond the origi
   - _Requirements:_ R2.1–R2.6, R3.5
   - _Test:_ T6 — `tests/test_manifest_schemas.py`, `tests/test_writing_parity.py`
     (red→green)
-- [ ] 11. `/the-loop:derive-pr-spec` command and assignment text
+- [x] 11. `/the-loop:derive-pr-spec` command and assignment text
   - Create `commands/derive-pr-spec.md`. It covers:
     - choosing this PR's items from the chain;
     - citing in every item;
