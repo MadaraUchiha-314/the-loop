@@ -372,3 +372,39 @@ def test_the_template_engine_never_assigns_markup():
     text = TEMPLATE.read_text(encoding="utf-8")
     for sink in ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write"):
         assert sink not in text, sink
+
+
+# -- R3 AC 8, NFR backward compatibility: old and new designs both pass the gate ----
+
+REPO = Path(__file__).resolve().parents[2]
+
+
+def _design_gate_sections():
+    graph = load_graph()
+    for entry in graph.nodes["design"].exit:
+        if isinstance(entry, dict) and entry.get("hook") == "validate-artifacts":
+            wanted = (entry.get("with") or {}).get("sections")
+            if wanted:
+                return list(wanted)
+    raise AssertionError("the design node declares no gated sections")
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        REPO / "docs" / "specs" / "issue-538" / "design.md",  # the old shape
+        REPO / "docs" / "specs" / "issue-544" / "design.md",  # the new shape, filled
+        REPO / "skills" / "the-loop" / "templates" / "design.md",  # the new template
+    ],
+    ids=["old-shape", "new-shape", "new-template"],
+)
+def test_the_design_gate_sections_validate_on_old_and_new_designs(path):
+    from the_loop.graph.frontmatter import sections, split_front_matter
+
+    if not path.is_file():
+        pytest.skip(f"{path} not present")
+    _, body = split_front_matter(path.read_text(encoding="utf-8"))
+    found = {heading.strip(): text for heading, text in sections(body).items()}
+    for wanted in _design_gate_sections():
+        assert wanted in found, f"{path.name}: missing {wanted}"
+        assert found[wanted].strip(), f"{path.name}: empty {wanted}"

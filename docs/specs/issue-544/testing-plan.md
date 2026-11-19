@@ -91,22 +91,30 @@ needs a service or credential.
 
 ## Verification activities
 
-- [ ] T1 — `cd cli && uv run python -m pytest -q tests/test_explainer_experiments.py tests/test_selection_layout.py tests/test_graphlink.py`
-- [ ] T2 — `cd cli && uv run python -m pytest -q tests/test_explainer_experiments_integration.py`
-- [ ] T6 — `cd cli && uv run python -m pytest -q tests/test_writing_parity.py`
-- [ ] T5 — capture the filled template's states with `chromium --headless=new --screenshot`
-- [ ] T9 — walk the Slides and Flashcards tabs by keyboard only, and record each step
-- [ ] T10 — the backward-compatibility cases inside T1 pass (state without the key; old- and new-shape `design.md` against the `design` node's section check)
-- [ ] T11 — run a self-review round with the standing checks, and record it
-- [ ] T12 — `make check`
+- [x] T1 — `cd cli && uv run python -m pytest -q tests/test_explainer_experiments.py tests/test_selection_layout.py tests/test_graphlink.py`
+- [x] T2 — `cd cli && uv run python -m pytest -q tests/test_explainer_experiments_integration.py`
+- [x] T6 — `cd cli && uv run python -m pytest -q tests/test_writing_parity.py`
+- [x] T5 — capture the filled template's states with `chromium --headless=new --screenshot`
+- [x] T9 — walk the Slides and Flashcards tabs by keyboard only, and record each step
+- [x] T10 — the backward-compatibility cases inside T1 pass (state without the key; old- and new-shape `design.md` against the `design` node's section check)
+- [x] T11 — run a self-review round with the standing checks, and record it
+- [x] T12 — `make check`
 
 ## Verification results
 
-_Not yet executed._
+Run on 2026-11-18. Every planned activity ran and passed. Detail, screenshots and the
+keyboard walk are in [`evidence/verification.md`](evidence/verification.md).
 
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
-| | | | |
+| T1 | the T1 command, with the session's `THE_LOOP_*` variables unset | pass — 99 passed | [verification.md § Test runs](evidence/verification.md#test-runs-t1-t2-t6-t10-t12) |
+| T2 | the T2 command | pass — 3 scenarios | same |
+| T6 | the T6 command | pass — 23 passed (P1–P10) | same |
+| T5 | the filled template driven by Playwright on the local Chromium (the planned `--screenshot` flag cannot click, and the flows need clicks) | pass — every state in light and dark, phone width without overflow, the abuse-case title rendered as text with no dialog | [verification.md § UI](evidence/verification.md#ui-t5), [`ui/`](evidence/ui/) |
+| T9 | keyboard-only walk, 15 steps, focus and ARIA state read after each | pass — every step as expected | [verification.md § Accessibility](evidence/verification.md#accessibility-t9) |
+| T10 | five named cases inside T1 | pass | [verification.md § Test runs](evidence/verification.md#test-runs-t1-t2-t6-t10-t12) |
+| T11 | dogfood self-review with both standing checks | pass — zero findings | [self-review.md](evidence/self-review.md) |
+| T12 | `make check`, clean environment | pass — exit 0, 7,043 passed | [verification.md § Test runs](evidence/verification.md#test-runs-t1-t2-t6-t10-t12) |
 
 ## Review comments
 
