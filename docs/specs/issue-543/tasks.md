@@ -89,10 +89,11 @@ All code lands in this repository, so no repository is declared beyond the origi
   - _Test:_ T1 and T8 — `tests/test_pr_spec.py::test_hook_*`,
     `::test_forged_required_false_still_blocks`, `::test_abuse_hook_writes_nothing`
     (red→green)
-- [ ] 6. GitHub reads for the verb
-  - `ghapi` gains `repository_visibility(owner, repo)`, which maps errors, missing
-    values and unknown values to `unknown`. It also gains a single-comment fetch by
-    URL, unless an existing one fits.
+- [x] 6. GitHub reads for the verb
+  - `graph/prspec_github.py` adds `repository_visibility(client, repo)` over the
+    existing `GitHubApi.repository`, mapping errors, missing values and unknown values
+    to `unknown`. Comments are found with the existing `list_comments`, so `ghapi`
+    gains no new read.
   - `authorize_comment(url, kind, expected_target, pr_repo)` checks four things: that
     the URL targets the work item (disclosure) or this PR (still-valid); that the
     author is in `routing.authorizedUsers`; that the comment carries no

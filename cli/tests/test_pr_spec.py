@@ -617,3 +617,201 @@ def test_abuse_hook_writes_nothing(tmp_path):
     pr_spec_current(ctx)
     pr_spec_current(hook_ctx(tmp_path, TWO, node="implementation"))
     assert snapshot().keys() == before.keys()
+
+
+# -- task 6: GitHub reads (stubbed) --------------------------------------------
+
+from the_loop.authz import SELF_COMMENT_MARKER  # noqa: E402
+from the_loop.ghapi import GhComment, GitHubApiError  # noqa: E402
+from the_loop.graph import prspec_github as pg  # noqa: E402
+
+WI_URL = "https://github.com/octo/origin/issues/15"
+PR_URL = "https://github.com/octo/api/pull/12"
+
+
+class StubGitHub:
+    def __init__(self, visibility=None, comments=None, fail=False):
+        self.visibility = visibility or {}
+        self.comments = comments or {}
+        self.fail = fail
+        self.calls = []
+
+    def repository(self, owner, repo, host=""):
+        self.calls.append(("repository", owner, repo))
+        if self.fail:
+            raise GitHubApiError("boom")
+        value = self.visibility.get(f"{owner}/{repo}")
+        return {
+            "full_name": f"{owner}/{repo}",
+            **({"visibility": value} if value else {}),
+        }
+
+    def list_comments(self, owner, repo, number, is_pr, host=""):
+        self.calls.append(("list_comments", owner, repo, number, is_pr))
+        if self.fail:
+            raise GitHubApiError("boom")
+        return list(self.comments.get((f"{owner}/{repo}", number), []))
+
+
+def comment(url, author="owner", body="allow-disclosure octo/api"):
+    return GhComment(
+        id="x", body=body, author=author, created_at="2026-11-19T00:00:00Z", url=url
+    )
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("public", "public"),
+        ("PRIVATE", "private"),
+        ("internal", "internal"),
+        (None, "unknown"),
+        ("weird", "unknown"),
+    ],
+)
+def test_visibility_values(raw, expected):
+    gh = StubGitHub(visibility={"octo/api": raw} if raw else {})
+    assert pg.repository_visibility(gh, "octo/api") == expected
+
+
+def test_abuse_visibility_unknown_on_api_failure():
+    assert pg.repository_visibility(StubGitHub(fail=True), "octo/api") == "unknown"
+
+
+def test_narrowing_order():
+    assert pg.narrows("private", "public")
+    assert pg.narrows("private", "internal")
+    assert pg.narrows("internal", "public")
+    assert not pg.narrows("public", "private")
+    assert not pg.narrows("private", "private")
+    assert pg.narrows("unknown", "private")
+    assert pg.narrows("public", "unknown")
+
+
+def disclosure(gh, url):
+    return pg.check_disclosure(
+        gh,
+        origin="octo/origin",
+        target="octo/api",
+        work_item="github:octo/origin#15",
+        approval_url=url,
+        authorized=["owner"],
+    )
+
+
+def test_abuse_disclosure_same_visibility_needs_no_grant():
+    gh = StubGitHub(visibility={"octo/origin": "public", "octo/api": "public"})
+    verdict, problem = disclosure(gh, "")
+    assert problem is None and verdict["verdict"] == "same-or-narrower"
+
+
+def test_abuse_disclosure_private_to_public_without_grant_refused():
+    gh = StubGitHub(visibility={"octo/origin": "private", "octo/api": "public"})
+    verdict, problem = disclosure(gh, "")
+    assert verdict is None and "private" in problem and "public" in problem
+
+
+def test_abuse_visibility_unknown_is_refused():
+    verdict, problem = disclosure(StubGitHub(fail=True), "")
+    assert verdict is None and "visibility-unknown" in problem
+
+
+def test_abuse_disclosure_with_authorized_grant_recorded():
+    url = WI_URL + "#issuecomment-1"
+    gh = StubGitHub(
+        visibility={"octo/origin": "private", "octo/api": "public"},
+        comments={("octo/origin", 15): [comment(url)]},
+    )
+    verdict, problem = disclosure(gh, url)
+    assert problem is None
+    assert verdict == {
+        "origin": "private",
+        "target": "public",
+        "verdict": "approved",
+        "by": "@owner",
+        "comment": url,
+        "at": "2026-11-19T00:00:00Z",
+    }
+
+
+def test_abuse_disclosure_grant_by_unauthorized_author_refused():
+    url = WI_URL + "#issuecomment-1"
+    gh = StubGitHub(
+        visibility={"octo/origin": "private", "octo/api": "public"},
+        comments={("octo/origin", 15): [comment(url, author="mallory")]},
+    )
+    verdict, problem = disclosure(gh, url)
+    assert verdict is None and "not authorized" in problem
+
+
+def test_abuse_comment_marked_as_agent_refused():
+    url = WI_URL + "#issuecomment-1"
+    gh = StubGitHub(
+        visibility={"octo/origin": "private", "octo/api": "public"},
+        comments={
+            ("octo/origin", 15): [
+                comment(url, body=SELF_COMMENT_MARKER + "\nallow-disclosure octo/api")
+            ]
+        },
+    )
+    verdict, problem = disclosure(gh, url)
+    assert verdict is None and "the-loop's own" in problem
+
+
+def test_abuse_disclosure_grant_naming_another_repo_refused():
+    url = WI_URL + "#issuecomment-1"
+    gh = StubGitHub(
+        visibility={"octo/origin": "private", "octo/api": "public"},
+        comments={
+            ("octo/origin", 15): [comment(url, body="allow-disclosure octo/api-two")]
+        },
+    )
+    verdict, problem = disclosure(gh, url)
+    assert verdict is None and "allow-disclosure octo/api" in problem
+
+
+def test_abuse_comment_on_another_issue_refused():
+    url = "https://github.com/octo/origin/issues/16#issuecomment-1"
+    gh = StubGitHub(
+        visibility={"octo/origin": "private", "octo/api": "public"},
+        comments={("octo/origin", 16): [comment(url)]},
+    )
+    verdict, problem = disclosure(gh, url)
+    assert verdict is None and "not a comment on" in problem
+    assert not any(c[0] == "list_comments" for c in gh.calls)
+
+
+def test_abuse_comment_url_not_found_refused():
+    url = WI_URL + "#issuecomment-2"
+    gh = StubGitHub(
+        visibility={"octo/origin": "private", "octo/api": "public"},
+        comments={("octo/origin", 15): [comment(WI_URL + "#issuecomment-1")]},
+    )
+    verdict, problem = disclosure(gh, url)
+    assert verdict is None and "not found" in problem
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "not a url",
+        "https://github.com/octo/origin/issues/15",
+        "http://github.com/octo/origin/issues/15#issuecomment-1",
+        "https://github.com/octo/origin/issues/15#issuecomment-1x",
+    ],
+)
+def test_abuse_comment_url_malformed_refused(url):
+    problem = pg.authorize_comment(
+        StubGitHub(), url, expected="github:octo/origin#15", authorized=["owner"]
+    )[1]
+    assert problem
+
+
+def test_still_valid_comment_on_this_pr_authorized():
+    url = PR_URL + "#issuecomment-5"
+    gh = StubGitHub(comments={("octo/api", 12): [comment(url, body="still valid")]})
+    found, problem = pg.authorize_comment(
+        gh, url, expected="github:octo/api#12", authorized=["owner"]
+    )
+    assert problem is None and found["by"] == "@owner"
+    assert ("list_comments", "octo", "api", 12, True) in gh.calls
