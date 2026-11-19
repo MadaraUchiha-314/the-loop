@@ -20,8 +20,8 @@ book. To get there, this item changes four things:
 1. **How the-loop writes.** Plain language, the conclusion first, then the reasoning told
    as a story.
 2. **How each artifact is shaped.** A short card on top, then the story, then reference
-   detail the reader may skip. `design.md` separates the **contract** from the
-   **internals**.
+   detail the reader may skip. `design.md` stays at the level of **architecture,
+   technology choices and interfaces**, with no code-level detail.
 3. **What code comments say.** They explain the code, not the process that produced it.
 4. **How the work is presented.** Claude docs and artifacts become a richer view of the
    markdown. The PR briefing gives a guided tour. Two opt-in experiments, slides and
@@ -33,7 +33,7 @@ owner's answers to its six questions are under [Decisions carried in](#decisions
 ```mermaid
 flowchart TD
   W["R1 writing skill<br/>plain language + story"] --> T["R2 layered templates<br/>card · story · reference"]
-  T --> D["R3 design.md<br/>contract | internals"]
+  T --> D["R3 design.md<br/>interfaces · architecture · tech"]
   W --> C["R4 code-comment rule"]
   T --> V["R5 doc / artifact<br/>as a reading view"]
   V --> A["R7 archify, when installed"]
@@ -126,28 +126,39 @@ me what it says and what to check, so that I can decide how deep to read.
 6. `cli/tests/test_writing_parity.py` SHALL assert that every template in AC 1 carries
    the summary-card section. It SHALL continue to assert that no length limit appears.
 
-### Requirement 3 — `design.md` separates contract from internals
+### Requirement 3 — `design.md` stays at the level of architecture and interfaces
 
-**User story:** As the approver of a design, I want what changes for its users kept
-apart from how it is built, so that I can review the contract closely and skim the
-internals.
+**User story:** As the approver of a design, I want `design.md` to show the
+architecture, the technology choices and the interfaces, and nothing at the level of
+functions and code, so that I review the decisions that matter rather than wade through
+implementation detail.
 
 #### Acceptance criteria (EARS)
 
-1. The `design.md` template SHALL have a **Contract** part and an **Internals** part,
-   with the Contract part first.
-2. The Contract part SHALL hold everything an outside party relies on: CLI commands and
-   flags, configuration keys, API and schema changes, events, user-visible behaviour, and
-   the trust boundaries of the Security design.
-3. The Internals part SHALL hold modules, data flow, algorithms, data models and error
-   paths.
-4. WHEN a design has no change to a Contract topic THEN the template SHALL let the author
-   say so in one line rather than leave the topic out silently.
-5. The `design` node's gated sections (`Architecture`, `Security design`,
+1. The `design.md` template SHALL be organised around three topics, in this order:
+   **Interfaces**, **Architecture** and **Technology choices**. The Security design and
+   Testing strategy sections follow them.
+2. The Interfaces section SHALL hold everything an outside party relies on: CLI
+   commands and flags, configuration keys, API and schema changes, persisted formats,
+   events and user-visible behaviour, including user-visible failures.
+3. The Architecture section SHALL show the components, how they connect and how data
+   moves between them, with at least one diagram.
+4. The Technology choices section SHALL name each significant choice (a library, a
+   storage format, a protocol, a pattern), the alternatives considered, and why this one
+   won.
+5. The writing skill and the `design.md` template SHALL direct that `design.md` carries
+   no function or method names, signatures, class layouts, algorithms, code snippets,
+   internal data structures or file-by-file change lists. That detail belongs in
+   `tasks.md` and the code.
+6. WHEN a design has no change to an Interfaces topic THEN the template SHALL let the
+   author say so in one line rather than leave the topic out silently.
+7. The self-review checklist, and the design critic review when it runs, SHALL include a
+   check that `design.md` holds no code-level detail (AC 5).
+8. The `design` node's gated sections (`Architecture`, `Security design`,
    `Testing strategy`) SHALL still validate on a design written from the new template.
    A design written from the old template SHALL still validate too.
-6. WHEN the `design-approval` gate asks for review THEN the request SHALL point the
-   reviewer at the Contract part first.
+9. WHEN the `design-approval` gate asks for review THEN the request SHALL point the
+   reviewer at the Interfaces section first.
 
 ### Requirement 4 — Code comments explain the code
 
@@ -270,7 +281,7 @@ describe the new contract, so that the next change starts from the truth.
 - **No new runtime dependency.** Nothing added to the CLI's dependencies. archify is
   never required.
 - **Backward compatible.** Work items already in flight keep validating. An old-shape
-  `design.md` still passes its gate (R3 AC 5).
+  `design.md` still passes its gate (R3 AC 8).
 
 ## Security considerations
 
