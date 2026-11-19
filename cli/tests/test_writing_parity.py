@@ -77,6 +77,11 @@ HUMAN_READ_TEMPLATES = [
     "pr-briefing.md",
     "decision.md",
     "capability.md",
+    # issue-543: the PR spec a maintainer of a contributing repository reads.
+    "pr-spec/requirements.md",
+    "pr-spec/design.md",
+    "pr-spec/testing-plan.md",
+    "pr-spec/tasks.md",
 ]
 
 #: Files exempt from P4. The tells catalogue quotes the tells it bans — it is the one

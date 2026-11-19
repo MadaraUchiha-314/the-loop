@@ -265,6 +265,9 @@ _EVENT_NAMES: Tuple[str, ...] = (
     "graph.pull_request_linked",
     "graph.node_skipped",
     "graph.gate_session",
+    # `the-loop graph pr-spec` recorded, or refused, a PR spec (issue-543)
+    "graph.pr_spec_recorded",
+    "graph.pr_spec_refused",
     # -- control-plane API service (source: service) — issue-161 --------------
     "api.request",
     "mcp.call",

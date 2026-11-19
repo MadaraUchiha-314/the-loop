@@ -302,6 +302,84 @@ def skip(
     }
 
 
+def pr_spec(
+    repo: str,
+    work_item: str,
+    pr: int,
+    checkout: str,
+    pr_repo: str = "",
+    disclosure_approval: str = "",
+    still_valid: str = "",
+    spec_dir: str = "",
+    client: Any = None,
+) -> Dict[str, Any]:
+    """Verify one delivery PR's PR spec and record it (issue-543).
+
+    Online, unlike every other verb here: it reads the PR, both repositories'
+    visibility and any comment URL it is given through the GitHub API, and runs
+    ``git`` in ``checkout``. It writes exactly one file, ``pr-spec.json`` in the
+    PR's inner-loop directory; the offline ``pr-spec-current`` hook gates on it.
+    """
+    from ..graph.prspec_verb import PrSpecRequest, record_pr_spec
+    from ..graph.refs import derive_ref
+    from ..graph.state import WorkItemState, utc_now
+
+    if pr is None or int(pr) <= 0:
+        raise ValueError("pr must be a pull-request number")
+    if not checkout:
+        raise ValueError("checkout must name the pull request's working tree")
+    work_item = work_item_id(work_item)
+    runtime = _runtime(repo, pr, pr_repo, work_item, spec_dir=spec_dir)
+    origin = str(runtime.config.get("originRepo") or "")
+    if not origin:
+        raise ValueError(
+            "the origin repository is unknown: run from the origin checkout, whose "
+            "`origin` remote names it"
+        )
+    item = runtime.work_item(work_item)
+    outer = WorkItemState.load(item.spec_dir, work_item)
+    host = str(runtime.config.get("githubHost") or "")
+    work_item_ref = (
+        outer.work_item
+        if ":" in str(outer.work_item or "")
+        else derive_ref(work_item, origin, host=host)
+    )
+    if client is None:
+        from ..graph.bootstrap import load_cli_config_best_effort
+        from .github_ops import _client
+
+        client = _client(load_cli_config_best_effort(), None)
+    request = PrSpecRequest(
+        work_item_id=work_item,
+        work_item_ref=work_item_ref,
+        pr_ref=str(runtime.config.get("prRef") or ""),
+        pr_repo=pr_repo or origin,
+        pr_number=int(pr),
+        origin=origin,
+        spec_dir=item.spec_dir,
+        record_dir=runtime.state_dir(item),
+        checkout=Path(checkout).expanduser(),
+        pull_requests=list(outer.pull_requests),
+        declared_repos=list(outer.repos),
+        skips=dict(outer.skips or {}),
+        authorized=list(runtime.config.get("authorizedUsers") or []),
+        disclosure_approval=disclosure_approval,
+        still_valid=still_valid,
+        now=utc_now(),
+    )
+    result = record_pr_spec(request, client)
+    from .. import eventlog
+
+    eventlog.emit(
+        "graph.pr_spec_recorded" if result.recorded else "graph.pr_spec_refused",
+        work_item=work_item_ref,
+        pull_request=request.pr_ref,
+        findings=len(result.findings),
+        required=bool(result.record.required) if result.record else None,
+    )
+    return {"workItem": work_item, "pullRequest": request.pr_ref, **result.as_dict()}
+
+
 def repos(
     repo: str,
     work_item: str,

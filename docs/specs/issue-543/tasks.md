@@ -104,7 +104,7 @@ All code lands in this repository, so no repository is declared beyond the origi
   - _Test:_ T8 — `tests/test_pr_spec.py::test_abuse_disclosure_*`,
     `::test_abuse_visibility_unknown`, `::test_abuse_comment_*` with a stubbed client
     (red→green)
-- [ ] 7. Verb `the-loop graph pr-spec`
+- [x] 7. Verb `the-loop graph pr-spec`
   - Lives in `commands/graph_cmd.py`. Flags: `--pr`, `--pr-repo`, `--checkout`,
     `--disclosure-approval`, `--still-valid`, `--json`. Exit codes: 0 recorded,
     1 findings, 2 usage.
@@ -112,14 +112,16 @@ All code lands in this repository, so no repository is declared beyond the origi
   - `spec-only` comes from `git diff --name-only <merge-base>..HEAD` in the checkout.
   - Resolving the checkout path refuses a symlink that escapes it.
   - On success it writes exactly one `pr-spec.json`, creating the inner dir if absent,
-    and emits `graph.pr_spec_recorded`; a refusal emits `graph.pr_spec_refused`.
+    and emits `graph.pr_spec_recorded`; a refusal emits `graph.pr_spec_refused`. Both
+    are registered in `eventlog.EVENT_TYPES` with their text in `strings/en.json`:
+    the event names are a closed list, not an open `graph.*` namespace.
   - With `--still-valid`, it re-records the current digest without the file checks
     being re-run against a new derivation.
   - _Depends on:_ 1, 2, 3, 4, 6
   - _Requirements:_ R1.2, R2.7, R3.1–R3.3, R4.2, R4.3, R5.2, AC1–AC5
   - _Test:_ T1 and T8 — `tests/test_pr_spec.py::test_verb_*`,
     `::test_abuse_symlink_escape`, `::test_abuse_writes_only_record` (red→green)
-- [ ] 8. API route and OpenAPI contract
+- [x] 8. API route and OpenAPI contract
   - Add `POST /api/v1/graph/pr-spec` to `api/routes.py` beside `/graph/skip`, calling
     the same function as the verb.
   - Add the path and request schema (six fields) to
@@ -144,14 +146,16 @@ All code lands in this repository, so no repository is declared beyond the origi
   - _Requirements:_ R1.5, R4.1, R4.5, R5.1
   - _Test:_ T6 and T10 — `tests/test_graph_loops.py`, `tests/test_graph_skips.py`,
     `tests/test_graph_multirepo_integration.py` (red→green)
-- [ ] 10. PR-spec templates
+- [x] 10. PR-spec templates
   - Create `skills/the-loop/templates/pr-spec/{requirements,design,testing-plan,tasks}.md`
     with PR-spec front matter (`type`, `workItem`, `pullRequest`, `sourceRevision`,
     `chainDigest`) and no `status`.
   - Each starts with a required **Context** section (work item, source revision, and
     the sibling PRs with what each delivers).
   - The required-section markers are the ones the verb's check 5 reads.
-  - Register them in `.the-loop/manifest.yaml`.
+  - No manifest entry: `.the-loop/manifest.yaml`'s `templatesDir` already covers
+    every template under `skills/the-loop/templates/`. They join
+    `test_writing_parity.py`'s human-read list instead.
   - _Depends on:_ 7 (check 5 reads their markers)
   - _Requirements:_ R2.1–R2.6, R3.5
   - _Test:_ T6 — `tests/test_manifest_schemas.py`, `tests/test_writing_parity.py`

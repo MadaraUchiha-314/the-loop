@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any, Dict
 
 import pytest
 
@@ -702,18 +703,22 @@ def disclosure(gh, url):
 def test_abuse_disclosure_same_visibility_needs_no_grant():
     gh = StubGitHub(visibility={"octo/origin": "public", "octo/api": "public"})
     verdict, problem = disclosure(gh, "")
-    assert problem is None and verdict["verdict"] == "same-or-narrower"
+    assert (
+        problem is None
+        and verdict is not None
+        and verdict["verdict"] == "same-or-narrower"
+    )
 
 
 def test_abuse_disclosure_private_to_public_without_grant_refused():
     gh = StubGitHub(visibility={"octo/origin": "private", "octo/api": "public"})
     verdict, problem = disclosure(gh, "")
-    assert verdict is None and "private" in problem and "public" in problem
+    assert verdict is None and "private" in str(problem) and "public" in str(problem)
 
 
 def test_abuse_visibility_unknown_is_refused():
     verdict, problem = disclosure(StubGitHub(fail=True), "")
-    assert verdict is None and "visibility-unknown" in problem
+    assert verdict is None and "visibility-unknown" in str(problem)
 
 
 def test_abuse_disclosure_with_authorized_grant_recorded():
@@ -741,7 +746,7 @@ def test_abuse_disclosure_grant_by_unauthorized_author_refused():
         comments={("octo/origin", 15): [comment(url, author="mallory")]},
     )
     verdict, problem = disclosure(gh, url)
-    assert verdict is None and "not authorized" in problem
+    assert verdict is None and "not authorized" in str(problem)
 
 
 def test_abuse_comment_marked_as_agent_refused():
@@ -755,7 +760,7 @@ def test_abuse_comment_marked_as_agent_refused():
         },
     )
     verdict, problem = disclosure(gh, url)
-    assert verdict is None and "the-loop's own" in problem
+    assert verdict is None and "the-loop's own" in str(problem)
 
 
 def test_abuse_disclosure_grant_naming_another_repo_refused():
@@ -767,7 +772,7 @@ def test_abuse_disclosure_grant_naming_another_repo_refused():
         },
     )
     verdict, problem = disclosure(gh, url)
-    assert verdict is None and "allow-disclosure octo/api" in problem
+    assert verdict is None and "allow-disclosure octo/api" in str(problem)
 
 
 def test_abuse_comment_on_another_issue_refused():
@@ -777,7 +782,7 @@ def test_abuse_comment_on_another_issue_refused():
         comments={("octo/origin", 16): [comment(url)]},
     )
     verdict, problem = disclosure(gh, url)
-    assert verdict is None and "not a comment on" in problem
+    assert verdict is None and "not a comment on" in str(problem)
     assert not any(c[0] == "list_comments" for c in gh.calls)
 
 
@@ -788,7 +793,7 @@ def test_abuse_comment_url_not_found_refused():
         comments={("octo/origin", 15): [comment(WI_URL + "#issuecomment-1")]},
     )
     verdict, problem = disclosure(gh, url)
-    assert verdict is None and "not found" in problem
+    assert verdict is None and "not found" in str(problem)
 
 
 @pytest.mark.parametrize(
@@ -813,5 +818,356 @@ def test_still_valid_comment_on_this_pr_authorized():
     found, problem = pg.authorize_comment(
         gh, url, expected="github:octo/api#12", authorized=["owner"]
     )
-    assert problem is None and found["by"] == "@owner"
+    assert problem is None and found is not None and found["by"] == "@owner"
     assert ("list_comments", "octo", "api", 12, True) in gh.calls
+
+
+# -- task 7: the verb --------------------------------------------------------
+
+import subprocess  # noqa: E402
+
+from the_loop.graph.prspec_verb import (  # noqa: E402
+    REQUIRED_SECTIONS,
+    PrSpecRequest,
+    record_pr_spec,
+)
+
+WI_REF = "github:octo/origin#15"
+API_PR = "github:octo/api#12"
+
+
+def git(cwd, *args):
+    subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True)
+
+
+def pr_checkout(tmp_path, repo="octo/api", branch="feature"):
+    co = tmp_path / "pr-checkout"
+    co.mkdir()
+    git(co, "init", "-q", "-b", "main")
+    git(co, "config", "user.email", "t@example.invalid")
+    git(co, "config", "user.name", "t")
+    git(co, "remote", "add", "origin", f"https://github.com/{repo}.git")
+    (co / "README").write_text("x\n")
+    git(co, "add", ".")
+    git(co, "commit", "-q", "-m", "init")
+    git(co, "update-ref", "refs/remotes/origin/main", "HEAD")
+    git(co, "checkout", "-q", "-b", branch)
+    return co
+
+
+def pr_spec_text(name, kind, digest, pr_ref=API_PR, cite="[wi:R1]"):
+    extra = {
+        "requirements.md": f"## Requirements\n\n### PR-R1 — the API part\n\nDelivers {cite}.\n",
+        "design.md": f"## Design\n\nBuilt as in {cite} and [wi:design#security-design].\n",
+        "testing-plan.md": (
+            "## Test matrix\n\n| # | Type | Applies? | Scope | Where |\n|---|---|---|---|---|\n"
+            f"| P1 | Unit | yes | proves {cite} [wi:TP-T1] | pytest |\n"
+        ),
+        "tasks.md": f"## Tasks\n\n- [ ] 1. Do it {cite} [wi:task-1]\n",
+    }[name]
+    return (
+        f'---\ntype: {kind}\nworkItem: "{WI_REF}"\npullRequest: "{pr_ref}"\n'
+        f'sourceRevision: "abc1234"\nchainDigest: "{digest}"\n---\n\n'
+        f"# PR spec\n\n## Context\n\nPart of {WI_REF}; sibling github:octo/origin#2.\n\n{extra}"
+    )
+
+
+def write_pr_spec(co, spec, key="octo__origin__issue-15", number=12, **kw):
+    target = co / "docs" / "specs" / key / f"pr-{number}"
+    target.mkdir(parents=True, exist_ok=True)
+    digest = prspec.chain_digest(spec)
+    for name, kind in prspec.PR_SPEC_FILES:
+        (target / name).write_text(
+            pr_spec_text(name, kind, digest, **kw), encoding="utf-8"
+        )
+    return target
+
+
+class VerbGitHub(StubGitHub):
+    def __init__(self, head="feature", base="main", **kw):
+        super().__init__(**kw)
+        self.head, self.base = head, base
+
+    def get_pull(self, owner, repo, number, host=""):
+        return {"head": {"ref": self.head}, "base": {"ref": self.base}}
+
+
+def verb_request(tmp_path, co, **over):
+    spec = tmp_path / "origin" / "docs" / "specs" / "issue-15"
+    if not spec.exists():
+        write_chain(spec)
+    fields: Dict[str, Any] = dict(
+        work_item_id="issue-15",
+        work_item_ref=WI_REF,
+        pr_ref=API_PR,
+        pr_repo="octo/api",
+        pr_number=12,
+        origin="octo/origin",
+        spec_dir=spec,
+        record_dir=spec / "pr-loops" / "octo__api" / "pr-12",
+        checkout=co,
+        pull_requests=TWO,
+        authorized=["owner"],
+        now="2026-11-19T00:00:00+00:00",
+    )
+    fields.update(over)
+    return PrSpecRequest(**fields)
+
+
+def rec(result):
+    """The recorded record, narrowed for the type checker."""
+    assert result.record is not None
+    return result.record
+
+
+PUBLIC = {"octo/origin": "public", "octo/api": "public"}
+
+
+def test_verb_records_a_complete_pr_spec(tmp_path):
+    co = pr_checkout(tmp_path)
+    req = verb_request(tmp_path, co)
+    write_pr_spec(co, req.spec_dir)
+    result = record_pr_spec(req, VerbGitHub(visibility=PUBLIC))
+    assert result.findings == [] and result.recorded
+    data = json.loads((req.record_dir / "pr-spec.json").read_text())
+    assert data["required"] is True and data["reason"] == "multi-pr"
+    assert data["chainDigest"] == prspec.chain_digest(req.spec_dir)
+    assert data["path"] == "docs/specs/octo__origin__issue-15/pr-12"
+    assert data["sourceRevision"] == "abc1234"
+    assert data["citations"] == 7
+    assert data["disclosure"]["verdict"] == "same-or-narrower"
+
+
+def test_verb_record_then_hook_passes(tmp_path):
+    co = pr_checkout(tmp_path)
+    req = verb_request(tmp_path, co)
+    write_pr_spec(co, req.spec_dir)
+    record_pr_spec(req, VerbGitHub(visibility=PUBLIC))
+    state = {"workItem": WI_REF, "currentNode": "implementation", "pullRequests": TWO}
+    (req.spec_dir / "work-item-state.json").write_text(json.dumps(state))
+    ctx = HookContext(
+        work_item=WorkItem(ref=API_PR, id="issue-15", spec_dir=req.spec_dir),
+        node={"id": "pr-spec"},
+        boundary="exit",
+        repo=tmp_path,
+        config={"originRepo": ORIGIN, "prRef": API_PR},
+    )
+    assert pr_spec_current(ctx).status == "pass"
+
+
+def test_verb_single_pr_records_not_required(tmp_path):
+    co = pr_checkout(tmp_path, repo="octo/origin")
+    req = verb_request(
+        tmp_path,
+        co,
+        pr_repo="octo/origin",
+        pr_ref="github:octo/origin#2",
+        pr_number=2,
+        pull_requests=[pr_row(ORIGIN, 2)],
+        record_dir=tmp_path / "rec",
+    )
+    result = record_pr_spec(req, VerbGitHub())
+    assert result.recorded and rec(result).reason == "single-pr"
+
+
+def test_verb_spec_only_origin_pr_records_not_required(tmp_path):
+    co = pr_checkout(tmp_path, repo="octo/origin")
+    (co / "docs" / "specs" / "issue-15").mkdir(parents=True)
+    (co / "docs" / "specs" / "issue-15" / "design.md").write_text("x\n")
+    git(co, "add", ".")
+    git(co, "commit", "-q", "-m", "spec")
+    req = verb_request(
+        tmp_path,
+        co,
+        pr_repo="octo/origin",
+        pr_ref="github:octo/origin#2",
+        pr_number=2,
+        record_dir=tmp_path / "rec",
+    )
+    result = record_pr_spec(req, VerbGitHub())
+    assert result.recorded and rec(result).reason == "spec-only"
+
+
+def test_verb_code_change_on_origin_pr_is_not_spec_only(tmp_path):
+    co = pr_checkout(tmp_path, repo="octo/origin")
+    (co / "code.py").write_text("x = 1\n")
+    git(co, "add", ".")
+    git(co, "commit", "-q", "-m", "code")
+    req = verb_request(
+        tmp_path,
+        co,
+        pr_repo="octo/origin",
+        pr_ref="github:octo/origin#2",
+        pr_number=2,
+        record_dir=tmp_path / "rec",
+    )
+    result = record_pr_spec(req, VerbGitHub())
+    assert not result.recorded
+    assert any("missing" in f.text for f in result.findings)
+
+
+def test_verb_wrong_remote_refused(tmp_path):
+    co = pr_checkout(tmp_path, repo="octo/other")
+    result = record_pr_spec(verb_request(tmp_path, co), VerbGitHub())
+    assert not result.recorded and "origin" in result.findings[0].text
+
+
+def test_verb_wrong_branch_refused(tmp_path):
+    co = pr_checkout(tmp_path)
+    result = record_pr_spec(verb_request(tmp_path, co), VerbGitHub(head="other"))
+    assert not result.recorded and "branch" in result.findings[0].text
+
+
+def test_verb_unapproved_chain_refused(tmp_path):
+    co = pr_checkout(tmp_path)
+    req = verb_request(tmp_path, co)
+    design = req.spec_dir / "design.md"
+    design.write_text(design.read_text().replace("status: approved", "status: draft"))
+    write_pr_spec(co, req.spec_dir)
+    result = record_pr_spec(req, VerbGitHub(visibility=PUBLIC))
+    assert not result.recorded
+    assert any(
+        f.file == "design.md" and "not approved" in f.text for f in result.findings
+    )
+
+
+def test_verb_skipped_gate_allows_unapproved_chain(tmp_path):
+    co = pr_checkout(tmp_path)
+    req = verb_request(tmp_path, co, skips={"design-approval": {"via": "declared"}})
+    design = req.spec_dir / "design.md"
+    design.write_text(design.read_text().replace("status: approved", "status: draft"))
+    write_pr_spec(co, req.spec_dir)
+    assert record_pr_spec(req, VerbGitHub(visibility=PUBLIC)).recorded
+
+
+def test_verb_reports_every_finding_at_once(tmp_path):
+    co = pr_checkout(tmp_path)
+    req = verb_request(tmp_path, co)
+    target = write_pr_spec(co, req.spec_dir, cite="[wi:R9]")
+    (target / "tasks.md").unlink()
+    text = (
+        (target / "design.md")
+        .read_text()
+        .replace("---\n\n#", "status: draft\n---\n\n#", 1)
+    )
+    (target / "design.md").write_text(text)
+    result = record_pr_spec(req, VerbGitHub(visibility=PUBLIC))
+    texts = " | ".join(f.render() for f in result.findings)
+    assert "tasks.md: missing" in texts
+    assert "carries no `status`" in texts
+    assert "[wi:R9]" in texts
+    assert not (req.record_dir / "pr-spec.json").exists()
+
+
+def test_verb_stale_front_matter_digest_refused(tmp_path):
+    co = pr_checkout(tmp_path)
+    req = verb_request(tmp_path, co)
+    write_pr_spec(co, req.spec_dir)
+    with (req.spec_dir / "design.md").open("a") as fh:
+        fh.write("\nchanged\n")
+    result = record_pr_spec(req, VerbGitHub(visibility=PUBLIC))
+    assert any("chainDigest" in f.text for f in result.findings)
+
+
+def test_verb_missing_section_refused(tmp_path):
+    co = pr_checkout(tmp_path)
+    req = verb_request(tmp_path, co)
+    target = write_pr_spec(co, req.spec_dir)
+    text = (target / "requirements.md").read_text()
+    (target / "requirements.md").write_text(
+        text.replace("## Context\n\nPart of", "## Context\n\n## Other\n\nPart of")
+    )
+    result = record_pr_spec(req, VerbGitHub(visibility=PUBLIC))
+    assert any("`Context`" in f.text for f in result.findings)
+
+
+def test_abuse_verb_private_to_public_refused_then_granted(tmp_path):
+    co = pr_checkout(tmp_path)
+    req = verb_request(tmp_path, co)
+    write_pr_spec(co, req.spec_dir)
+    vis = {"octo/origin": "private", "octo/api": "public"}
+    refused = record_pr_spec(req, VerbGitHub(visibility=vis))
+    assert not refused.recorded and "disclosure refused" in refused.findings[0].text
+    url = WI_URL + "#issuecomment-1"
+    gh = VerbGitHub(visibility=vis, comments={("octo/origin", 15): [comment(url)]})
+    granted = record_pr_spec(verb_request(tmp_path, co, disclosure_approval=url), gh)
+    assert granted.recorded and (rec(granted).disclosure or {}).get("by") == "@owner"
+
+
+def test_abuse_verb_seeded_secret_refused(tmp_path):
+    co = pr_checkout(tmp_path)
+    req = verb_request(tmp_path, co)
+    target = write_pr_spec(co, req.spec_dir)
+    with (target / "design.md").open("a") as fh:
+        fh.write("token ghp_" + "A" * 36 + "\n")
+    result = record_pr_spec(req, VerbGitHub(visibility=PUBLIC))
+    assert any("GitHub token" in f.text for f in result.findings)
+
+
+def test_abuse_symlink_escape(tmp_path):
+    co = pr_checkout(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (co / "docs").symlink_to(outside, target_is_directory=True)
+    req = verb_request(tmp_path, co)
+    result = record_pr_spec(req, VerbGitHub(visibility=PUBLIC))
+    assert any("outside the checkout" in f.text for f in result.findings)
+
+
+def test_abuse_writes_only_record(tmp_path):
+    co = pr_checkout(tmp_path)
+    req = verb_request(tmp_path, co)
+    write_pr_spec(co, req.spec_dir)
+
+    def files():
+        return {p for p in tmp_path.rglob("*") if p.is_file() and ".git" not in p.parts}
+
+    before = files()
+    assert record_pr_spec(req, VerbGitHub(visibility=PUBLIC)).recorded
+    assert files() - before == {req.record_dir / "pr-spec.json"}
+
+
+def test_verb_still_valid_rerecords_digest(tmp_path):
+    co = pr_checkout(tmp_path)
+    req = verb_request(tmp_path, co)
+    write_pr_spec(co, req.spec_dir)
+    record_pr_spec(req, VerbGitHub(visibility=PUBLIC))
+    with (req.spec_dir / "design.md").open("a") as fh:
+        fh.write("\nchanged\n")
+    url = PR_URL + "#issuecomment-5"
+    gh = VerbGitHub(
+        visibility=PUBLIC, comments={("octo/api", 12): [comment(url, body="still ok")]}
+    )
+    result = record_pr_spec(verb_request(tmp_path, co, still_valid=url), gh)
+    assert result.recorded
+    assert rec(result).chain_digest == prspec.chain_digest(req.spec_dir)
+    assert (rec(result).still_valid or {}).get("by") == "@owner"
+
+
+def test_verb_still_valid_by_unauthorized_refused(tmp_path):
+    co = pr_checkout(tmp_path)
+    req = verb_request(tmp_path, co)
+    write_pr_spec(co, req.spec_dir)
+    record_pr_spec(req, VerbGitHub(visibility=PUBLIC))
+    url = PR_URL + "#issuecomment-5"
+    gh = VerbGitHub(comments={("octo/api", 12): [comment(url, author="mallory")]})
+    assert not record_pr_spec(verb_request(tmp_path, co, still_valid=url), gh).recorded
+
+
+def test_required_sections_match_the_templates():
+    root = (
+        Path(__file__).resolve().parents[2]
+        / "skills"
+        / "the-loop"
+        / "templates"
+        / "pr-spec"
+    )
+    for name, headings in REQUIRED_SECTIONS.items():
+        text = (root / name).read_text(encoding="utf-8")
+        for heading in headings:
+            assert f"\n## {heading}\n" in text, (name, heading)
+        front, _ = __import__(
+            "the_loop.graph.frontmatter", fromlist=["x"]
+        ).split_front_matter(text)
+        assert "status" not in front
+        assert front["type"] == dict(prspec.PR_SPEC_FILES)[name]
