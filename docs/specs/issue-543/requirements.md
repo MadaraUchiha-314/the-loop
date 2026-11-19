@@ -2,8 +2,8 @@
 type: requirements
 phase: requirements-definition
 workItem: "github:MadaraUchiha-314/the-loop#543"
-status: draft                # draft | in-review | approved — locked by the requirements-approval gate, never by the session
-approvedBy: []
+status: approved             # draft | in-review | approved — locked by the requirements-approval gate, never by the session
+approvedBy: ["MadaraUchiha-314"]
 collaborators: [product-manager, architect, engineer]
 overrides: {}
 riskTier: 3                  # inner-loop graph + one new gate hook + skill/template text; raised to 4 if design touches a schema
@@ -108,6 +108,9 @@ that PR to say in its own diff what it is for, so that I can review it without l
 5. WHERE a declared skip removes the inner loop's PR-spec step, the system SHALL record it
    as *skipped by declaration* with its provenance, as every other declared skip is, and
    SHALL NOT report it as a pass.
+6. WHEN the origin repository's own delivery PR belongs to a multi-PR work item THEN the
+   system SHALL require a PR spec of it too, as of any other delivery PR (resolved
+   question 3).
 
 ### Requirement 2 — What a PR spec contains
 
@@ -182,6 +185,8 @@ that it exists because the process requires it, not because a session remembered
    verdict the same way it reports every other node's.
 6. WHEN the reviewer briefing of a delivery PR is written THEN it SHALL link the PR spec
    first, before the work-item chain.
+7. WHEN a delivery PR merges THEN its PR spec SHALL merge with it and stay in that
+   repository as the record of the change's scope (resolved question 1).
 
 ### Requirement 5 — A PR spec that falls behind its work item is caught
 
@@ -284,21 +289,28 @@ that the documented process matches the one the graph runs.
 - **Contribution, ad-hoc and review loops.** They own no work-item chain to derive from.
 - **Back-filling PR specs** for work items that completed before this ships.
 
-## Open questions
+## Resolved questions
 
-Posted on the work item for the reviewer to settle at the `requirements-approval` gate;
-the defaults above stand until answered.
+Settled by @MadaraUchiha-314 on PR #546 at the `requirements-approval` gate; each kept
+the default.
 
-1. **Does the PR spec merge with the PR, or is it removed before merge?** Default:
-   it merges, as the contributing repository's record of why the change was made. The
-   alternative keeps contributing repositories free of the-loop's files at the cost of
-   losing that record after merge.
-2. **Four files, or one?** Default: four, matching the ticket ("scoped requirements.md,
-   design.md etc"). One combined `spec.md` would be lighter for a small PR.
-3. **Should the origin repository's own delivery PR in a multi-PR work item carry a PR
-   spec too** (Requirement 1.1 says yes), given the full chain is in the same repository?
+1. **Does the PR spec merge with the PR?** Yes — it merges and stays in the
+   contributing repository ([thread](https://github.com/MadaraUchiha-314/the-loop/pull/546#discussion_r4632992038)).
+   Recorded as AC 4.7.
+2. **Four files, or one?** Four
+   ([thread](https://github.com/MadaraUchiha-314/the-loop/pull/546#discussion_r4632994097)),
+   as AC 2.1 states.
+3. **Does the origin repository's own delivery PR carry a PR spec?** Yes
+   ([thread](https://github.com/MadaraUchiha-314/the-loop/pull/546#discussion_r4632997244)).
+   Recorded as AC 1.6.
 
 ## Review comments
 
 > Appended by the-loop's `record-feedback` hook when a human gate approves with
 > comments (issue-109). Append-only and attributed.
+
+### 2026-11-19 — approved
+
+**@MadaraUchiha-314** wrote:
+
+LGTM. Minor comments
