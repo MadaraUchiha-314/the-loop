@@ -590,7 +590,7 @@ components:
           type: string
           title: Method
           maxLength: 64
-          description: 'The Slack Web API method (`chat.postMessage`); one of the fourteen the instance calls,
+          description: 'The Slack Web API method (`chat.postMessage`); one of the fifteen the instance calls,
             else 422 method-not-allowed and nothing is sent.'
         params:
           type: object

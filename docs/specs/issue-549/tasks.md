@@ -165,7 +165,7 @@ Tests are named so the T8 `-k` filter in `testing-plan.md` finds the abuse cases
   - _Test:_ T1 — `tests/test_channels_status.py::test_state_per_event`,
     `test_one_reaction_old_removed`, `test_never_removes_foreign_reaction`,
     `test_failure_does_not_fail_delivery` (red→green)
-- [ ] 13. Gateway allow-list gains `reactions.remove` and `chat.delete`.
+- [x] 13. Gateway allow-list gains `reactions.remove` and `chat.delete`.
   - `gateway/slack_proxy.py` and `channels/slack_gateway.py`.
   - _Depends on:_ none
   - _Requirements:_ R6.2, R8
