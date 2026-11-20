@@ -172,12 +172,26 @@ def relay_body(event: Event) -> str:
 _MARKDOWN_ACTIVE = re.compile(r"([\\`*_\[\]<>#|~!])")
 
 
+#: What makes a tracker or a chat client link a bare address by itself.
+_AUTOLINK_START = re.compile(r"(?i)(://|(?<=www)\.)")
+
+
+def break_autolinks(text: str) -> str:
+    """``text`` with a zero-width space inside every `://` and after every
+    `www`, so a bare address is read and never linked. The words are unchanged
+    to the eye."""
+    return _AUTOLINK_START.sub(
+        lambda match: ":\u200b//" if match.group(1) == "://" else "\u200b.", text
+    )
+
+
 def _inert(text: str) -> str:
     """``text`` on one line, as words only: no marker or envelope, no markup, no
-    link, and no mention that notifies anyone (issue-551, abuse case 6)."""
+    link — written out or bare — and no mention that notifies anyone."""
     line = " ".join(neutralise_broadcasts(strip_html_comments(text)).split())
     # A backslash does not stop GitHub's mention, so the `@` is cut from the name.
-    return _MARKDOWN_ACTIVE.sub(r"\\\1", line).replace("@", "@\u200b")
+    line = _MARKDOWN_ACTIVE.sub(r"\\\1", line).replace("@", "@\u200b")
+    return break_autolinks(line)
 
 
 def default_block(event: Event) -> str:

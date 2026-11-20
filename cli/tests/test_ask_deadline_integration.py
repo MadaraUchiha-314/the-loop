@@ -494,7 +494,7 @@ def test_abuse_a_default_with_markup_is_quoted_as_words_on_github(
     quoted = body.partition("**Default:** “")[2].partition("”\n**Taken at:**")[0]
     assert "\n" not in quoted
     assert "@octocat" not in quoted and "@​octocat" in quoted
-    assert "\\[approve\\](https://evil.example/x)" in quoted
+    assert "\\[approve\\](https:\u200b//evil.example/x)" in quoted
     assert "\\*\\*now\\*\\*" in quoted
     assert "<!" not in quoted
     assert body.count(SELF_COMMENT_MARKER) == 1

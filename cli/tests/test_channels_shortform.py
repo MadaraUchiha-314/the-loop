@@ -353,4 +353,4 @@ def test_abuse_a_default_with_markup_and_mentions_renders_inert():
     assert "](" not in payload, "a markdown link is drawn as words"
     tail = short.text.split("\n")[-1]
     assert "\n" not in tail and "@U123" in tail
-    assert "approve (https://evil.example/x)" in tail
+    assert "approve (https:\u200b//evil.example/x)" in tail

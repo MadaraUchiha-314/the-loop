@@ -33,6 +33,7 @@ WATCHER_EVENTS = (
     "session.ask_default_taken",
     "session.ask_reminded",
 )
+BARE = "see https://evil.example/x and WWW.evil.example *approved* _by_ ~all~ `done` **merged**"
 HOSTILE = (
     "go <!here> <@U123> [approve](https://evil.example/x) "
     f"<!-- hidden --> {SELF_COMMENT_MARKER} **now**"
@@ -423,9 +424,24 @@ def test_abuse_a_default_with_markup_is_inert_in_the_github_comment():
     assert "<!here>" not in quoted and "<@U123>" not in quoted
     assert "<!--" not in quoted and "hidden" not in quoted
     assert "@U123" not in quoted and "@​U123" in quoted
-    assert "\\[approve\\](https://evil.example/x)" in quoted
+    assert "\\[approve\\](https:\u200b//evil.example/x)" in quoted
     assert "\\*\\*now\\*\\*" in quoted
     assert body.count(SELF_COMMENT_MARKER) == 1
+
+
+def test_abuse_a_bare_address_in_a_default_is_no_link_on_github():
+    """
+    Feature: A question can carry a default and a deadline
+    Scenario: the default answer holds a bare web address
+      Then neither `https://…` nor `www.…` is left in a form GitHub links
+
+    Requirement: docs/specs/issue-551/requirements.md#security-considerations
+    """
+    body = ledger_body(default_taken(default=BARE), {})
+    quoted = body.partition("stated default: “")[2].partition("”\n\nThis is not")[0]
+    assert "://" not in quoted and "www." not in quoted.lower()
+    assert "https:\u200b//evil.example/x" in quoted
+    assert "WWW\u200b.evil.example" in quoted
 
 
 def test_abuse_a_default_with_markup_is_inert_in_slack(tmp_path):
@@ -438,8 +454,36 @@ def test_abuse_a_default_with_markup_is_inert_in_slack(tmp_path):
         assert "<!here>" not in drawn and "<@U123>" not in drawn
         assert "<!--" not in drawn and "the-loop:agent-comment" not in drawn
         assert "<https://evil.example/x|approve>" not in drawn
-    assert "approve (https://evil.example/x)" in line
+    assert "approve (https:\u200b//evil.example/x)" in line
     assert "@U123" in line
+
+
+def test_abuse_a_bare_address_and_markup_in_a_default_are_words_in_slack(tmp_path):
+    """
+    Feature: A question can carry a default and a deadline
+    Scenario: the default answer holds a bare web address and Slack markup
+      When the question is posted in Slack and its default is later taken
+      Then no address is left in a form Slack links
+      And none of `*`, `_`, `~` and the backtick is left to style the quote
+
+    Requirement: docs/specs/issue-551/requirements.md#security-considerations
+    """
+    _, client, bot = room(tmp_path)
+    bot.post(
+        question(
+            default=BARE, default_at="2026-11-20T08:47:00.000Z", default_after="1800"
+        )
+    )
+    asked = client.posted[-1]["text"].rpartition("\n")[2]
+    bot.post(default_taken(default=BARE))
+    ((_, _, _, blocks),) = client.updates
+    taken = blocks[1]["elements"][0]["text"]
+    for drawn in (asked, taken):
+        quoted = drawn.partition("“")[2].rpartition("”")[0]
+        assert "evil.example" in quoted, drawn
+        assert "://" not in quoted and "www." not in quoted.lower()
+        assert not set("*_~`") & set(quoted)
+        assert "merged" in quoted and "approved" in quoted and "done" in quoted
 
 
 def test_abuse_a_default_of_approved_answers_no_human_gate(tmp_path):

@@ -264,14 +264,23 @@ def default_line(event: Any) -> str:
     )
 
 
+#: mrkdwn has no escape character, so the four that style text are drawn as
+#: their look-alikes: the words read the same and style nothing.
+_MRKDWN_INERT = str.maketrans({"*": "∗", "_": "ˍ", "~": "∼", "`": "ˋ"})
+
+
 def quoted_default(text: str) -> str:
-    """A default answer as Slack may quote it (issue-551, abuse case 6): one
-    line, within :data:`DEFAULT_QUOTE_CHARS`, its links drawn as words, defused.
+    """A default answer as Slack may quote it: one line, within
+    :data:`DEFAULT_QUOTE_CHARS`, its links drawn as words, defused, with no
+    bare address Slack would link and no character that styles the quote.
     ``""`` for an empty one."""
+    from .bodies import break_autolinks  # bodies imports this module
+
     default = " ".join(text.split())
     if len(default) > DEFAULT_QUOTE_CHARS:
         default = default[: DEFAULT_QUOTE_CHARS - 1].rstrip() + "…"
-    return defuse(MARKDOWN_LINK_RE.sub(r"\1 (\2\3)", default))
+    default = defuse(MARKDOWN_LINK_RE.sub(r"\1 (\2\3)", default))
+    return break_autolinks(default).translate(_MRKDWN_INERT)
 
 
 def build_short_form(
