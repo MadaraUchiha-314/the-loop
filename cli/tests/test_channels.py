@@ -37,7 +37,8 @@ from the_loop.channels.slack import (
     SlackChannelConfig,
     SlackReactionConfig,
 )
-from the_loop.channels.state import THREAD_CAP, ChannelState
+from the_loop.channels.state import THREAD_CAP, ChannelState, ChannelStores
+from the_loop.graph.refs import identity_key
 from the_loop.control import ControlConfig, parse_command
 from conftest import _state_with_stores
 
@@ -52,11 +53,15 @@ class FakeSlackClient:
         self.replies = replies or {}  # thread ts -> [message dict, ...]
         self.history = []  # top-level messages, for the kickoff read
         self.updates = []  # (channel, ts, text, blocks) — issue-393 edit-in-place
+        self.unfurls = []  # every post's other keyword arguments — issue-549 R5
+        self.deleted = []  # (channel, ts) — issue-549 R6.2
+        self.removed = []  # (channel, ts, name) — issue-549 R8.5
 
-    def chat_postMessage(self, *, channel, text, thread_ts=None, blocks=None):
+    def chat_postMessage(self, *, channel, text, thread_ts=None, blocks=None, **unfurl):
         self.posted.append(
             {"channel": channel, "text": text, "thread_ts": thread_ts, "blocks": blocks}
         )
+        self.unfurls.append(unfurl)
         return {"ok": True, "channel": channel, "ts": f"1700.{len(self.posted):06d}"}
 
     def chat_update(self, *, channel, ts, text, blocks=None):
@@ -78,6 +83,21 @@ class FakeSlackClient:
     def reactions_add(self, *, channel, name, timestamp):
         self.reactions.append((channel, timestamp, name))
         return {"ok": True}
+
+    def reactions_remove(self, *, channel, name, timestamp):
+        self.removed.append((channel, timestamp, name))
+        return {"ok": True}
+
+    def chat_delete(self, *, channel, ts):
+        self.deleted.append((channel, ts))
+        return {"ok": True}
+
+    @property
+    def acks(self):
+        """The acknowledgement reactions (issue-325) alone: every reaction but the
+        status reactor's, which sit on the bot's own messages (issue-549 R8)."""
+        own = {f"1700.{n:06d}" for n in range(1, len(self.posted) + 1)}
+        return [reaction for reaction in self.reactions if reaction[1] not in own]
 
 
 def cli_config(tmp_path, authorized=("UHUMAN",), **slack):
@@ -142,8 +162,9 @@ def test_config_defaults_match_the_schema():
     assert config.verbosity == slack["verbosity"]["default"]
     assert list(config.subscribe) == slack["subscribe"]["default"]
     assert list(config.publish) == slack["publish"]["default"]
-    assert config.max_chars == slack["maxChars"]["default"]
-    assert config.long_messages == slack["longMessages"]["default"] == "digest"
+    # Deprecated and ignored since issue-549: no schema default, no config field.
+    assert slack["maxChars"]["deprecated"] and slack["longMessages"]["deprecated"]
+    assert not hasattr(config, "max_chars") and not hasattr(config, "long_messages")
     assert (
         config.room_style
         == slack["room"]["properties"]["style"]["default"]
@@ -286,6 +307,95 @@ def test_state_caps_threads_dropping_the_oldest(tmp_path):
     assert (
         state.work_item_for(f"1700.{THREAD_CAP + 4}") == f"github:o/r#{THREAD_CAP + 4}"
     )
+
+
+# -- one work item whatever the owner/repo casing (issue-549 R11.2, R11.3) ------
+
+REGISTERED = "github:MadaraUchiha-314/the-loop#549"
+LOWERCASED = "github:madarauchiha-314/the-loop#549"
+
+
+def test_casefold_binding_first_wins(tmp_path):
+    """Two conversations that differ only in case: the next message goes to the
+    one bound first, and the other stays readable and attributed (R11.3)."""
+    path = tmp_path / "state" / "channels" / "slack.json"
+    with ChannelState.locked(path, ChannelStores.beside(path)) as state:
+        state.bind("1700.1", REGISTERED, "C1")
+        state.save(path)
+    with ChannelState.locked(path, ChannelStores.beside(path)) as state:
+        # What the bug wrote: a second root under the lowercased spelling.
+        state.conversations[LOWERCASED] = dict(state.conversations[REGISTERED])
+        state.conversations[LOWERCASED].update(
+            thread="1800.1", opened="2999-01-01T00:00:00Z"
+        )
+        state.threads["1800.1"] = {"workItem": LOWERCASED, "channel": "C1"}
+        state._dirty_bindings.add(LOWERCASED)
+        state.save(path)
+    reloaded = _state_with_stores(path)
+    for spelling in (REGISTERED, LOWERCASED):
+        assert reloaded.conversation_for(spelling) == ("C1", "1700.1")
+        assert reloaded.thread_for(spelling) == ("C1", "1700.1")
+    # The second thread is still read and still names the same work item.
+    assert identity_key(reloaded.work_item_for("1800.1") or "") == identity_key(
+        REGISTERED
+    )
+
+
+def test_casefold_binding_rebind_keeps_the_first_spelling(tmp_path):
+    """A bind under the other casing writes the first-bound record; it never opens
+    a second conversation for the work item."""
+    state = ChannelState.load(tmp_path / "slack.json")
+    state.bind("1700.1", REGISTERED, "C1")
+    state.bind("1900.1", LOWERCASED, "C2")
+    assert list(state.conversations) == [REGISTERED]
+    assert state.conversation_for(REGISTERED) == ("C2", "1900.1")
+
+
+def test_casefold_delivery_memory_found_and_merged(tmp_path):
+    """A delivery record under another casing is found on read and merged into
+    one on the next write."""
+    state = ChannelState.load(tmp_path / "slack.json")
+    state.bind("1700.1", REGISTERED, "C1")
+    # What the bug wrote: the gate's memory under the lowercased spelling.
+    state.delivery[LOWERCASED] = {"gateTs": {"design-approval": "1800.2"}}
+    assert state.delivery_for(REGISTERED)["gateTs"] == {"design-approval": "1800.2"}
+    state.remember_delivery(REGISTERED, gateTs={"requirements-approval": "1700.3"})
+    assert list(state.delivery) == [REGISTERED]
+    assert state.delivery_for(LOWERCASED)["gateTs"] == {
+        "design-approval": "1800.2",
+        "requirements-approval": "1700.3",
+    }
+
+
+def test_casefold_declaration_found_under_the_other_spelling(tmp_path):
+    from the_loop.workchannels import CollaborationChannelStore
+
+    path = tmp_path / "state" / "channels" / "slack.json"
+    stores = ChannelStores.beside(path)
+    CollaborationChannelStore(stores.portable_dir).add(REGISTERED, "slack@C0ROOM")
+    assert stores.declared(LOWERCASED) == "C0ROOM"
+    assert stores.declared(REGISTERED) == "C0ROOM"
+
+
+def test_casefold_declarations_of_one_item_are_not_contested(tmp_path):
+    """The same room declared under both casings is one work item's room, not a
+    room two work items claim: messages there are still attributed."""
+    from the_loop.workchannels import CollaborationChannelStore
+
+    path = tmp_path / "state" / "channels" / "slack.json"
+    stores = ChannelStores.beside(path)
+    declarations = CollaborationChannelStore(stores.portable_dir)
+    declarations.add(REGISTERED, "slack@C0ROOM")
+    declarations.add(LOWERCASED, "slack@C0ROOM")
+    assert identity_key(stores.declared_work_item("C0ROOM")) == identity_key(REGISTERED)
+    assert identity_key(stores.declared_targets()["C0ROOM"]) == identity_key(REGISTERED)
+
+
+def test_casefold_binding_never_crosses_hosts_or_numbers(tmp_path):
+    state = ChannelState.load(tmp_path / "slack.json")
+    state.bind("1700.1", "github:Octo/Repo#7", "C1")
+    assert state.conversation_for("github:octo/repo#8") is None
+    assert state.conversation_for("github:ghe.example/octo/repo#7") is None
 
 
 # -- fetching replies (R4.4–R4.6) -----------------------------------------------
@@ -819,8 +929,12 @@ def test_the_first_post_opens_a_root_and_replies_into_it(tmp_path, monkeypatch):
     assert root["blocks"][-1]["elements"][0]["url"] == "https://github.com/o/r/issues/7"
     assert "github:o/r#7" in root["text"]
     assert reply["thread_ts"] == "1700.000001" == result.thread
-    assert reply["blocks"][0]["text"]["text"].startswith("Question from the agent")
-    assert "approach A or B" in reply["text"]
+    # issue-549 R3.4: no summary, so the short form is built from the question;
+    # R7.1: an awaiting message opens with the authorized user's mention
+    assert reply["blocks"][0]["text"]["text"].startswith(
+        "👋 <@UHUMAN>\nShould I use approach A or B?"
+    )
+    assert reply["text"] == reply["blocks"][0]["text"]["text"]  # R2.7
     record = _conversation(_state_with_stores(_state_path(tmp_path)), "github:o/r#7")
     assert record == {
         "channel": "D123",
@@ -829,6 +943,38 @@ def test_the_first_post_opens_a_root_and_replies_into_it(tmp_path, monkeypatch):
         "origin": "event",
         "permalink": "",
     }
+
+
+def test_every_post_sets_unfurl_off(tmp_path, monkeypatch):
+    """issue-549 R5: every chat.postMessage the channel makes — a thread root, a
+    room's opening message, a short message, each long-form part and a plain
+    reply — carries `unfurl_links=False` and `unfurl_media=False`."""
+    from the_loop.workchannels import CollaborationChannelStore
+
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    client = FakeSlackClient()
+    channel = make_channel(tmp_path, client)
+    channel.post(event())  # central: the root, then the short form
+    CollaborationChannelStore(tmp_path / "state" / "portable").add(
+        "github:o/r#8", "slack@C0ROOM", actor="octocat", source="cli"
+    )
+    long_text = "\n\n".join(f"Paragraph {n} of a long comment." for n in range(900))
+    channel.post(
+        OutboundEvent(
+            event_type="comment.agent",
+            work_item="github:o/r#8",
+            text=long_text,
+            url="https://github.com/o/r/issues/8#c1",
+            summary="Two parts follow.",
+        )
+    )  # room: its opening message, the short form, then the long form's parts
+    channel.say("1700.000001", "a plain reply")
+    rooms = [post["channel"] for post in client.posted]
+    assert rooms.count("C0ROOM") >= 4  # opening, short, at least two parts
+    assert len(client.unfurls) == len(client.posted)
+    for extra in client.unfurls:
+        assert extra.get("unfurl_links") is False
+        assert extra.get("unfurl_media") is False
 
 
 def test_the_second_post_is_one_reply(tmp_path, monkeypatch):
@@ -878,7 +1024,9 @@ def test_a_failed_reply_opens_no_second_thread(tmp_path, monkeypatch):
     class Flaky(FakeSlackClient):
         fail_replies = False
 
-        def chat_postMessage(self, *, channel, text, thread_ts=None, blocks=None):
+        def chat_postMessage(
+            self, *, channel, text, thread_ts=None, blocks=None, **unfurl
+        ):
             if thread_ts is not None and self.fail_replies:
                 raise RuntimeError("ratelimited")
             return super().chat_postMessage(
@@ -902,7 +1050,9 @@ def test_a_failed_root_binds_nothing_and_the_next_event_retries(tmp_path, monkey
     class RootFails(FakeSlackClient):
         fail_root = False
 
-        def chat_postMessage(self, *, channel, text, thread_ts=None, blocks=None):
+        def chat_postMessage(
+            self, *, channel, text, thread_ts=None, blocks=None, **unfurl
+        ):
             if thread_ts is None and self.fail_root:
                 raise RuntimeError("channel_not_found")
             return super().chat_postMessage(

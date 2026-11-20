@@ -125,7 +125,7 @@ The word *gateway*, unqualified, is this process; decision-059's is the
   queued or retried on the gateway; a call it cannot make fails the instance's post.
 - **Three checks and the usual guards.** `slack.post.enabled` (default `true`,
   hot-reloaded), the bot token variable set, and the method in a flat allow-list of the
-  fourteen Slack methods the instance calls (`422 method-not-allowed`, nothing sent,
+  fifteen Slack methods the instance calls (`422 method-not-allowed`, nothing sent,
   otherwise) — so the gateway is not a generic bot-token oracle. A `token` key in `params`
   is `422 param-not-allowed`: the SDK would use it in place of the gateway's, so the
   gateway posts with its own token or not at all (the security review's one finding). Posting off or no token

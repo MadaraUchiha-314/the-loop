@@ -71,11 +71,13 @@ def test_values_are_inserted_literally():
 
 
 def test_section_returns_suffix_to_text():
-    section = strings.section("digest.pointer")
+    section = strings.section("poller.daemon.age")
     assert section == {
-        "code": "code: {n} lines",
-        "table": "table: {n} rows",
-        "trace": "stack trace: {n} lines",
+        "days": "{n}d ago",
+        "future": "in the future",
+        "hours": "{n}h ago",
+        "minutes": "{n}m ago",
+        "seconds": "{n}s ago",
     }
 
 
@@ -86,23 +88,23 @@ def test_a_locale_overrides_what_it_translates_and_falls_back_for_the_rest(
     locales, monkeypatch
 ):
     (locales / "xx.json").write_text(
-        json.dumps({"digest.pointer.code": "kode: {n} linjer"}), encoding="utf-8"
+        json.dumps({"poller.daemon.age.days": "for {n} dager siden"}), encoding="utf-8"
     )
     monkeypatch.setenv("THE_LOOP_LOCALE", "xx")
     strings._reset()
-    assert strings.t("digest.pointer.code", n=3) == "kode: 3 linjer"
-    assert strings.t("digest.pointer.table", n=2) == "table: 2 rows"
-    assert strings.section("digest.pointer")["trace"] == "stack trace: {n} lines"
+    assert strings.t("poller.daemon.age.days", n=3) == "for 3 dager siden"
+    assert strings.t("poller.daemon.age.hours", n=2) == "2h ago"
+    assert strings.section("poller.daemon.age")["minutes"] == "{n}m ago"
 
 
 def test_set_locale_selects_explicitly(locales):
     (locales / "xx.json").write_text(
-        json.dumps({"digest.pointer.code": "kode"}), encoding="utf-8"
+        json.dumps({"poller.daemon.age.days": "dager"}), encoding="utf-8"
     )
     strings.set_locale("xx")
-    assert strings.t("digest.pointer.code") == "kode"
+    assert strings.t("poller.daemon.age.days") == "dager"
     strings.set_locale("en")
-    assert strings.t("digest.pointer.code", n=1) == "code: 1 lines"
+    assert strings.t("poller.daemon.age.days", n=1) == "1d ago"
 
 
 @pytest.mark.parametrize("body", ["not json", "[1, 2]", '{"a.b": 3}'])
@@ -110,14 +112,14 @@ def test_an_invalid_locale_warns_and_falls_back(locales, monkeypatch, caplog, bo
     (locales / "xx.json").write_text(body, encoding="utf-8")
     monkeypatch.setenv("THE_LOOP_LOCALE", "xx")
     strings._reset()
-    assert strings.t("digest.pointer.code", n=1) == "code: 1 lines"
+    assert strings.t("poller.daemon.age.days", n=1) == "1d ago"
     assert "xx.json" in caplog.text
 
 
 def test_a_missing_locale_falls_back_to_en(locales, monkeypatch):
     monkeypatch.setenv("THE_LOOP_LOCALE", "zz")
     strings._reset()
-    assert strings.t("digest.pointer.code", n=1) == "code: 1 lines"
+    assert strings.t("poller.daemon.age.days", n=1) == "1d ago"
 
 
 @pytest.mark.parametrize("locale", ["../en", "en/../x", "", "EN_us!"])
@@ -129,7 +131,7 @@ def test_a_locale_name_cannot_leave_the_directory(locale):
 def test_a_broken_en_catalog_is_an_error(locales):
     (locales / "en.json").write_text("{", encoding="utf-8")
     with pytest.raises(ValueError):
-        strings.t("digest.pointer.code")
+        strings.t("poller.daemon.age.days")
 
 
 # -- the code and the catalog agree (R2.6) ---------------------------------------------

@@ -36,10 +36,11 @@ from the_loop.channels.slack import (
     _press_blocks,
     apply_without,
     compose_selection_execute,
-    render_blocks,
+    render_short_blocks,
     selection_rows,
     without_clause,
 )
+from the_loop.channels.shortform import build_short_form
 from the_loop.channels.verbs import compose_keyword, help_text
 from the_loop.control import ControlConfig, parse_command
 from the_loop.graph.hooks import selection
@@ -52,6 +53,15 @@ from test_channels_buttons import (
     interactive_config,
     make_channel,
 )
+
+
+def short_blocks(event, verbosity="normal", **kw):
+    """The short message's blocks as the channel draws them (issue-549): the
+    event's own short form, then the controls — what replaced ``render_blocks``."""
+    return render_short_blocks(
+        event, build_short_form(event).text, verbosity=verbosity, **kw
+    )
+
 
 #: Shaped like `graph/hooks/selection.py`'s checklist: default-on phases, one
 #: opt-in phase, one protected phase, the outer-loop row, the sessions rows, a
@@ -277,7 +287,7 @@ def test_the_checklist_mirror_renders_checkboxes_for_the_phases_and_the_outer_lo
 
     Requirement: docs/specs/issue-393/requirements.md R9.1, R9.2
     """
-    blocks = render_blocks(
+    blocks = short_blocks(
         checklist_event(CHECKLIST), "normal", commands={"execute": KEYWORD}
     )
     assert _control(blocks) == [
@@ -294,7 +304,7 @@ def test_the_checklist_mirror_renders_checkboxes_for_the_phases_and_the_outer_lo
         (SURFACE_BOX_ACTION, [(SURFACE_TOKEN, False)]),
     ]
     assert buttons(blocks) == [OPEN, (EXECUTE_ACTION, KEYWORD)]
-    assert blocks[0]["type"] == "header" and blocks[-1]["type"] == "actions"
+    assert blocks[0]["type"] == "section" and blocks[-1]["type"] == "actions"
     texts = _sections(blocks)
     assert "Which phases does this work item need?" in texts
     assert "press *Execute*" in texts and "tick anything optional" in texts
@@ -312,7 +322,7 @@ def test_the_checklist_mirror_renders_checkboxes_for_the_phases_and_the_outer_lo
 
 def test_a_long_phase_list_is_chunked_at_slacks_ceiling():
     rows = "\n".join(f"- [x] phase-{n}" for n in range(CHECKBOX_LIMIT + 5))
-    blocks = render_blocks(
+    blocks = short_blocks(
         checklist_event(f"q\n\n{rows}\n\n{PHASE_SELECTION_MARKER}"),
         "normal",
         commands={"execute": KEYWORD},
@@ -335,20 +345,21 @@ def test_a_loop_without_an_outer_loop_row_gets_no_surface_box():
         f"- [ ] `{SURFACE_TOKEN}` — on a pull request in this repository.\n", ""
     )
     control = _control(
-        render_blocks(checklist_event(body), "normal", commands={"execute": KEYWORD})
+        short_blocks(checklist_event(body), "normal", commands={"execute": KEYWORD})
     )
     assert [a for a, _ in control] == [f"{PHASE_BOX_ACTION}:0"]
 
 
-def test_in_a_room_the_control_leads_with_the_question_and_no_header():
-    blocks = render_blocks(
+def test_the_control_leads_with_the_question_and_no_header():
+    """Since issue-549 every conversation gets the short message: the short form
+    (the checklist's own question) leads, and no machine header is drawn."""
+    blocks = short_blocks(
         checklist_event(CHECKLIST),
         "normal",
         commands={"execute": KEYWORD},
-        agentic=True,
     )
     assert blocks[0]["type"] == "section"
-    assert blocks[0]["text"]["text"].startswith("🤔 *Which phases")
+    assert "*which phases does this work item need?*" in blocks[0]["text"]["text"]
     assert not any(b["type"] == "header" for b in blocks)
 
 
@@ -477,7 +488,7 @@ def test_an_execute_press_composes_the_signed_execute_from_the_boxes(
 
 
 def test_boxes_left_alone_compose_the_full_process():
-    blocks = render_blocks(
+    blocks = short_blocks(
         checklist_event(CHECKLIST), "normal", commands={"execute": KEYWORD}
     )
     press = _press_with_state(blocks, set(DEFAULT_ON))
@@ -494,7 +505,7 @@ def test_a_partial_or_malformed_state_keeps_the_boxes_as_drawn():
     keeps its rendered ticks — every default-on phase runs, no opt-in does, the
     outer loop stays on the work item. A message without the control composes
     the bare keyword, as an Execute press always did."""
-    blocks = render_blocks(
+    blocks = short_blocks(
         checklist_event(CHECKLIST), "normal", commands={"execute": KEYWORD}
     )
     message = {"blocks": blocks}
@@ -504,7 +515,7 @@ def test_a_partial_or_malformed_state_keeps_the_boxes_as_drawn():
     assert f"- [ ] `{SURFACE_TOKEN}`" in composed
     for broken in (None, "state", {"values": "garbage"}, {"values": {"x": "y"}}):
         assert compose_selection_execute(KEYWORD, message, broken) == composed
-    plain = render_blocks(checklist_event(CHECKLIST), "normal")
+    plain = short_blocks(checklist_event(CHECKLIST), "normal")
     assert (
         compose_selection_execute(KEYWORD, {"blocks": plain}, {"values": {}}) == KEYWORD
     )
@@ -514,7 +525,7 @@ def test_a_partial_or_malformed_state_keeps_the_boxes_as_drawn():
 def test_abuse_a_smuggled_value_cannot_tick_a_phase_that_was_not_offered():
     """A value the message never offered is not a box: it reaches no record, and
     the composed reply still carries exactly one command."""
-    blocks = render_blocks(
+    blocks = short_blocks(
         checklist_event(CHECKLIST), "normal", commands={"execute": KEYWORD}
     )
     state = {
@@ -561,7 +572,7 @@ def test_a_toggle_of_a_box_alone_does_nothing(tmp_path, monkeypatch):
 
 
 def test_a_landed_press_takes_the_control_away_and_a_failed_one_keeps_it():
-    blocks = render_blocks(
+    blocks = short_blocks(
         checklist_event(CHECKLIST), "normal", commands={"execute": KEYWORD}
     )
     landed = _press_blocks({"blocks": blocks}, True, "✅ line")

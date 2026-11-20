@@ -1738,22 +1738,17 @@
                 "verbose"
               ],
               "default": "normal",
-              "description": "quiet = one line + the work-item link; normal = + the question text; verbose = + context detail. Strict supersets, so turning it down never changes the words."
+              "description": "Every message is the event's short form (issue-549); verbose adds a context line of the event's detail under it. quiet and normal post the same message."
             },
             "maxChars": {
               "type": "integer",
-              "minimum": 200,
-              "default": 1500,
-              "description": "How much text one Slack message carries (a comment body, an artifact excerpt), and the threshold above which `longMessages` applies (issue-338). At most Slack's 3000-character section limit."
+              "deprecated": true,
+              "description": "Deprecated and ignored (issue-549). The long form reaches Slack whole, so nothing is cut at a length any more. Still accepted so an existing config loads; the CLI warns once per process. See the migration note in docs/config/cli/channels-options.md."
             },
             "longMessages": {
               "type": "string",
-              "enum": [
-                "digest",
-                "truncate"
-              ],
-              "default": "digest",
-              "description": "What happens to a text section longer than `maxChars` (issue-338, decision-118). digest = a structural digest the channel computes, no model involved: the first question (or the `reply ...` instruction) first, lists as numbered lines, code fences / tables / stack traces replaced by a pointer, absolute paths shortened, the rest in the author's order, cut at a sentence, one closing line linking the full text. truncate = the first `maxChars` characters and a note (13.10.0's behaviour). A text at or under `maxChars` is posted whole either way."
+              "deprecated": true,
+              "description": "Deprecated and ignored (issue-549). The digest and truncate modes are gone: the long form reaches Slack whole. Still accepted so an existing config loads; the CLI warns once per process. See the migration note in docs/config/cli/channels-options.md."
             },
             "room": {
               "type": "object",
@@ -1767,7 +1762,7 @@
                     "classic"
                   ],
                   "default": "agentic",
-                  "description": "agentic (default) = one message per meaningful moment, in the-loop's first-person voice with one state emoji and no machine header; consecutive lifecycle events collapse into one transition, a gate is announced once (with its buttons), a phase's progress edits one message in place, and acknowledgements thread under the message they answer. classic = the pre-issue-393 rendering, byte-for-byte — the escape hatch and the compatibility baseline."
+                  "description": "agentic (default) = in a work item's own room, a runtime template for a moment the session already spoke for is dropped, so the agent's words win (session-wins). classic = that rule is off. Since issue-549 every other delivery rule and the short-form rendering apply in every conversation whatever this says."
                 }
               }
             },

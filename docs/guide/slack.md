@@ -499,62 +499,48 @@ collaborator types there input, as a room was before issue-389, and a mention th
 simply a message. Only an authorized user may declare a room and only an authorized user
 may set its mode (a collaborator's attempt is refused); re-declaring replaces the mode,
 and `the-loop channels threads` and `channels status` show it. Subscribe the room's
-events like any other: `phase.started` and `phase.completed` give the room a timeline,
-`work-item.closed` gives it an ending. A conversation that already lived in a thread
+events like any other: `work-item.closed` gives it an ending. `phase.started` and
+`phase.completed` post nothing since issue-549; the status reaction and the recap carry
+them instead (see [Reading it on a phone](#reading-it-on-a-phone)). A conversation that already lived in a thread
 moves to the room when the room is declared, and the thread it left is told where it
 went.
 
 ## Reading it on a phone
 
-The GitHub comment is the record; the Slack message is the interface — and since
-[issue-338](https://github.com/MadaraUchiha-314/the-loop/issues/338) they are no longer
-the same text. A message whose text fits in
-[`maxChars`](/config/cli/channels-options#slack-maxchars) (default 1500) arrives **as
-written**. A longer one arrives as a **digest** the channel computes from the text's own
-structure — no model reads it, so every sentence you see is the author's:
+Every message the-loop posts in Slack is a **short form** you can act on from a phone,
+and in a declared room the whole text waits in its thread
+([issue-549](https://github.com/MadaraUchiha-314/the-loop/issues/549)). The GitHub
+comment stays the record.
 
-- **the ask first** — the first question in the text (or the sentence that says *reply
-  `…`*), in bold, before any context;
-- **a choice as a numbered list** — bullets, numbering and GitHub task boxes become
-  `1.`, `2.`, … with ☑ / ☐ kept, so a reply can be one number;
-- **pointers for what Slack cannot use** — a code fence, a table or a stack trace is
-  replaced in place by *⟨code: 12 lines⟩* / *⟨table: 4 rows⟩* / *⟨stack trace: 9 lines⟩*,
-  and an absolute path keeps its last two segments (`…/channels/slack.py`);
-- **the rest in order, cut at a sentence** — never mid-sentence, then one closing line,
-  *… full text: GitHub*, linking the comment or the work item.
+- **The short message** says what happened and what is needed, in at most 600
+  characters. The agent writes it (`the-loop comment --summary`,
+  `the-loop ask --summary`). A runtime event uses its fixed line. When a session forgot
+  its summary, the channel uses the text's first question or sentence and logs that
+  the summary was missing. Buttons sit on this message: *Open on GitHub*, Approve /
+  Request changes on a gate, Execute on the phase checklist.
+- **The whole text**, in a declared room, follows in the short message's thread, as
+  Slack draws standard markdown: tables, task lists, nested lists and code blocks
+  arrive as written. A long text is split between paragraphs, lists, tables and code
+  blocks, never inside one, and each part is marked `(1/3)`, `(2/3)`, …. In the central
+  channel there is no thread under a thread reply, so the short form is all, and
+  *Open on GitHub* leads to the rest.
+- **No link previews.** A link in a message never unfurls, after a post or an edit.
+- **One reaction says where the work item stands**: ⚙️ working, ⏳ waiting on you,
+  👀 in review, 🛑 blocked, ✅ done. It sits on the thread root in the central channel,
+  and on the latest message in a room.
+- **You are mentioned once per wait.** A question or a gate waiting on people
+  mentions the authorized users once. An edit does not ping you again.
+- **A recap after a quiet spell.** When no authorized person has spoken in the
+  conversation for 12 hours and something changed, the next message opens with one
+  line naming what changed.
+- **Progress edits in place.** A phase's progress updates one message (and its
+  thread) instead of posting a new one.
 
-The phase-selection checklist, with `maxChars: 700`:
-
-```text
-*🤖 _the-loop_ — which phases does this work item need?*
-
-Before the loop starts, tell it what this item actually needs. *Untick anything this
-work item does not need — right here on this comment — then reply `the-loop
-execute`.* The tick state at that moment is frozen and becomes the graph this item
-walks.
-
-1. ☑ brainstorming
-2. ☑ requirements-definition
-3. ☑ design
-4. ☑ test-planning
-5. ☑ tasks-breakdown
-6. ☑ implementation
-7. ☑ verification
-
-*Every phase of this loop is selectable — including the reviews, the security
-review and the approval gate.*
-
-_… full text: GitHub_
-[Open on GitHub] [Execute]
-```
-
-The phone's notification preview (Slack's fallback text) leads with the same ask.
-`maxChars` is the lever: turn it down and the digest fits the smaller screen; turn it
-up to Slack's 3000 and most comments arrive whole. To have the old behaviour back — the
-first `maxChars` characters and a note — set
-[`longMessages: truncate`](/config/cli/channels-options#slack-longmessages). Whatever
-the length, GitHub markdown is drawn as Slack mrkdwn (`**bold**`, headings, links, task
-boxes) and the-loop's own `<!-- … -->` markers no longer show.
+Text from GitHub is defused before Slack reads it: `<!here>`, `<!channel>` and
+`<@U…>` in a comment notify nobody, and a link with a scheme other than `http`,
+`https` or `mailto` shows as text. The old `maxChars` and `longMessages` keys do
+nothing now; see the
+[migration note](/config/cli/channels-options#removed-maxchars-and-longmessages-issue-549).
 
 ## Images and voice notes
 
@@ -852,11 +838,10 @@ an audit never needs Slack. This is also why a relayed keyword acts on the ledge
   note as Slack's transcript; it runs no speech-to-text, OCR or model on either, so what
   the session makes of an image is the session's, and what Slack heard is what arrives
   ([images and voice notes](#images-and-voice-notes)). Nothing removes the fetched files.
-- **The digest is structural, not a summary.** It leads with the *first* question the
-  text asks, so a comment whose decision sits after a rhetorical question early on
-  leads with the wrong one; the closing link is the remedy, and conclusion-first
-  writing the prevention. A code block you wanted inline is a pointer —
-  `longMessages: truncate`, or a larger `maxChars`, brings it back
+- **A missing summary makes a weaker short form.** Without `--summary`, the short
+  form is the text's first question or sentence, which may not be the decision. The
+  whole text is still in the room's thread, and the event log names the gap
+  (`channels.short_form_missing`)
   ([reading it on a phone](#reading-it-on-a-phone)).
 
 ## Downtime

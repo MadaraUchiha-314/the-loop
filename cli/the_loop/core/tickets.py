@@ -87,8 +87,8 @@ class GitHubTickets:
     def show(self, ref: str) -> Dict[str, Any]:
         return github_ops.show_ticket(ref, self.config)
 
-    def comment(self, ref: str, body: str) -> Dict[str, Any]:
-        return github_ops.comment(ref, body, self.config)
+    def comment(self, ref: str, body: str, summary: str = "") -> Dict[str, Any]:
+        return github_ops.comment(ref, body, self.config, summary=summary)
 
     def close(
         self, ref: str, reason: str, work_item: str, registry_dir: str = ""
@@ -295,7 +295,7 @@ class JiraTickets:
 
     # -- comment ---------------------------------------------------------------
 
-    def comment(self, ref: str, body: str) -> Dict[str, Any]:
+    def comment(self, ref: str, body: str, summary: str = "") -> Dict[str, Any]:
         """The agent's comment on the Jira ticket, through the bus: the Jira
         ledger records it (the visible self-marker stamped centrally), then
         every subscribed channel gets it — as on GitHub."""
@@ -315,6 +315,7 @@ class JiraTickets:
                     text=text,
                     detail={"actor": core_sessions._local_actor()},
                     source="cli",
+                    summary=summary or "",
                 ),
                 self.config,
                 ledger=ledger,
@@ -377,9 +378,13 @@ def comment(
     config: Optional[Mapping[str, Any]] = None,
     *,
     jira_client: Optional[JiraClient] = None,
+    summary: str = "",
 ) -> Dict[str, Any]:
-    """``comment --work-item`` on either tracker."""
-    return tracker_for(ref, config, jira_client=jira_client).comment(ref, body)
+    """``comment --work-item`` on either tracker. ``summary`` is the event's short
+    form for the channels (issue-549 R3.1); the ticket gets ``body`` alone."""
+    return tracker_for(ref, config, jira_client=jira_client).comment(
+        ref, body, summary=summary
+    )
 
 
 def close_ticket(

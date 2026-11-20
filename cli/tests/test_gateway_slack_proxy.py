@@ -196,7 +196,7 @@ def test_proxy_forwards_every_allowed_method_with_a_json_body(proxy_env):
             None,
         )
     assert web["client"].token == "xoxb-test"
-    assert len(slack_proxy.SLACK_METHODS) == 14
+    assert len(slack_proxy.SLACK_METHODS) == 15
 
 
 def test_proxy_returns_slacks_status_and_body_verbatim_when_ok_is_false(proxy_env):

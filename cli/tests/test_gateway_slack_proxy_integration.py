@@ -303,7 +303,13 @@ def test_an_instance_with_no_bot_token_opens_a_work_items_thread_through_the_gat
     assert "approach A or B" in json.dumps(reply)
     assert _thread(config) == (CENTRAL, "1700.000001")
     assert gw.harness.store.resolve("slack", f"{CENTRAL}:1700.000001") == REF
-    rows = gw.harness.events("gateway.slack_call")
+    # the posts are the calls the delivery made; the status reaction on the
+    # thread root follows them (issue-549 R8)
+    rows = [
+        row
+        for row in gw.harness.events("gateway.slack_call")
+        if row["method"] != "reactions.add"
+    ]
     assert rows and rows[-1]["method"] == "chat.postMessage" and rows[-1]["ok"] is True
     assert "approach A or B" not in gw.harness.events_path.read_text()
     assert outbox.entries(config) == []

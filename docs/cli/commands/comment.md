@@ -8,6 +8,8 @@ briefing, decision records.
 the-loop comment --work-item github:OWNER/REPO#N --body "The design is updated."
 the-loop comment --work-item github:OWNER/REPO#N --body-file summary.md
 some-tool | the-loop comment --work-item github:OWNER/REPO#N --body-file -
+the-loop comment --work-item github:OWNER/REPO#N --body-file review.md \
+  --summary "Design updated: two options for the cache. I need you to pick one."
 ```
 
 ## What it does
@@ -20,7 +22,9 @@ some-tool | the-loop comment --work-item github:OWNER/REPO#N --body-file -
 2. **Mirrors it** to every [channel](/capabilities/channels) subscribed to
    `comment.agent` (the Slack room, say). The poller and the webhook receiver see the
    envelope when they read the comment back, and publish nothing, so the room gets
-   it once.
+   it once. With `--summary`, Slack leads with that summary, and a declared room gets
+   the whole comment in the message's thread
+   ([issue-549](https://github.com/MadaraUchiha-314/the-loop/issues/549)).
 
 It prints the comment's URL. To **ask** a human and wait for the answer, use
 [`ask`](/cli/commands/ask) instead: it records the wait, and `comment` does not.
@@ -32,6 +36,7 @@ It prints the comment's URL. To **ask** a human and wait for the answer, use
 | `--work-item` | required | The ref the comment goes to (`github:[HOST/]OWNER/REPO#N`, or `jira:<site>/<KEY>-<n>` with `integrations.jira` configured). |
 | `--body` | — | The comment (markdown). |
 | `--body-file` | — | Read the comment from a file; `-` reads stdin. Exactly one of the two. |
+| `--summary` | — | The comment's **short form**, written for a phone: what happened and what the reader must do, in at most 600 characters. Slack posts it as the message; GitHub gets the body alone. Optional: without it, Slack builds a short form from the body's first question or sentence and the event log records `channels.short_form_missing`. The control-plane API takes the same field as `summary` on `POST /api/v1/work-items/comments`. |
 
 ## Where it runs, and whose token
 

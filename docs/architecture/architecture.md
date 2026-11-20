@@ -71,6 +71,9 @@ as commands/skills today; hooks add predictability where a step must always run.
 
 - GitHub Issues/Projects (default) or Jira. All collaboration via ticket/PR comments;
   notifications/escalations via configured messaging channels.
+- How an event becomes Slack messages (policy → placement → short and long forms →
+  plan → delivery → status reaction, issue-549) is in the
+  [channels capability doc](../capabilities/channels.md).
 
 ### 6. CLI companion (`the-loop`, Python)
 

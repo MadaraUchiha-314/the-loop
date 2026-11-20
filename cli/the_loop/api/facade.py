@@ -476,10 +476,10 @@ class CoreFacade:
     # in the service's environment rather than the session's.
 
     def post_work_item_comment(
-        self, ref: str, body: str, instance: str = ""
+        self, ref: str, body: str, instance: str = "", summary: str = ""
     ) -> Dict[str, Any]:
         self._self(instance)
-        return core_tickets.comment(ref, body, config=self.config)
+        return core_tickets.comment(ref, body, config=self.config, summary=summary)
 
     def get_ticket(self, ref: str, instance: str = "") -> Dict[str, Any]:
         self._self(instance)

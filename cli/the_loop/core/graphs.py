@@ -17,11 +17,14 @@ directory in the origin repository. It is meaningless without ``pr``.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 from ..graph.bootstrap import build_runtime
 from ..graph import runtime as graph_runtime
+
+logger = logging.getLogger("the-loop.graph")
 
 
 def repo_resolves(repo: str) -> bool:
@@ -134,8 +137,56 @@ def _runtime(
         _recorded_loop(path, work_item, spec_root) if pr is None and work_item else ""
     )
     return build_runtime(
-        path, spec_root=spec_root, pr_number=pr, pr_repo=pr_repo, loop=loop
+        path,
+        spec_root=spec_root,
+        pr_number=pr,
+        pr_repo=pr_repo,
+        loop=loop,
+        origin_repo=_registered_origin(path, work_item),
     )
+
+
+def _registered_origin(path: Path, work_item: str) -> str:
+    """``<owner>/<repo>`` as ``work_item``'s registration spells it, else ``""``.
+
+    The checkout's ``origin`` slug is lowercased (``ghhost.repo_slug``), so a ref
+    derived from it alone names ``github:octo-cat/the-repo#7`` for a ticket
+    registered as ``github:Octo-Cat/The-Repo#7`` — and every channel lookup keyed
+    on the registered spelling missed it (issue-549 R11.2). The session registry
+    is asked first: a record for the same number whose owner/repo match the
+    remote's, case aside, lends its spelling. ``""`` — nothing registered, no
+    remote, a bare id that is not ``issue-<n>`` — lets ``build_runtime`` fall back
+    to the remote exactly as before. Never fatal: this is a read for a nicer
+    spelling, and a registry it cannot read is "nothing registered".
+    """
+    from ..ghhost import origin_repo as origin_of
+    from ..graph.refs import derive_ref, identity_key
+
+    if not work_item:
+        return ""
+    remote = origin_of(path)
+    wanted = identity_key(derive_ref(work_item, remote)) if remote else ""
+    if not wanted:
+        return ""
+    try:
+        from ..graph.bootstrap import load_cli_config_best_effort
+        from ..sessions import SessionRegistry
+        from ..state import layout_from_config
+
+        config = load_cli_config_best_effort()
+        registry_dir = (
+            str((config.get("routing") or {}).get("registryDir") or "")
+            or layout_from_config(config).local_dir
+        )
+        sessions = SessionRegistry(registry_dir).list_sessions()
+    except Exception as exc:  # noqa: BLE001 — an unreadable registry is "none"
+        logger.debug("could not consult the session registry: %s", exc)
+        return ""
+    for session in sessions:
+        ref = session.work_item
+        if ref.provider == "github" and identity_key(ref.ref) == wanted:
+            return f"{ref.owner}/{ref.repo}"
+    return ""
 
 
 def check(

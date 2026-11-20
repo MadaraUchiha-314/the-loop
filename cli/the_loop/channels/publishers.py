@@ -80,8 +80,17 @@ def publish_comment(
         return False
     if has_envelope(body):
         return False  # the bus made this record; its source channel has it
+    from ..authz import notice_kind
     from .bus import publish
 
+    detail = {"author": author} if author else {}
+    # issue-549 R10: the-loop's own notice (the session-started announcement)
+    # names its kind in its hidden marker; pass it on, so a channel recognises
+    # bookkeeping by contract. Read only from the agent's own, marker-stamped
+    # comments — on anyone else's the marker is text and names nothing.
+    notice = notice_kind(body) if event_type == "comment.agent" else ""
+    if notice:
+        detail["notice"] = notice
     try:
         result = publish(
             Event(
@@ -89,7 +98,7 @@ def publish_comment(
                 work_item=work_item,
                 text=body,
                 url=url or "",
-                detail={"author": author} if author else {},
+                detail=detail,
                 source="github",
             ),
             cli_config,

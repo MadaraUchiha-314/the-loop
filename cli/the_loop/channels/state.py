@@ -74,6 +74,7 @@ __all__ = [
     "ChannelState",
     "ChannelStores",
     "canonical",
+    "identity",
 ]
 
 #: A conversation's ``mode`` when it is a whole channel rather than a thread
@@ -123,6 +124,19 @@ SNAPSHOT_CAP = 200
 #: room to classic delivery (post everything), never to silence.
 DELIVERY_CAP = 200
 
+#: How many events' posted messages one work item's delivery memory keeps
+#: (issue-549): the top message and long-form part timestamps per event id, so
+#: a replay posts only what is missing. Past the cap the OLDEST goes — an event
+#: that old is long out of the outbox's replay window.
+POSTED_CAP = 50
+
+#: How many changes one work item's recap record keeps (issue-549 R9): the
+#: newest; the recap line names at most a handful of them anyway.
+CHANGES_CAP = 30
+
+#: How many announced waits one work item's memory keeps (issue-549 R7.3).
+WAITS_CAP = 50
+
 #: What a declared room hears (issue-389, decision-133 D1): only a message that
 #: mentions the bot (``mentions``, the default), or every message (``all``, an
 #: authorized user's switch). Read off the declaration; anything else is
@@ -142,6 +156,23 @@ def canonical(work_item: str) -> str:
         return WorkItemRef.parse(work_item).ref
     except ValueError:
         return work_item
+
+
+def identity(work_item: str) -> str:
+    """The key two spellings of one work item share (issue-549 R11.2): the ref
+    with the GitHub owner and repository case-folded, everything else exact
+    (:func:`the_loop.graph.refs.identity_key`). Lookups compare by it; records
+    keep the spelling they were written under."""
+    from ..graph.refs import identity_key
+
+    return identity_key(canonical(work_item))
+
+
+#: Set on a conversation record that differs from another only in the case of
+#: its owner/repo, once a write has merged the two (issue-549 R11.3): the record
+#: stays readable, and its thread stays attributed, but it is never chosen as
+#: the place the next message goes while the record it names exists.
+MERGED_INTO = "mergedInto"
 
 
 def _is_work_item(key: str) -> bool:
@@ -286,11 +317,30 @@ class ChannelStores:
         if not work_item:
             return ""
         try:
-            record = self._declarations().for_type(work_item, self.channel)
+            declarations = self._declarations()
+            record = declarations.for_type(work_item, self.channel)
+            if record is None:
+                # Declared under another casing of the owner/repo (issue-549
+                # R11.2): the same work item, so the same room.
+                for spelled in self._other_spellings(work_item):
+                    record = declarations.for_type(spelled, self.channel)
+                    if record is not None:
+                        break
         except (OSError, ValueError) as exc:
             logger.debug("could not read %s's declared channel: %s", work_item, exc)
             return ""
         return record.target if record else ""
+
+    def _other_spellings(self, work_item: str) -> List[str]:
+        """The refs of portable records that name ``work_item`` under another
+        casing of its owner/repo, in file order (issue-549 R11.2)."""
+        wanted = identity(work_item)
+        written = canonical(work_item)
+        return [
+            ref
+            for ref in self._store().refs()
+            if ref != written and identity(ref) == wanted
+        ]
 
     def declared_work_item(self, target: str) -> str:
         """The work item that declared ``target`` — ``""`` when none did.
@@ -377,8 +427,12 @@ class ChannelState:
     #: ts>`` → ``{workItem, last, count, at}``. Insertion-ordered; the cap drops
     #: the oldest. Local like the cursors — what THIS deployment recorded.
     snapshots: Dict[str, Dict[str, Any]] = field(default_factory=dict)
-    #: The room-delivery memory (issue-393 B2): work item → ``{lastNode,
-    #: lastEvent, progressTs{phase}, gateTs{node}, phaseSelectionTs}`` — what THIS
+    #: The delivery memory (issue-393 B2; every conversation since issue-549):
+    #: work item → ``{lastNode, lastEvent, progressTs{phase}, gateTs{node},
+    #: gateMessage{node: {channel, text, url}},
+    #: phaseSelectionTs, posted{eventId: {channel, top, parts[]}},
+    #: status{channel, ts, emoji}, announced{wait: at}, lastHuman, recapAt,
+    #: changes[{at, kind, value}]}`` — what THIS
     #: deployment has already shown in the room, so RoomPolicy can collapse a
     #: transition, suppress a gate's duplicate announcements, edit a phase's
     #: progress message in place, and thread an acknowledgement under the message
@@ -672,7 +726,7 @@ class ChannelState:
         written, because there is no thread for the reader to look up — a
         message in the room is attributed through the declaration instead.
         """
-        work_item = canonical(work_item) if work_item else work_item
+        work_item = self._conversation_key(work_item) if work_item else work_item
         if thread:
             self.threads.pop(thread, None)  # re-binding moves it to newest
             self.threads[thread] = {"workItem": work_item, "channel": channel_id}
@@ -690,6 +744,7 @@ class ChannelState:
                 thread, channel_id, origin=origin, permalink=permalink, mode=mode
             )
             self._dirty_bindings.add(work_item)
+            self._merge_spellings(work_item)
         while len(self.threads) > THREAD_CAP:
             oldest = next(iter(self.threads))
             dropped = self.threads.pop(oldest, None) or {}
@@ -699,11 +754,50 @@ class ChannelState:
                 self.conversations.pop(item, None)
                 self._dirty_bindings.add(item)
 
+    def _conversation_key(self, work_item: str) -> str:
+        """The key ``work_item``'s conversation is held under (issue-549 R11.3).
+
+        Matched by :func:`identity`, so a spelling that differs only in the case
+        of the owner/repo finds the conversation already bound. When two records
+        match, the one bound **first** wins (the oldest ``opened``, file order
+        on a tie), and a record a write already merged away loses to any other.
+        No match is the canonical spelling itself, which is where a first bind
+        writes.
+        """
+        key = canonical(work_item)
+        wanted = identity(key)
+        matches = [k for k in self.conversations if identity(k) == wanted]
+        if not matches:
+            return key
+        live = [k for k in matches if not self.conversations[k].get(MERGED_INTO)]
+        return min(
+            live or matches,
+            key=lambda k: str(self.conversations[k].get("opened") or ""),
+        )
+
+    def _merge_spellings(self, key: str) -> None:
+        """Mark every other-casing record of ``key``'s work item merged into it.
+
+        The records are kept, not dropped: their threads stay attributed to the
+        work item and readable (R11.3). The mark only stops a merged record from
+        winning a later lookup because a re-bind made ``key``'s record younger.
+        """
+        wanted = identity(key)
+        for other, record in self.conversations.items():
+            if other != key and identity(other) == wanted:
+                if record.get(MERGED_INTO) != key:
+                    record[MERGED_INTO] = key
+                    self._dirty_bindings.add(other)
+
     def thread_for(self, work_item: str) -> Optional[Tuple[str, str]]:
         """``(channel_id, thread_ts)`` of ``work_item``'s conversation, or None —
         also None for a **room** conversation, which has no thread to reply in
         or to read (issue-378); the writer's view is :meth:`conversation_for`."""
-        record = self.conversations.get(canonical(work_item)) if work_item else None
+        record = (
+            self.conversations.get(self._conversation_key(work_item))
+            if work_item
+            else None
+        )
         if record and record.get("thread"):
             return (record.get("channel", ""), record["thread"])
         return None
@@ -712,7 +806,11 @@ class ChannelState:
         """``(channel_id, thread_ts)`` of where ``work_item``'s next message goes
         (issue-378): a thread, or a room with ``thread_ts == ""``. None when the
         work item has no conversation on this channel."""
-        record = self.conversations.get(canonical(work_item)) if work_item else None
+        record = (
+            self.conversations.get(self._conversation_key(work_item))
+            if work_item
+            else None
+        )
         if not record:
             return None
         if record.get("thread"):
@@ -723,7 +821,11 @@ class ChannelState:
 
     def conversation(self, work_item: str) -> Optional[Dict[str, str]]:
         """The per-work-item record — channel, thread, opened, origin, permalink."""
-        record = self.conversations.get(canonical(work_item)) if work_item else None
+        record = (
+            self.conversations.get(self._conversation_key(work_item))
+            if work_item
+            else None
+        )
         return dict(record) if record else None
 
     def work_item_for(self, thread: str) -> Optional[str]:
@@ -847,8 +949,43 @@ class ChannelState:
         """This work item's room-delivery memory — an empty record when there is
         none (a first message, a lost file), so a caller reads it without a
         None-check and RoomPolicy falls back to classic delivery."""
-        record = self.delivery.get(canonical(work_item))
-        return _delivery_record(record) if record else _delivery_record({})
+        key, others = self._delivery_keys(work_item)
+        records = [self.delivery[k] for k in (*others, key) if k in self.delivery]
+        return _merged_delivery(records)
+
+    def _delivery_keys(self, work_item: str) -> Tuple[str, List[str]]:
+        """Where ``work_item``'s delivery memory is written, and the records under
+        other casings of its owner/repo that are read with it (issue-549 R11.2).
+
+        The key follows the conversation's spelling when there is one, else the
+        first record already kept, else the canonical spelling.
+        """
+        wanted = identity(work_item)
+        matches = [k for k in self.delivery if identity(k) == wanted]
+        conversation = self._conversation_key(work_item)
+        if conversation in self.conversations:
+            key = conversation
+        elif matches:
+            key = matches[0]
+        else:
+            key = canonical(work_item)
+        return key, [k for k in matches if k != key]
+
+    def posted_for(self, work_item: str, event_id: str) -> Dict[str, Any]:
+        """What was already posted for ``event_id`` — ``{channel, top, parts}`` —
+        or ``{}`` (issue-549: a replay resumes after the last message that
+        landed)."""
+        if not event_id:
+            return {}
+        return dict(self.delivery_for(work_item)["posted"].get(event_id) or {})
+
+    def remember_posted(
+        self, work_item: str, event_id: str, record: Mapping[str, Any]
+    ) -> None:
+        """Record what the conversation now holds for ``event_id`` — under the
+        caller's lock, before the next Slack call (issue-549)."""
+        if event_id:
+            self.remember_delivery(work_item, posted={event_id: dict(record)})
 
     def remember_delivery(self, work_item: str, **changes: Any) -> None:
         """Merge ``changes`` into this work item's delivery memory — under the
@@ -859,12 +996,42 @@ class ChannelState:
         Nested maps (``progressTs``, ``gateTs``) merge key-by-key so remembering
         one phase's progress ts does not forget another's; scalar keys replace.
         """
-        key = canonical(work_item)
-        record = _delivery_record(self.delivery.get(key) or {})
+        key, others = self._delivery_keys(work_item)
+        record = _merged_delivery(
+            [self.delivery[k] for k in (*others, key) if k in self.delivery]
+        )
+        for other in others:  # merged into ``key`` on this write (R11.2)
+            self.delivery.pop(other, None)
         for field_name, value in changes.items():
-            if field_name in ("progressTs", "gateTs") and isinstance(value, dict):
+            if field_name == "posted" and isinstance(value, dict):
+                posted = dict(record.get("posted") or {})
+                for event_id, entry in value.items():
+                    posted.pop(str(event_id), None)  # move to newest
+                    posted[str(event_id)] = entry
+                record["posted"] = posted
+            elif field_name == "changes" and isinstance(value, list):
+                record["changes"] = list(record.get("changes") or []) + list(value)
+            elif field_name == "announced":
+                # None forgets every announced wait (the work item stopped
+                # waiting); a map adds to them (issue-549 R7.3)
+                merged = dict(record.get("announced") or {}) if value else {}
+                merged.update({str(k): str(v) for k, v in (value or {}).items()})
+                record["announced"] = merged
+            elif field_name in ("progressTs", "gateTs") and isinstance(value, dict):
+                # a None value forgets that key: an answered gate (issue-549 R11.6)
                 merged = dict(record.get(field_name) or {})
                 merged.update({str(k): str(v) for k, v in value.items() if v})
+                for k, v in value.items():
+                    if v is None:
+                        merged.pop(str(k), None)
+                record[field_name] = merged
+            elif field_name == "gateMessage" and isinstance(value, dict):
+                merged = dict(record.get(field_name) or {})
+                for k, v in value.items():
+                    if v is None:
+                        merged.pop(str(k), None)
+                    else:
+                        merged[str(k)] = v
                 record[field_name] = merged
             else:
                 record[field_name] = value
@@ -906,6 +1073,21 @@ def _snapshot_record(info: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _merged_delivery(records: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
+    """One delivery record from several kept for one work item under different
+    casings (issue-549): nested maps merge key by key, and a later record's
+    non-empty scalar wins — the caller passes the record it writes to last."""
+    merged = _delivery_record({})
+    for raw in records:
+        record = _delivery_record(dict(raw))
+        for name, value in record.items():
+            if isinstance(value, dict):
+                merged[name] = {**merged[name], **value}
+            elif value:
+                merged[name] = value
+    return merged
+
+
 def _delivery_record(info: Dict[str, Any]) -> Dict[str, Any]:
     """One work item's room-delivery memory, every field coerced (issue-393 B2).
 
@@ -924,6 +1106,10 @@ def _delivery_record(info: Dict[str, Any]) -> Dict[str, Any]:
         "lastEvent": str(info.get("lastEvent") or ""),
         "progressTs": _str_map(info.get("progressTs")),
         "gateTs": _str_map(info.get("gateTs")),
+        # What each open gate's message says and where it is (issue-549
+        # R11.6): node → ``{channel, text, url}``, so the message can be edited
+        # to its outcome once the gate is answered, on GitHub or from Slack.
+        "gateMessage": _gate_messages(info.get("gateMessage")),
         "phaseSelectionTs": str(info.get("phaseSelectionTs") or ""),
         # The node the session last spoke for (issue-393 B9/R12.3), so a later
         # runtime template for it is suppressed.
@@ -932,7 +1118,119 @@ def _delivery_record(info: Dict[str, Any]) -> Dict[str, Any]:
         # (issue-507), so the agent's answer is posted where it was asked.
         "replyChannel": _str_or_empty(info.get("replyChannel")),
         "replyThread": _ts_or_empty(info.get("replyThread")),
+        # What was posted per event id (issue-549): a replay posts only the
+        # missing parts. The newest POSTED_CAP events are kept.
+        "posted": _posted_map(
+            info.get("posted"), live=_str_map(info.get("progressTs")).values()
+        ),
+        # The status message and the status reaction the-loop put on it
+        # (issue-549 R8): ``{channel, ts, emoji}``, so only a reaction it added
+        # itself is ever removed.
+        "status": _status_record(info.get("status")),
+        # Waits already announced with a mention (issue-549 R7.3): wait → when.
+        "announced": _capped_map(info.get("announced"), WAITS_CAP),
+        # When an authorized human last spoke in the conversation, and when a
+        # recap was last posted (issue-549 R9), as epoch seconds.
+        "lastHuman": _str_or_empty(info.get("lastHuman")),
+        "recapAt": _str_or_empty(info.get("recapAt")),
+        # The loop's own changes, for the recap line (issue-549 R9.3).
+        "changes": _changes(info.get("changes")),
     }
+
+
+def _gate_messages(value: Any) -> Dict[str, Dict[str, str]]:
+    """The open gates' messages, coerced; a malformed entry is dropped (its
+    message is then simply not edited when the gate is answered)."""
+    if not isinstance(value, dict):
+        return {}
+    out: Dict[str, Dict[str, str]] = {}
+    for node, entry in value.items():
+        if not isinstance(entry, dict):
+            continue
+        channel = _str_or_empty(entry.get("channel"))
+        if channel:
+            out[str(node)] = {
+                "channel": channel,
+                "text": _str_or_empty(entry.get("text")),
+                "url": _str_or_empty(entry.get("url")),
+            }
+    return out
+
+
+def _capped_map(value: Any, cap: int) -> Dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+    out = {str(k): str(v) for k, v in value.items() if v}
+    while len(out) > cap:
+        out.pop(next(iter(out)), None)
+    return out
+
+
+def _changes(value: Any) -> List[Dict[str, str]]:
+    """The recap's change records, coerced, the newest :data:`CHANGES_CAP`."""
+    if not isinstance(value, list):
+        return []
+    out = [
+        {
+            "at": _str_or_empty(entry.get("at")),
+            "kind": _str_or_empty(entry.get("kind")),
+            "value": _str_or_empty(entry.get("value")),
+        }
+        for entry in value
+        if isinstance(entry, dict) and entry.get("kind")
+    ]
+    return out[-CHANGES_CAP:]
+
+
+def _status_record(value: Any) -> Dict[str, str]:
+    """The status reaction record, coerced; malformed → none (the next event
+    adds a reaction and removes nothing)."""
+    if not isinstance(value, dict):
+        return {}
+    ts = _ts_or_empty(value.get("ts"))
+    channel = _str_or_empty(value.get("channel"))
+    emoji = _str_or_empty(value.get("emoji"))
+    if not (ts and channel and emoji):
+        return {}
+    return {"channel": channel, "ts": ts, "emoji": emoji}
+
+
+def _posted_map(value: Any, live: Any = ()) -> Dict[str, Dict[str, Any]]:
+    """The per-event posted record, coerced and capped to the newest
+    :data:`POSTED_CAP` events. A malformed entry is dropped: the worst it costs
+    is a duplicate message on a replay, never a crash.
+
+    ``live`` names the messages still edited in place (the progress messages):
+    the newest two records of each are kept past the cap, because a later edit reads
+    it to find the message's replies (R6.2)."""
+    if not isinstance(value, dict):
+        return {}
+    out: Dict[str, Dict[str, Any]] = {}
+    for event_id, entry in value.items():
+        if not isinstance(entry, dict):
+            continue
+        parts = entry.get("parts")
+        out[str(event_id)] = {
+            "channel": _str_or_empty(entry.get("channel")),
+            "top": _ts_or_empty(entry.get("top")),
+            "parts": [
+                p for p in (parts if isinstance(parts, list) else []) if _ts_or_empty(p)
+            ],
+        }
+    live_tops = {str(ts) for ts in live if ts}
+    newest: Dict[str, List[str]] = {}
+    for event_id, entry in out.items():
+        if entry["top"] in live_tops:
+            newest.setdefault(entry["top"], []).append(event_id)
+    # the newest two per message: an edit in flight is the newest, and the one
+    # before it is what that edit reads to find the replies
+    pinned = {event_id for ids in newest.values() for event_id in ids[-2:]}
+    for event_id in list(out):
+        if len(out) <= POSTED_CAP + len(pinned):
+            break
+        if event_id not in pinned:
+            out.pop(event_id)
+    return out
 
 
 #: A Slack message ts — the only shape a reply thread may hold (issue-507).

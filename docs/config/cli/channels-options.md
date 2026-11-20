@@ -31,8 +31,6 @@ channels:
     subscribe: [session.awaiting_input, phase-approval-pending, comment.agent]
     publish: [work-item.reply, gate.feedback]
     verbosity: normal
-    maxChars: 1500                           # and the threshold for longMessages
-    longMessages: digest                     # digest | truncate — above maxChars
     room:
       style: agentic                         # agentic | classic — a work item's own room
     kickoff:
@@ -250,6 +248,7 @@ from **one catalog** (printed with subscription ticks by
 | `phase.started` | a phase of the work item's loop began — the node carrying the next `loop:<phase>` label was entered; published by the runtime on every walk of every graph, so it needs no `notify` hook, and a human node's message says it is waiting on a person ([issue-378](https://github.com/MadaraUchiha-314/the-loop/issues/378)) |
 | `phase.completed` | a phase ended — the loop left its last node on a satisfied outcome, or finished at a terminal node; carries the outcome and the node entered next (issue-378) |
 | `phase.progress` | the loop stepped to a new node **within** the current phase — the review chain walking self-review → critic-review → security-review is the loud case; published by the runtime, not recorded on the ledger, and in an agentic room it edits that phase's one message in place so a long phase shows where it is instead of going silent ([issue-393](https://github.com/MadaraUchiha-314/the-loop/issues/393)) |
+| `gate.answered` | a human gate was answered, on GitHub or from Slack — the gate's node, the outcome and who answered; published by the runtime, not recorded on the ledger. A channel subscribed to any approval event hears it without naming it, and edits that gate's message to show the outcome, with its buttons removed ([issue-549](https://github.com/MadaraUchiha-314/the-loop/issues/549)) |
 | `work-item.closed` | the work item ended on the ledger — its issue was closed, or the pull request that *is* the work item merged or closed; published before the item's collaboration channel is forgotten, so a room hears its own ending (issue-378). A delivering pull request's end fires nothing |
 | `comment.agent` | the agent's own comment landed on the work item (marker-stamped): the requirements summary, the phase checklist, a review note |
 | `comment.human` | a human comment the ledger accepted — an authorized user's or a work-item collaborator's. A stranger's comment is relayed nowhere |
@@ -312,52 +311,12 @@ warning — a typo can never widen what a chat message may do.
 - **Type:** `'quiet' | 'normal' | 'verbose'`
 - **Default:** `normal`
 
-How much of an event each message carries: `quiet` is the header plus the link button;
-`normal` adds the text (and, for an approval, the artifact excerpt); `verbose` adds
-the context detail. Strict supersets — turning it down never changes the words, only
-how many of them there are.
-
-### `slack.maxChars`
-
-- **Type:** `integer` (minimum 200)
-- **Default:** `1500`
-
-How much text one Slack message carries — a comment body, an artifact excerpt — and
-the threshold above which `longMessages` (below) applies
-([issue-338](https://github.com/MadaraUchiha-314/the-loop/issues/338)). At most
-Slack's own 3000-character section limit. This is the lever for a small screen: a
-phone reader turns it *down*, and the digest fits the message to it.
-
-### `slack.longMessages`
-
-- **Type:** `'digest' | 'truncate'`
-- **Default:** `digest`
-
-What happens to a text section longer than `maxChars`
-([issue-338](https://github.com/MadaraUchiha-314/the-loop/issues/338),
-[decision-118](/decisions/decision-118)).
-
-`digest` — a **structural** digest the channel computes, with no model involved: the
-first question in the text (or, failing one, the sentence that says *reply `…`*) goes
-first, in bold; a list becomes numbered lines (`1.`, `2.`, … — GitHub task boxes drawn
-as ☑ / ☐); every code fence, markdown table and stack trace is replaced in place by a
-pointer (*⟨code: 12 lines⟩*, *⟨table: 4 rows⟩*, *⟨stack trace: 9 lines⟩*); an absolute
-path of three or more segments loses its head (`…/channels/slack.py`); the rest follows
-in the author's order until the budget is spent; the cut falls on a sentence (a clause,
-or a word, only when no sentence fits); and one closing line links the full text —
-*… full text: GitHub* — whenever anything was cut, left out or replaced. Every sentence
-in a digest is one the author wrote: the digest reorders, numbers and points; it never
-paraphrases.
-
-`truncate` — the first `maxChars` characters and a *… (N more characters — see the
-link)* note — 13.10.0's behaviour.
-
-A text at or under `maxChars` is posted **whole** either way, in the author's order,
-with no pointer and no closing line. Whatever the length, GitHub markdown is drawn as
-Slack mrkdwn (`**bold**` → `*bold*`, headings, links, task boxes, bullets) and an HTML
-comment — the-loop's own markers included — is removed: that changes how the words are
-drawn, never which words are there. The [Slack guide](/guide/slack#reading-it-on-a-phone)
-shows a checklist before and after.
+How much detail each message carries. Since
+[issue-549](https://github.com/MadaraUchiha-314/the-loop/issues/549) every message is
+the event's **short form** (600 characters at most), with the whole text in a declared
+room's thread; `verbose` adds a context line of the event's detail under the short
+form. Nothing is cut at a length: see the
+[channels capability](/capabilities/channels) for the short and long forms.
 
 ### `slack.room.style`
 
@@ -366,17 +325,18 @@ shows a checklist before and after.
 
 How a work item's **own room** reads
 ([issue-393](https://github.com/MadaraUchiha-314/the-loop/issues/393)) — a room being a
-channel a single work item was declared into (`add-channel`). This does not affect a
-shared or central channel, which keeps the header rendering.
+channel a single work item was declared into (`add-channel`).
 
-`agentic` — one message per meaningful moment, in the-loop's first-person voice with one
-state emoji and no machine header. Consecutive lifecycle events collapse into one
-transition, a human gate is announced **once** (the message carrying its buttons), a
-phase's progress edits a single message in place, and an acknowledgement threads under
-the message it answers. This is the room a person can follow on a phone.
+`agentic` — a runtime template for a moment the session already spoke for is dropped,
+so the agent's own words win over the boilerplate (the *session-wins* rule).
 
-`classic` — the pre-issue-393 rendering, byte-for-byte: every event a top-level message
-with the event-type/ref header. The escape hatch, and the compatibility baseline.
+`classic` — that rule is off.
+
+Since [issue-549](https://github.com/MadaraUchiha-314/the-loop/issues/549) everything
+else applies in every conversation, whatever this key says: the short form with no
+machine header, a gate announced once with its buttons, progress edited in place,
+acknowledgements threaded under the message they answer, and lifecycle bookkeeping
+kept out of Slack. See the [channels capability](/capabilities/channels).
 
 ### `slack.kickoff.repo`
 
@@ -651,3 +611,38 @@ acts on are the `slack` ids of the person entries under
 [`routing.authorizedUsers`](/config/cli/routing-options#authorizedusers) — identity is
 declared once, with each person's id on every channel, and read per channel. Empty
 denies every reply, button press and kickoff (fail closed).
+
+## Removed: maxChars and longMessages (issue-549)
+
+`channels.slack.maxChars` and `channels.slack.longMessages` are **deprecated and
+ignored** since [issue-549](https://github.com/MadaraUchiha-314/the-loop/issues/549)
+([decision-154](/decisions/decision-154), which supersedes
+[decision-118](/decisions/decision-118)). **Delete both keys from your config.**
+
+Nothing replaces them, because nothing is cut at a length any more:
+
+- Every message is the event's **short form**: the agent's own summary
+  (`--summary` on `the-loop comment` and `the-loop ask`), at most 600 characters.
+- In a declared room, the **whole text** follows in the message's thread as Slack
+  `markdown` blocks, split into parts of up to about 11,000 characters.
+- In the central channel, the short form is all; its *Open on GitHub* button leads
+  to the whole text.
+
+A config that still sets either key loads and validates. The keys stay in the schema,
+marked deprecated, and the CLI logs one warning per key per process that links here.
+`the-loop channels status` no longer prints them. The digest (`longMessages: digest`)
+and the 13.10.0 cut (`longMessages: truncate`) are gone with them.
+
+### `slack.maxChars`
+
+- **Type:** `integer`
+- **Default:** none (deprecated and ignored)
+
+Was how much text one message carried before the digest cut in (issue-338). Delete it.
+
+### `slack.longMessages`
+
+- **Type:** `string`
+- **Default:** none (deprecated and ignored)
+
+Was `digest` or `truncate`, what happened above `maxChars` (issue-338). Delete it.

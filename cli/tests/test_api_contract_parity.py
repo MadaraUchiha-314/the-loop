@@ -63,6 +63,33 @@ def test_served_schema_matches_the_authored_contract(role):
     assert _surface(served) == _surface(contract)
 
 
+def test_the_comment_body_carries_the_summary_as_the_contract_says():
+    """
+    Feature: contract-first control-plane API
+      Scenario: the comment route takes the short form the contract names
+        Given the checked-in contract's WorkItemCommentBody
+        When it is compared to the body the app serves
+        Then both name the same properties, and `summary` is one of them, optional
+
+    Requirement: docs/specs/issue-549/requirements.md R3.1
+    """
+    contract_path = (
+        pathlib.Path(__file__).resolve().parents[2]
+        / "docs"
+        / "api-specs"
+        / "openapi"
+        / "the-loop.v1.yaml"
+    )
+    contract = yaml.safe_load(contract_path.read_text())
+    served = create_app({}).openapi()
+    authored = contract["components"]["schemas"]["WorkItemCommentBody"]
+    generated = served["components"]["schemas"]["WorkItemCommentBody"]
+    assert set(authored["properties"]) == set(generated["properties"])
+    assert "summary" in authored["properties"]
+    assert "summary" not in authored.get("required", [])
+    assert "summary" not in generated.get("required", [])
+
+
 def test_both_roles_serve_one_mcp_tool_list():
     """
     Feature: one surface, two roles

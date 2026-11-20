@@ -564,8 +564,9 @@ def test_a_room_conversation_is_opened_once_and_every_event_is_top_level(tmp_pat
 
     assert bot.open(REF).ok
     assert bot.open(REF).ok
-    bot.post(Event(event_type="phase.started", work_item=REF, text="started"))
-    bot.post(Event(event_type="phase.completed", work_item=REF, text="done"))
+    # issue-549 R10: the `phase.*` pair is bookkeeping, so two ordinary events
+    bot.post(Event(event_type="comment.human", work_item=REF, text="started"))
+    bot.post(Event(event_type="work-item.closed", work_item=REF, text="done"))
 
     assert [(p["channel"], p["thread_ts"]) for p in client.posted] == [
         (ROOM, None),
@@ -576,9 +577,9 @@ def test_a_room_conversation_is_opened_once_and_every_event_is_top_level(tmp_pat
 
 
 def test_an_agentic_room_collapses_an_intermediate_transition(tmp_path):
-    """issue-393 B5/R6.1: in the default agentic room, an intermediate
-    `phase.completed` is collapsed — RoomPolicy drops it — so it is not a third
-    top-level message. The `phase.started` still posts."""
+    """issue-393 B5/R6.1, as issue-549 R10.1 tightens it: the `phase.*` pair is
+    bookkeeping, so neither the `phase.completed` nor the `phase.started` is a
+    message in the room."""
     config = cli_config(tmp_path)  # agentic is the default
     declare(config)
     client = FakeSlackClient()
@@ -601,14 +602,13 @@ def test_an_agentic_room_collapses_an_intermediate_transition(tmp_path):
             detail={"node": "design"},
         )
     )
-    # The started message posted; the completed one was collapsed (not a
-    # separate post). Exactly one posted message mentions the phase, and none
-    # carries the collapsed "done".
+    # Neither half of the transition reached the room: only its opening is there.
     import json
 
     with_phase = [p for p in client.posted if "Starting design." in json.dumps(p)]
-    assert len(with_phase) == 1
+    assert with_phase == []
     assert "done" not in [p.get("text") for p in client.posted]
+    assert len(client.posted) == 1
 
 
 def test_an_agentic_room_edits_a_phase_in_place_on_progress(tmp_path):
@@ -749,3 +749,688 @@ def test_a_reply_under_a_room_message_reaches_the_work_item(tmp_path):
     assert room_message["thread_ts"] is None
     assert outcome["outcome"] == "processed"
     assert sink.refs == [REF]
+
+
+# -- issue-549: the short form, the long form, and where each goes (task 9) ------
+
+LONG_COMMENT = """## Design ready
+
+The Slack channel plans each delivery as a short message plus its long form.
+
+| Where | Top level | Thread |
+|---|---|---|
+| room | short form | long form |
+| central | short form | none |
+
+- [x] placement
+- [ ] status reactions
+
+Approve the design?"""
+
+SUMMARY = "Design is drafted. Approve it, or ask for changes?"
+
+
+def _comment(text=LONG_COMMENT, summary=SUMMARY):
+    return Event(
+        event_type="comment.agent",
+        work_item=REF,
+        text=text,
+        url="https://github.com/octo/repo/issues/375#issuecomment-1",
+        source="cli",
+        summary=summary,
+        event_id="ev-549-1",
+    )
+
+
+def _markdown(post):
+    blocks = post["blocks"] or []
+    return [block for block in blocks if block.get("type") == "markdown"]
+
+
+def test_a_long_comment_in_a_declared_room_posts_a_short_message_and_its_long_form_in_the_thread(
+    tmp_path,
+):
+    """
+    Feature: every Slack message is a short form, and in a room its long form
+      Scenario: a long comment in a declared room posts a short message and its long form in the thread
+        Given #375 has declared slack@C0TMP375
+        When the-loop posts the agent's comment carrying a summary, a table and a
+             task list
+        Then the summary is a top-level message in the room, its text fallback is
+             that same short form, and it carries the Open on GitHub button
+        And the whole comment, table and task list as written, is one markdown
+             block in that message's thread
+        And no message asks Slack for a link preview
+
+    Requirement: docs/specs/issue-549/requirements.md R4.1, R2.1, R2.2, R2.6, R2.7,
+                 R3.2, R5
+    """
+    config = cli_config(tmp_path)
+    declare(config)
+    client = FakeSlackClient()
+
+    channel_for(config, client).post(_comment())
+
+    opening, short, part = client.posted
+    assert opening["channel"] == short["channel"] == part["channel"] == ROOM
+    assert short["thread_ts"] is None  # top-level in the room (R4.1)
+    assert short["blocks"][0]["text"]["text"] == SUMMARY
+    assert short["text"] == SUMMARY  # the fallback is the short form (R2.7)
+    assert short["blocks"][-1]["elements"][0]["url"].endswith("#issuecomment-1")
+    assert not _markdown(short)
+    short_ts = "1700.000002"
+    assert part["thread_ts"] == short_ts  # in the short message's thread
+    (block,) = _markdown(part)
+    assert block["text"] == LONG_COMMENT  # every word, as written (R1.1, R2.2)
+    assert part["text"] == SUMMARY
+    for extra in client.unfurls:
+        assert extra == {"unfurl_links": False, "unfurl_media": False}
+
+
+def test_the_central_channel_gets_the_short_form_only(tmp_path):
+    """
+    Feature: every Slack message is a short form, and in a room its long form
+      Scenario: the central channel gets the short form only
+        Given #375 declared no room, so its conversation is a thread in the
+             central channel
+        When the-loop posts the agent's long comment with a summary
+        Then the summary is a reply in the work item's thread, with the Open on
+             GitHub button
+        And no long form is posted anywhere in the central channel
+
+    Requirement: docs/specs/issue-549/requirements.md R4.2, R3.2
+    """
+    config = cli_config(tmp_path)
+    client = FakeSlackClient()
+
+    channel_for(config, client).post(_comment())
+
+    root, short = client.posted
+    assert root["channel"] == short["channel"] == CENTRAL
+    assert short["thread_ts"] == "1700.000001"  # the item's thread
+    assert short["text"] == SUMMARY
+    assert [block["type"] for block in short["blocks"]] == ["section", "actions"]
+    button = short["blocks"][-1]["elements"][0]
+    assert button["url"].endswith("#issuecomment-1")
+    assert not any(_markdown(post) for post in client.posted)
+    record = state_of(config).posted_for(REF, "ev-549-1")
+    assert record == {"channel": CENTRAL, "top": "1700.000002", "parts": []}
+
+
+def test_the_loop_comment_with_a_summary_posts_the_summary_to_slack_and_the_whole_text_to_github(
+    tmp_path, monkeypatch
+):
+    """
+    Feature: every Slack message is a short form, and in a room its long form
+      Scenario: the-loop comment with a summary posts the summary to Slack and the whole text to GitHub
+        Given #375 has declared slack@C0TMP375, subscribed to the agent's comments
+        When the session runs `the-loop comment` with a body and a `--summary`
+        Then the GitHub comment is the whole body, without the summary
+        And the room's top-level message is the summary
+        And the whole body is the long form in that message's thread
+
+    Requirement: docs/specs/issue-549/requirements.md R3.1, R3.2, R3.8, R4.1
+    """
+    from ghfakes import FakeGitHubClient
+    from the_loop.core import github_ops
+
+    config = cli_config(tmp_path, subscribe=["comment.agent"])
+    declare(config)
+    client = FakeSlackClient()
+    monkeypatch.setattr("the_loop.channels.slack.build_client", lambda token: client)
+    github = FakeGitHubClient()
+
+    result = github_ops.comment(
+        REF, LONG_COMMENT, config, client=github, summary=SUMMARY
+    )
+
+    assert result["posted"] is True and result["channelsPosted"] == 1
+    (posted,) = github.posted
+    body = posted[3]
+    assert LONG_COMMENT in body and SUMMARY not in body  # R3.8
+    _opening, short, part = client.posted
+    assert short["thread_ts"] is None and short["text"] == SUMMARY
+    assert part["thread_ts"] == "1700.000002"
+    (block,) = _markdown(part)
+    assert block["text"] == LONG_COMMENT
+
+
+# -- issue-549 task 11: progress edits edit one message, long form included -------
+
+
+def _progress(event_id, text, summary="Review is under way.", node="self-review"):
+    return Event(
+        event_type="phase.progress",
+        work_item=REF,
+        text=text,
+        summary=summary,
+        detail={"phase": "needs-review", "node": node},
+        event_id=event_id,
+    )
+
+
+def _paragraphs(count, size=5000):
+    return "\n\n".join(f"Paragraph {n}. " + "word " * (size // 5) for n in range(count))
+
+
+def test_a_progress_edit_in_the_central_channel_edits_one_message(tmp_path):
+    """
+    Feature: progress within a phase edits one message
+      Scenario: a progress edit in the central channel edits one message
+        Given #375 declared no room, so its conversation is a thread in the
+             central channel
+        When two progress events for the same phase are delivered
+        Then the first is one reply in the work item's thread
+        And the second edits that reply in place, posting nothing new
+
+    Requirement: docs/specs/issue-549/requirements.md R6.1
+    """
+    config = cli_config(tmp_path)
+    client = FakeSlackClient()
+    bot = channel_for(config, client)
+
+    bot.post(_progress("ev-p1", "self-review is running.", summary=""))
+    posted = len(client.posted)
+    bot.post(
+        _progress(
+            "ev-p2", "critic-review is running.", summary="", node="critic-review"
+        )
+    )
+
+    assert len(client.posted) == posted  # root + the one progress reply
+    root, first = client.posted
+    assert first["channel"] == CENTRAL and first["thread_ts"] == "1700.000001"
+    ((channel, ts, text, _blocks),) = client.updates
+    assert (channel, ts) == (CENTRAL, "1700.000002")
+    assert "critic-review" in text
+
+
+def test_a_progress_edit_with_fewer_parts_deletes_the_surplus(tmp_path):
+    """
+    Feature: progress within a phase edits one message
+      Scenario: a progress edit with fewer parts deletes the surplus
+        Given #375 has declared slack@C0TMP375
+        And its phase's progress message holds a long form of three parts
+        When a progress event for the same phase carries a one-part long form
+        Then the progress message is edited in place
+        And its first long-form reply is edited to the new long form
+        And the two surplus replies are deleted
+        And nothing is posted
+
+    Requirement: docs/specs/issue-549/requirements.md R6.1, R6.2
+    """
+    config = cli_config(tmp_path)
+    declare(config)
+    client = FakeSlackClient()
+    bot = channel_for(config, client)
+
+    bot.post(_progress("ev-p1", _paragraphs(6)))
+    opening, short, *parts = client.posted
+    assert len(parts) == 3
+    assert all(part["thread_ts"] == "1700.000002" for part in parts)
+    before = len(client.posted)
+
+    bot.post(
+        _progress(
+            "ev-p2", "The review chain reached critic-review.", node="critic-review"
+        )
+    )
+
+    assert len(client.posted) == before  # no second copy (R6.2)
+    edited = [ts for _channel, ts, _text, _blocks in client.updates]
+    assert edited == ["1700.000002", "1700.000003"]
+    _, _, _, blocks = client.updates[1]
+    assert _markdown({"blocks": blocks})[0]["text"] == (
+        "The review chain reached critic-review."
+    )
+    assert client.deleted == [(ROOM, "1700.000004"), (ROOM, "1700.000005")]
+    record = state_of(config).posted_for(REF, "ev-p2")
+    assert record == {"channel": ROOM, "top": "1700.000002", "parts": ["1700.000003"]}
+
+
+# -- issue-549 R11: Approve from Slack at every human gate ----------------------
+
+REGISTERED = "github:Octo/Repo#549"  # the work item's own spelling
+LOWERED = "github:octo/repo#549"  # what the runtime published on #549
+GATE_NODE = "design-approval"
+INTERACTIVE = {
+    "publish": ["work-item.reply", "gate.feedback"],
+    "read": {"mode": "socket"},
+    "subscribe": ["phase-approval-pending"],
+}
+
+
+class PressClient(FakeSlackClient):
+    """The recording client, plus the ephemeral a refused press is told by."""
+
+    def __init__(self, *a, **k):
+        super().__init__(*a, **k)
+        self.ephemeral = []  # (channel, user, text, thread)
+
+    def chat_postEphemeral(self, *, channel, user, text, thread_ts=None):
+        self.ephemeral.append((channel, user, text, thread_ts))
+        return {"ok": True}
+
+
+def _notify(config, work_item, tmp_path, node=GATE_NODE):
+    """The graph's own `notify` hook opening ``node`` for ``work_item`` — the
+    path that published #549's gates under a lowercased ref."""
+    from the_loop.graph import hooks  # noqa: F401 — registers the hooks
+    from the_loop.graph.contract import HookContext, WorkItem
+    from the_loop.graph.hooks.sideeffects import notify
+
+    spec = tmp_path / "spec"
+    spec.mkdir(exist_ok=True)
+    return notify(
+        HookContext(
+            work_item=WorkItem(ref=work_item, id="issue-549", spec_dir=spec),
+            node={"id": node},
+            boundary="entry",
+            repo=tmp_path,
+            config=config,
+            params={"event": "phase-approval-pending"},
+        )
+    )
+
+
+def _gate_buttons(post):
+    (block,) = [b for b in post["blocks"] or [] if b.get("type") == "actions"]
+    return block.get("block_id"), [e.get("action_id") for e in block["elements"]]
+
+
+def _gate_press(
+    *,
+    channel=ROOM,
+    ts="1700.000002",
+    thread="",
+    user="UHUMAN",
+    node=GATE_NODE,
+    action="the-loop:approve",
+    value="approved",
+):
+    message = {"ts": ts, **({"thread_ts": thread} if thread else {})}
+    action_payload = {"action_id": action, "value": value}
+    if node:
+        action_payload["block_id"] = f"the-loop:gate:{node}"
+    return {
+        "type": "block_actions",
+        "user": {"id": user},
+        "channel": {"id": channel},
+        "message": message,
+        "container": {
+            "message_ts": ts,
+            "channel_id": channel,
+            **({"thread_ts": thread} if thread else {}),
+        },
+        "actions": [action_payload],
+        "action_ts": "1900.1",
+    }
+
+
+def _press(config, payload, sink, client):
+    return inbound.handle_socket_action(
+        payload,
+        config,
+        post_comment=sink.post_comment,
+        deliver=sink.deliver,
+        client_factory=lambda token: client,
+    )
+
+
+@pytest.fixture()
+def gate_open(monkeypatch):
+    """The graph parked at ``design-approval`` — the read the pipeline makes."""
+    monkeypatch.setattr(inbound, "_gate_read", lambda ref, cfg: (True, GATE_NODE))
+
+
+def test_a_gate_opened_under_a_lowercased_ref_posts_its_buttons_in_the_work_items_own_thread(
+    tmp_path, monkeypatch, gate_open
+):
+    """
+    Feature: approve from Slack at every human gate
+      Scenario: a gate opened under a lowercased ref posts its buttons in the work item's own thread
+        Given #549's conversation is a thread in the central channel, bound
+             under its registered spelling github:Octo/Repo#549
+        And the channel can receive a press
+        When the graph's notify hook opens design-approval under
+             github:octo/repo#549
+        Then the gate message is a reply in that same thread, with Approve and
+             Request changes naming the gate
+        And no second thread is opened
+        And a press on it reaches the work item and counts as its answer
+
+    Requirement: docs/specs/issue-549/requirements.md R11.1, R11.2
+    """
+    config = cli_config(tmp_path, **INTERACTIVE)
+    client = PressClient()
+    monkeypatch.setattr("the_loop.channels.slack.build_client", lambda token: client)
+    channel_for(config, client).open(REGISTERED)
+
+    result = _notify(config, LOWERED, tmp_path)
+
+    assert result.status == "pass", result
+    root, gate = client.posted  # no second root
+    assert root["thread_ts"] is None
+    assert gate["channel"] == CENTRAL and gate["thread_ts"] == "1700.000001"
+    block_id, actions = _gate_buttons(gate)
+    assert block_id == f"the-loop:gate:{GATE_NODE}"
+    assert {"the-loop:approve", "the-loop:changes"} <= set(actions)
+    state = state_of(config)
+    assert state.delivery_for(REGISTERED)["gateTs"] == {GATE_NODE: "1700.000002"}
+    assert state.conversation_for(LOWERED) == state.conversation_for(REGISTERED)
+
+    sink = Sink()
+    outcome = _press(
+        config,
+        _gate_press(channel=CENTRAL, ts="1700.000002", thread="1700.000001"),
+        sink,
+        client,
+    )
+    assert outcome["outcome"] == "processed" and outcome["event"] == "gate.feedback"
+    assert [ref for ref, _ in sink.recorded] == [REGISTERED]
+
+
+def test_a_press_in_a_declared_room_approves_the_gate(tmp_path, gate_open):
+    """
+    Feature: approve from Slack at every human gate
+      Scenario: a press in a declared room approves the gate
+        Given #375 has declared slack@C0TMP375 and the channel can receive a press
+        And design-approval's message is a top-level message in the room
+        When an authorized member presses Approve on it
+        Then the press is resolved to #375 through the room
+        And it is recorded on the ticket as the same gate answer a typed
+             "approved" is, which the gate classifies as approved
+        And the pressed message is edited to acknowledge it, its buttons gone
+
+    Requirement: docs/specs/issue-549/requirements.md R11.4
+    """
+    from the_loop.graph.contract import HookContext, WorkItem
+    from the_loop.graph.hooks.feedback import classify_feedback
+
+    config = cli_config(tmp_path, **INTERACTIVE)
+    declare(config)
+    client = PressClient()
+    channel_for(config, client).post(
+        Event(
+            event_type="phase-approval-pending",
+            work_item=REF,
+            text="design.md is ready for its gate.",
+            url="https://github.com/octo/repo/issues/375",
+            detail={"node": GATE_NODE},
+            source="loop",
+            event_id="ev-gate-375",
+        )
+    )
+    gate = client.posted[-1]
+    assert gate["channel"] == ROOM and gate["thread_ts"] is None
+    sink = Sink()
+
+    outcome = _press(config, _gate_press(ts="1700.000002"), sink, client)
+
+    assert outcome["outcome"] == "processed" and outcome["event"] == "gate.feedback"
+    ((ref, body),) = sink.recorded
+    assert ref == REF and "approved" in body
+
+    def verdict(text):
+        spec = tmp_path / "spec"
+        spec.mkdir(exist_ok=True)
+        return classify_feedback(
+            HookContext(
+                work_item=WorkItem(ref=REF, id="issue-375", spec_dir=spec),
+                node={"id": GATE_NODE},
+                boundary="exit",
+                repo=tmp_path,
+                config={"authorizedUsers": ["gh-UHUMAN"]},
+                event={"comments": [{"author": "gh-UHUMAN", "body": text}]},
+            )
+        ).outcome
+
+    assert verdict(body) == verdict("approved") == "approved"  # R11.4
+    ((channel, ts, _text, blocks),) = client.updates
+    assert (channel, ts) == (ROOM, "1700.000002")
+    assert "the-loop:approve" not in str(blocks)
+
+
+def test_a_channel_that_cannot_receive_a_press_shows_how_to_approve_on_github(
+    tmp_path,
+):
+    """
+    Feature: approve from Slack at every human gate
+      Scenario: a channel that cannot receive a press shows how to approve on GitHub
+        Given a channel read by polling, so no press can reach the-loop
+        When a gate opens for #375
+        Then its message carries no Approve or Request changes button
+        And one line says how to answer the gate on GitHub, linked
+
+    Requirement: docs/specs/issue-549/requirements.md R11.5
+    """
+    config = cli_config(
+        tmp_path,
+        publish=["work-item.reply", "gate.feedback"],
+        subscribe=["phase-approval-pending"],
+    )
+    client = PressClient()
+
+    channel_for(config, client).post(
+        Event(
+            event_type="pr-review-pending",
+            work_item=REF,
+            text="PR #12 is ready for review.",
+            url="https://github.com/octo/repo/pull/12",
+            detail={"node": "human-approval"},
+            source="loop",
+        )
+    )
+
+    gate = client.posted[-1]
+    assert "the-loop:approve" not in str(gate["blocks"])
+    assert "the-loop:changes" not in str(gate["blocks"])
+    lines = [
+        element["text"]
+        for block in gate["blocks"]
+        if block["type"] == "context"
+        for element in block["elements"]
+    ]
+    (line,) = [text for text in lines if "on GitHub" in text]
+    assert "<https://github.com/octo/repo/pull/12|on GitHub>" in line
+    assert "approved" in line
+
+
+def test_every_approval_gate_is_remembered_with_its_buttons(tmp_path):
+    """R11.1: the security sign-off is a gate like the others — its message is
+    remembered, so it can be answered and closed."""
+    config = cli_config(tmp_path, **INTERACTIVE)
+    declare(config)
+    client = PressClient()
+    bot = channel_for(config, client)
+    for event_type, node in (
+        ("phase-approval-pending", "requirements-approval"),
+        ("pr-review-pending", "human-approval"),
+        ("security-sign-off-pending", "security-sign-off"),
+    ):
+        bot.post(
+            Event(
+                event_type=event_type,
+                work_item=REF,
+                text=f"{node} is open.",
+                detail={"node": node},
+                source="loop",
+            )
+        )
+        block_id, actions = _gate_buttons(client.posted[-1])
+        assert block_id == f"the-loop:gate:{node}"
+        assert "the-loop:approve" in actions
+    assert set(state_of(config).delivery_for(REF)["gateTs"]) == {
+        "requirements-approval",
+        "human-approval",
+        "security-sign-off",
+    }
+
+
+# -- abuse cases 7 and 8 (T8) ----------------------------------------------------
+
+
+def test_unauthorized_press_refused(tmp_path, gate_open):
+    """Abuse case 7: a press from a member not on the allow-list is not counted —
+    nothing is recorded or delivered, the message is not edited, only the
+    presser is told, and the drop is recorded."""
+    from the_loop import eventlog
+
+    config = cli_config(tmp_path, **INTERACTIVE)
+    declare(config)
+    client = PressClient()
+    channel_for(config, client).post(
+        Event(
+            event_type="phase-approval-pending",
+            work_item=REF,
+            text="design.md is ready.",
+            detail={"node": GATE_NODE},
+            source="loop",
+        )
+    )
+    sink = Sink()
+    log = tmp_path / "events.jsonl"
+    eventlog.configure("test", path=log, enabled=True)
+    try:
+        outcome = _press(
+            config, _gate_press(ts="1700.000002", user="USTRANGER"), sink, client
+        )
+    finally:
+        eventlog.configure("test", enabled=False)
+
+    assert outcome == {"outcome": "unauthorized-actor"}
+    assert sink.recorded == [] and sink.delivered == []
+    assert client.updates == [] and client.acks == []
+    ((channel, user, text, _thread),) = client.ephemeral
+    assert (channel, user) == (ROOM, "USTRANGER")
+    assert "not counted" in text
+    assert '"reason":"unauthorized-actor"' in log.read_text(encoding="utf-8")
+
+
+def test_stale_press_changes_nothing(tmp_path, monkeypatch):
+    """Abuse case 8: a press on a gate that is not open — answered, so its
+    message is no longer the open one; a forged node; or a graph parked
+    elsewhere — records nothing, edits nothing, and only the presser is told."""
+    config = cli_config(tmp_path, **INTERACTIVE)
+    declare(config)
+    client = PressClient()
+    channel_for(config, client).post(
+        Event(
+            event_type="phase-approval-pending",
+            work_item=REF,
+            text="design.md is ready.",
+            detail={"node": GATE_NODE},
+            source="loop",
+        )
+    )
+    sink = Sink()
+    monkeypatch.setattr(inbound, "_gate_read", lambda ref, cfg: (True, GATE_NODE))
+    cases = [
+        # a forged node: no message of it is open
+        _gate_press(ts="1700.000002", node="requirements-approval"),
+        # a message that is not the gate's open one (an older, answered copy)
+        _gate_press(ts="1700.000001"),
+    ]
+    for payload in cases:
+        assert _press(config, payload, sink, client) == {"outcome": "gate-not-open"}
+    # the graph has moved on to another gate
+    monkeypatch.setattr(
+        inbound, "_gate_read", lambda ref, cfg: (True, "tasks-approval")
+    )
+    assert _press(config, _gate_press(ts="1700.000002"), sink, client) == {
+        "outcome": "gate-not-open"
+    }
+    # the graph is parked at no gate at all
+    monkeypatch.setattr(inbound, "_gate_read", lambda ref, cfg: (False, ""))
+    assert _press(config, _gate_press(ts="1700.000002"), sink, client) == {
+        "outcome": "gate-not-open"
+    }
+
+    assert sink.recorded == [] and sink.delivered == []
+    assert client.updates == [] and client.acks == []
+    assert len(client.ephemeral) == 4
+    assert {user for _c, user, _t, _th in client.ephemeral} == {"UHUMAN"}
+    assert all("no longer open" in text for _c, _u, text, _th in client.ephemeral)
+
+
+GATE_GRAPH = {
+    "start": "draft",
+    "nodes": [
+        {"id": "draft"},
+        {
+            "id": GATE_NODE,
+            "actor": "human",
+            "session": "inherit",
+            "entry": [{"hook": "notify", "with": {"event": "phase-approval-pending"}}],
+            "exit": ["classify-feedback"],
+        },
+        {"id": "done", "terminal": True},
+    ],
+    "edges": [
+        {"from": "draft", "to": GATE_NODE, "on": "pass"},
+        {"from": GATE_NODE, "to": "done", "on": "approved"},
+        {"from": GATE_NODE, "to": "draft", "on": "changes-requested"},
+    ],
+}
+
+
+def test_a_gate_answered_on_github_edits_its_slack_message_to_show_the_outcome(
+    tmp_path, monkeypatch
+):
+    """
+    Feature: approve from Slack at every human gate
+      Scenario: a gate answered on GitHub edits its Slack message to show the outcome
+        Given #375 has declared slack@C0TMP375 and the channel can receive a press
+        And the runtime opened design-approval, whose message has its buttons
+        When an authorized user answers "approved" on GitHub and the runtime
+             takes the gate's edge
+        Then the gate's message is edited, not reposted, to show the outcome
+             and who answered
+        And its buttons are gone, its link kept, and the gate is no longer
+             remembered as open, so a later press on it changes nothing
+
+    Requirement: docs/specs/issue-549/requirements.md R11.6
+    """
+    from the_loop.graph import hooks  # noqa: F401 — registers the hooks
+    from the_loop.graph.model import compile_graph
+    from the_loop.graph.runtime import Runtime
+
+    config = {
+        **cli_config(tmp_path, **INTERACTIVE),
+        "authorizedUsers": ["owner"],
+    }
+    declare(config)
+    client = PressClient()
+    monkeypatch.setattr("the_loop.channels.slack.build_client", lambda token: client)
+    repo = tmp_path / "repo"
+    (repo / "docs" / "specs" / "issue-375").mkdir(parents=True)
+    runtime = Runtime(repo, graph=compile_graph(GATE_GRAPH), config=config)
+
+    runtime.advance("issue-375", ref=REF)
+    gate = client.posted[-1]
+    assert "the-loop:approve" in str(gate["blocks"])
+    gate_ts = state_of(config).delivery_for(REF)["gateTs"][GATE_NODE]
+    posted = len(client.posted)
+
+    report = runtime.advance(
+        "issue-375",
+        ref=REF,
+        event={"comments": [{"author": "owner", "body": "approved"}]},
+    )
+
+    assert report.outcome == "approved"
+    assert len(client.posted) == posted  # an edit, never a new message
+    ((channel, ts, text, blocks),) = client.updates
+    assert (channel, ts) == (ROOM, gate_ts)
+    assert "approved" in text and "owner" in text and GATE_NODE in text
+    assert "the-loop:approve" not in str(blocks)
+    assert "the-loop:changes" not in str(blocks)
+    assert "the-loop:open" in str(blocks)  # the link stays
+    assert GATE_NODE not in state_of(config).delivery_for(REF)["gateTs"]
+
+    monkeypatch.setattr(inbound, "_gate_read", lambda ref, cfg: (True, GATE_NODE))
+    sink = Sink()
+    assert _press(config, _gate_press(ts=gate_ts), sink, client) == {
+        "outcome": "gate-not-open"
+    }
+    assert sink.recorded == []

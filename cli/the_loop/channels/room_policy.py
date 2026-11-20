@@ -21,26 +21,31 @@ still reconstruct the whole run from the ticket, exactly as before.
 
 The rules, in the order they are consulted (:func:`decide`):
 
+* **bookkeeping** (issue-549 R10) — the session-started notice (recognised by
+  the ``session-started`` notice kind its hidden marker carries, passed on by
+  the GitHub mirror as ``detail["notice"]``) and the ``loop:<phase>`` label
+  changes (``phase.started`` / ``phase.completed``) → drop. A drop is a "do not
+  post" decision only: the event still reached GitHub and the event log, and
+  the channel still runs the status reactor on it (R10.2, R10.3).
+* **operator-docs** — an event a caller stamped as operator documentation
+  (``is_operator_doc``) is for the ticket, never the room.
 * **dedupe** — the identical event for the same node was already delivered → drop.
-* **gate-collapse** — a ``phase.started`` line or a mirrored "ready for review"
+* **gate-collapse** — a ``phase.progress`` line or a mirrored "ready for review"
   comment for a node whose ``*-pending`` approval message was just posted → drop;
   the message with the buttons is the one announcement a gate gets.
-* **transition-collapse** — a ``phase.completed`` immediately followed by the
-  successor's ``phase.started`` is one transition; the completed half is dropped
-  and the started half carries it.
 * **progress-edit** — a within-phase progress event edits that phase's one
   message in place rather than posting a new one.
 * **ack-thread** — an acknowledgement of a consumed gate answer threads under the
   gate's own message.
 * **session-wins** — a runtime template for a moment the session already spoke
   for is dropped.
-* **operator-docs** — a tmux cheat-sheet / shell block is for the ticket, never
-  the room.
 
 Anything no rule claims is posted, top-level, in the room's own voice
-(:mod:`the_loop.channels.voice`). The whole module is a no-op when the target is
-not a room (a shared channel or an unbound post): the rework is for the place a
-single work item lives.
+(:mod:`the_loop.channels.voice`). Since issue-549 the policy runs for every
+conversation, the central channel included; session-wins alone stays
+room-only, because it exists to make a room read like a conversation. (The
+transition-collapse and endgame-collapse rules of issue-393 acted only on the
+``phase.*`` lifecycle pair, which the bookkeeping rule now drops outright.)
 """
 
 from __future__ import annotations
@@ -49,6 +54,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, Mapping
 
+from .events import APPROVAL_EVENTS
+
 __all__ = [
     "Decision",
     "POST",
@@ -56,7 +63,9 @@ __all__ = [
     "EDIT",
     "THREAD",
     "decide",
+    "is_bookkeeping",
     "is_progress",
+    "BOOKKEEPING_NOTICES",
     "GATE_PENDING_EVENTS",
     "LIFECYCLE_EVENTS",
     "PROGRESS_EVENTS",
@@ -69,10 +78,17 @@ EDIT = "edit"  # chat.update the message at `ts`
 THREAD = "thread"  # a reply under the message at `ts`
 
 #: Events that carry a gate's approval request — the one announcement a gate gets.
-GATE_PENDING_EVENTS = frozenset({"phase-approval-pending", "pr-review-pending"})
+#: Every approval event (issue-549 R11.1), the security sign-off included, so
+#: each gate's message is remembered and can be found again.
+GATE_PENDING_EVENTS = frozenset(APPROVAL_EVENTS)
 
-#: The lifecycle pair the transition-collapse rule folds into one line.
+#: The lifecycle pair: the runtime's ``loop:<phase>`` label changes, which are
+#: bookkeeping (issue-549 R10.1) and never posted to Slack.
 LIFECYCLE_EVENTS = frozenset({"phase.started", "phase.completed"})
+
+#: Notice kinds (``detail["notice"]``, from the-loop's hidden notice marker) that
+#: are bookkeeping (issue-549 R10.1): the daemon's session-started announcement.
+BOOKKEEPING_NOTICES = frozenset({"session-started"})
 
 #: Within-phase progress events that edit the phase's one message in place. An
 #: event type ending in ``.progress`` is treated as progress too, so a new
@@ -115,6 +131,18 @@ def _phase_of(event: Any) -> str:
     return str(detail.get("phase") or detail.get("node") or "")
 
 
+def is_bookkeeping(event: Any) -> bool:
+    """Whether ``event`` is bookkeeping that Slack never shows (issue-549 R10.1):
+    a ``loop:<phase>`` label change, or a notice whose kind is in
+    :data:`BOOKKEEPING_NOTICES`. Session resumed/registered, PR linked, CI
+    checks and reaction acknowledgements are event-log lines only and never
+    reach a channel, so they need no rule here."""
+    if str(getattr(event, "event_type", "") or "") in LIFECYCLE_EVENTS:
+        return True
+    detail = getattr(event, "detail", None) or {}
+    return str(detail.get("notice") or "") in BOOKKEEPING_NOTICES
+
+
 def is_progress(event_type: str) -> bool:
     """Whether ``event_type`` is a within-phase progress event — one that edits
     a phase's message rather than starting a new conversation in the room."""
@@ -132,8 +160,9 @@ def decide(
     """The room's decision for ``event`` given its delivery ``memory``.
 
     ``memory`` is a work item's :meth:`ChannelState.delivery_for` record.
-    ``is_room`` is False for a shared channel or an unbound post, where the whole
-    rework is off and every event simply posts. ``session_authored`` marks an
+    ``is_room`` is False for a shared channel or an unbound post: the rules run
+    there too (issue-549), except session-wins, which makes a room
+    conversational. ``session_authored`` marks an
     event the session itself wrote (its question or summary), which wins over a
     runtime template for the same moment. ``is_operator_doc`` marks operator
     documentation (a tmux cheat-sheet) that never belongs in a room.
@@ -143,17 +172,19 @@ def decide(
     """
     event_type = str(getattr(event, "event_type", "") or "")
 
-    # Outside a room the rework does not apply: a shared channel and an unbound
-    # post get every event, top-level, exactly as before.
-    if not is_room:
-        return Decision(POST, rule="not-a-room")
-
-    # operator-docs — a tmux cheat-sheet (attach table + shell block) is for the
-    # ticket, never a room. The caller stamps `is_operator_doc` when it knows;
-    # the session-started announcement, though, reaches the room as a nodeless
-    # mirrored `comment.agent` that carries no such flag (issue N2), so its own
-    # distinctive lead is recognised here too.
-    if is_operator_doc or _is_operator_doc_text(event):
+    # issue-549 (design.md stage 1): the policy runs for EVERY conversation, so
+    # progress-edit, gate memory and the bookkeeping drops act in the central
+    # channel too. session-wins, which makes a room conversational, still needs
+    # `is_room`.
+    #
+    # bookkeeping (R10.1) — recognised by kind, never by matching words: the
+    # session-started notice by the notice kind in the-loop's hidden marker,
+    # the label changes by their event type.
+    if is_bookkeeping(event):
+        return Decision(DROP, rule="bookkeeping")
+    # operator-docs — what a caller stamped as operator documentation is for
+    # the ticket, never a room.
+    if is_operator_doc:
         return Decision(DROP, rule="operator-docs")
 
     node = _node_of(event)
@@ -169,41 +200,23 @@ def decide(
 
     # session-wins — the session already spoke for this moment; drop the template.
     # A session-authored event itself always posts (it IS the winning message).
-    if not session_authored and _template_superseded(event, memory):
+    if is_room and not session_authored and _template_superseded(event, memory):
         return Decision(DROP, rule="session-wins")
 
-    # endgame-collapse — the terminal `complete`/`done` node's own lifecycle
-    # lines say nothing the room is not already told: `work-item-complete`
-    # announces arrival and `work-item.closed` announces the close, and the
-    # session posts its own "issue-N complete" summary between them (issue N2 —
-    # the run ended in five messages where two were these empty lifecycle lines,
-    # "started phase *complete* (complete)" and "completed phase *complete*").
-    # A `phase.completed` explicitly flagged `terminal` in its detail is the
-    # deliberate "the room should hear this completion" signal and is kept; the
-    # plain lifecycle pair for the terminal node is not. (The flag, not the node
-    # name — `_is_terminal` treats the node name alone as terminal, which is what
-    # transition-collapse wants but would keep every plain pair here.)
-    if (
-        event_type in LIFECYCLE_EVENTS
-        and _node_of(event) in ("complete", "done")
-        and not bool((getattr(event, "detail", None) or {}).get("terminal"))
-    ):
-        return Decision(DROP, rule="endgame-collapse")
-
     # gate-collapse — a gate announces once, with its buttons. After a `*-pending`
-    # for a node, that node's lifecycle line and its mirrored "ready for review"
-    # comment are noise.
+    # for a node, that node's progress line and its mirrored "ready for review"
+    # comment are noise (its `phase.started` is bookkeeping, dropped above).
     #
     # Two live-run facts (issue N2) shape this. First, an approval node usually
     # declares no `phase:` of its own and inherits its predecessor's, so entering
     # it does not change the phase label and the runtime emits `phase.progress`,
-    # not `phase.started` — so both must be collapsed at a gated node. Second, the
+    # not `phase.started` — so the progress line is collapsed at a gated node. Second, the
     # "ready for review" restatement reaches the room as a mirrored `comment.agent`
     # that carries NO node (the mirror derives none from the comment body), so it
     # cannot be matched to a specific gate's node — but a room holds one gate open
     # at a time, so a "ready for review" mirror while ANY gate is pending is that
     # gate's restatement, and is dropped.
-    if node and gate_ts.get(node) and event_type in ("phase.started", "phase.progress"):
+    if node and gate_ts.get(node) and event_type == "phase.progress":
         return Decision(DROP, rule="gate-collapse")
     if event_type == MIRROR_EVENT and _looks_like_ready_for_review(event):
         # The mirror carries no node; the node it names ("**<node>** is ready for
@@ -235,13 +248,6 @@ def decide(
         return Decision(
             POST, rule="progress-open", remember={"progressTs": {phase: "@ts"}}
         )
-
-    # transition-collapse — `phase.completed` immediately followed by the
-    # successor's `phase.started` is one transition. Drop the completed half; the
-    # started half (next call) carries the move. Only when the completed event is
-    # not itself a terminal "done" the room should hear.
-    if event_type == "phase.completed" and not _is_terminal(event):
-        return Decision(DROP, rule="transition-collapse")
 
     # Anything else: a new top-level message, remembered as the last thing said.
     return Decision(
@@ -275,22 +281,6 @@ def _looks_like_ready_for_review(event: Any) -> bool:
     return "ready for review" in text or "reply with an approval" in text
 
 
-#: The lead of the session-started announcement
-#: (:func:`the_loop.announce.announcement_body`) — a tmux cheat-sheet that is
-#: operator documentation, recognised here because its mirror carries no flag.
-_OPERATOR_DOC_LEAD = "started an interactive session for"
-
-
-def _is_operator_doc_text(event: Any) -> bool:
-    """Whether a mirrored comment is the tmux cheat-sheet (issue N2). Matched on
-    the announcement's own lead plus the `tmux attach` line it always carries, so
-    an ordinary comment that merely mentions a session is not swept up."""
-    if str(getattr(event, "event_type", "") or "") != MIRROR_EVENT:
-        return False
-    text = str(getattr(event, "text", "") or "")
-    return _OPERATOR_DOC_LEAD in text and "tmux attach -t" in text
-
-
 #: The node named in a `request-review` mirror body: "**<node>** is ready for
 #: review" (:func:`the_loop.graph.hooks.sideeffects.request_review`). The mirror
 #: carries no `detail["node"]`, so the node it collapses against is read here.
@@ -319,10 +309,3 @@ def _is_ack(event: Any) -> bool:
         bool(detail.get("ack"))
         or str(getattr(event, "event_type", "")) == "gate.acknowledged"
     )
-
-
-def _is_terminal(event: Any) -> bool:
-    """Whether a `phase.completed` is the run's own end (the room should hear a
-    completion), not an intermediate one to collapse into the next start."""
-    detail = getattr(event, "detail", None) or {}
-    return bool(detail.get("terminal")) or _node_of(event) in ("complete", "done")

@@ -442,3 +442,76 @@ def test_the_slack_verification_token_is_not_stored(gw):
         .fetchall()
     )
     assert rows and all(b"legacy-verification-token" not in bytes(r[0]) for r in rows)
+
+
+class _ProxyResp:
+    def __init__(self, status, data, headers=None):
+        self.status_code, self.data, self.headers = status, data, headers or {}
+
+
+class _RecordingSlackWeb:
+    """The Slack Web API as the gateway's proxy sees it: one ``api_call``, recorded."""
+
+    def __init__(self):
+        self.calls = []
+
+    def api_call(self, method, *, http_verb="POST", json=None, params=None, **_):
+        self.calls.append((method, dict(json or params or {})))
+        return _ProxyResp(200, {"ok": True})
+
+
+def test_the_gateway_proxy_forwards_reactions_remove_and_chat_delete(
+    tmp_path, monkeypatch
+):
+    """
+    Feature: one Slack app serves every instance through the gateway
+      Scenario: the gateway proxy forwards reactions.remove and chat.delete
+        Given an instance whose Slack client is the gateway-backed client
+        When it removes a reaction and deletes a message through the gateway
+        Then the gateway forwards both calls to Slack with their parameters
+        And neither is refused as a method outside the allow-list
+
+    Requirement: docs/specs/issue-549/requirements.md#requirement-6 (R6.2), R8
+    """
+    from the_loop.channels.slack_gateway import GatewaySlackClient
+    from the_loop.gateway import slack_proxy
+
+    monkeypatch.setenv("THE_LOOP_TEST_GW_BOT_TOKEN", "xoxb-gateway")
+    monkeypatch.setenv("THE_LOOP_TEST_GW_APP_TOKEN", "xapp-gateway")
+    harness = GatewayHarness(
+        tmp_path,
+        slack={
+            "socket": {
+                "enabled": True,
+                "appTokenEnv": "THE_LOOP_TEST_GW_APP_TOKEN",
+                "botTokenEnv": "THE_LOOP_TEST_GW_BOT_TOKEN",
+            }
+        },
+    )
+    web = _RecordingSlackWeb()
+    harness.state.slack_proxy = slack_proxy.SlackProxy(
+        harness.state, web_client_factory=lambda token: web
+    )
+
+    def transport(method, path, body, timeout):
+        response = harness.client.request(method, path, json=body)
+        return response.status_code, (response.json() if response.content else None)
+
+    try:
+        client = GatewaySlackClient(
+            "http://gateway.test:8790", "laptop-a", "p1", transport=transport
+        )
+        assert client.reactions_remove(
+            channel="CROOM", timestamp="1700.1", name="eyes"
+        )["ok"]
+        assert client.chat_delete(channel="CROOM", ts="1700.2")["ok"]
+        assert web.calls == [
+            (
+                "reactions.remove",
+                {"channel": "CROOM", "timestamp": "1700.1", "name": "eyes"},
+            ),
+            ("chat.delete", {"channel": "CROOM", "ts": "1700.2"}),
+        ]
+        assert {"reactions.remove", "chat.delete"} <= slack_proxy.SLACK_METHODS
+    finally:
+        harness.close()

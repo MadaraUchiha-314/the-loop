@@ -201,6 +201,59 @@ def test_a_checkout_with_no_origin_derives_nothing(tmp_path, github):
         _split_ref(WORK_ITEM)
 
 
+def _registered(tmp_path, monkeypatch, ref: str) -> None:
+    """A CLI config naming a registry directory that holds ``ref``'s session."""
+    from the_loop.sessions import Session, SessionRegistry, WorkItemRef
+
+    registry_dir = tmp_path / "registry"
+    config = tmp_path / "cli-config.yaml"
+    config.write_text(f'version: "0.12.0"\nrouting:\n  registryDir: {registry_dir}\n')
+    monkeypatch.setenv("THE_LOOP_CLI_CONFIG", str(config))
+    SessionRegistry(registry_dir).register(
+        Session(
+            work_item=WorkItemRef.parse(ref),
+            harness="claude",
+            harness_session_id="sess-1",
+            cwd=str(tmp_path),
+        )
+    )
+
+
+def test_casefold_a_verb_with_no_ref_keeps_the_registered_spelling(
+    tmp_path, monkeypatch
+):
+    """
+    Feature: graph verbs name the work item as its ticket does
+      Scenario: a verb with no --ref takes owner and repo from the registration
+        Given a work item registered as github:Octo-Cat/The-Repo#194
+        And a checkout whose origin remote names the same repository
+        When a graph verb runs with no --ref
+        Then the work item's ref is github:Octo-Cat/The-Repo#194
+        And not the remote's lowercased spelling, which keyed a second thread
+
+    Requirement: docs/specs/issue-549/requirements.md R11.2
+    """
+    from the_loop.core import graphs as core_graphs
+
+    repo = _repo(tmp_path / "checkout", ticketing="Octo-Cat/The-Repo")
+    _registered(tmp_path, monkeypatch, "github:Octo-Cat/The-Repo#194")
+    runtime = core_graphs._runtime(str(repo), work_item=WORK_ITEM)
+    assert runtime.work_item(WORK_ITEM).ref == "github:Octo-Cat/The-Repo#194"
+
+
+def test_casefold_a_verb_falls_back_to_the_remote_when_nothing_is_registered(
+    tmp_path, monkeypatch
+):
+    """R11.2: with no registration, the remote answers, as it did before; a
+    registration of another repository or number is not this work item's."""
+    from the_loop.core import graphs as core_graphs
+
+    repo = _repo(tmp_path / "checkout", ticketing="octo/repo")
+    _registered(tmp_path, monkeypatch, "github:Octo/Other#194")
+    runtime = core_graphs._runtime(str(repo), work_item=WORK_ITEM)
+    assert runtime.work_item(WORK_ITEM).ref == DERIVED
+
+
 def test_an_inner_loop_derives_the_pull_requests_ref_not_the_work_items(tmp_path):
     """
     Feature: outbound graph hooks reach the ticket

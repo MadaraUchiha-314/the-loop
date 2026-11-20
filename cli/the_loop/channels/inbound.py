@@ -49,12 +49,14 @@ from .slack import (
     ACTION_PREFIX,
     DECISION_VIEW_CALLBACK,
     EXECUTE_ACTION,
+    GATE_ACTIONS,
     GITHUB_COMMENT_LIMIT,
     MENTION_SHORTCUTS,
     PHASE_SELECTION_MARKER,
     KICKOFF_COMMANDS,
     WITHOUT,
     decision_view,
+    gate_node_of,
     SlackBotChannel,
     SlackChannelConfig,
     _ts_key,
@@ -207,27 +209,37 @@ def _at_human_gate(work_item: str, cli_config: Optional[Mapping]) -> Optional[bo
     exactly the case where the pipeline knew least. :func:`_classify` decides
     what ``None`` becomes.
     """
+    return _gate_read(work_item, cli_config)[0]
+
+
+def _gate_read(
+    work_item: str, cli_config: Optional[Mapping]
+) -> Tuple[Optional[bool], str]:
+    """:func:`_at_human_gate`'s three answers, with the node the graph is parked
+    at when it is a human gate (``""`` otherwise) — what a button press that
+    names its gate is checked against (issue-549 abuse case 8)."""
     if not work_item or parse_standing_ref(work_item):
-        return False
+        return False, ""
     try:
         from ..sessions import WorkItemRef
 
         routing, registry, link = _graph_reader(cli_config)
         if not routing.graph.enabled:
-            return False
+            return False, ""
         item = WorkItemRef.parse(work_item)
         record = registry.record_owning(item)
         if record is None or not record.cwd:
             logger.debug("no session record for %s: gate unknown", work_item)
-            return None
+            return None, ""
         context = link.context(item, record.cwd)
     except Exception as exc:  # noqa: BLE001 — a graph fault is "cannot tell"
         logger.debug("could not read the graph for %s: %s", work_item, exc)
-        return None
+        return None, ""
     if context is None:
-        return None
+        return None, ""
     gate = getattr(context, "at_human_gate", False)
-    return bool(gate() if callable(gate) else gate)
+    parked = bool(gate() if callable(gate) else gate)
+    return parked, (str(getattr(context, "current_node", "") or "") if parked else "")
 
 
 #: What the graph read returned, as `channel.reply_received` records it.
@@ -467,6 +479,9 @@ def process_reply(
     speaker = speaker_for(reply.author, reply.work_item, config, cli_config, bot)
     if not speaker.authorized and not speaker.collaborator:
         return _drop(reply, "unauthorized-actor", level="warning", actor=reply.author)
+    if speaker.authorized:
+        # an authorized human spoke here: the recap's reference point (issue-549 R9)
+        bot.note_human(reply.work_item)
     own = bot.own_user_id()
     if not own and (
         (reply.addressed and "<@" in (reply.text or "")) or addresses_a_verb(reply.text)
@@ -1996,9 +2011,19 @@ def handle_socket_action(
     )
     config = SlackChannelConfig.from_mapping(cli_config)
     state_path = slack_state_path(cli_config)
-    state = ChannelState.load(state_path, ChannelStores.beside(state_path))
+    stores = ChannelStores.beside(state_path)
+    state = ChannelState.load(state_path, stores)
     action_id = str(actions[0].get("action_id") or "")
     text = action_value(actions[0])
+    channel_id = str(
+        (payload.get("channel") or {}).get("id") or container.get("channel_id") or ""
+    )
+    # Whose press is this? The thread binding, else the declared room's work
+    # item (issue-549 R11): a gate message in a room is a top-level message,
+    # which no thread binding names. `declared_work_item` answers only for a
+    # room exactly one work item declared — the room-declaration rule.
+    bound = state.work_item_for(thread) or "" if thread else ""
+    work_item = bound or (stores.declared_work_item(channel_id) if channel_id else "")
     if action_id == EXECUTE_ACTION and isinstance(message, Mapping):
         # Execute on the phase-selection control (issue-393 R9.1): the press
         # composes the keyword AND the boxes as the payload's `state.values`
@@ -2008,7 +2033,7 @@ def handle_socket_action(
         text = compose_selection_execute(text, message, payload.get("state"))
     reply = InboundReply(
         channel="slack",
-        work_item=state.work_item_for(thread) or "" if thread else "",
+        work_item=work_item,
         author=str((payload.get("user") or {}).get("id") or ""),
         text=text,
         thread=thread,
@@ -2018,11 +2043,17 @@ def handle_socket_action(
             or payload.get("action_ts")
             or ""
         ),
-        channel_id=str((payload.get("channel") or {}).get("id") or ""),
+        channel_id=channel_id,
     )
     bot = SlackBotChannel(
         config, state_path, client_factory=client_factory, cli_config=cli_config
     )
+    if action_id in GATE_ACTIONS:
+        refused = _refuse_gate_press(
+            reply, gate_node_of(actions[0]), config, cli_config, state, bot
+        )
+        if refused is not None:
+            return refused
     if is_kickoff_repo_action(action_id):
         # The one press that is an ARGUMENT rather than an answer or a keyword
         # (issue-349): there is no work item yet, so `process_reply` would drop it
@@ -2069,3 +2100,53 @@ def handle_socket_action(
             outcome,
         )
     return outcome
+
+
+def _refuse_gate_press(
+    reply: InboundReply,
+    named: str,
+    config: SlackChannelConfig,
+    cli_config: Optional[Mapping],
+    state: ChannelState,
+    bot: SlackBotChannel,
+) -> Optional[Dict[str, Any]]:
+    """Why an Approve / Request changes press does not count, or ``None`` when it
+    goes on to the pipeline — classified there exactly as the same words typed
+    (issue-549 R11.4).
+
+    Two refusals, each told to the presser alone and recorded as a drop:
+
+    * **not on the allow-list** (abuse case 7) — checked first, before the
+      graph is read or anything is classified. A collaborator is refused too: a
+      gate is answered by an authorized user only.
+    * **the gate is not open** (abuse case 8) — the press names its gate
+      (:func:`~.slack.gate_node_of`), and that gate's message is no longer the
+      one remembered as open (answered, or a forged node), or the graph says it
+      is parked at no gate, or at another one. A graph the pipeline cannot read
+      decides nothing here: the ledger's ingress judges the record with the
+      graph it keeps, as it does for a typed answer (issue-321).
+    """
+    if not reply.work_item:
+        return None  # `unmapped`, dropped by the pipeline as before
+    if not _authorized(reply.author, config, cli_config):
+        _tell(bot, reply, strings.t("channels.inbound.tell.press-refused"))
+        return _drop(reply, "unauthorized-actor", level="warning", actor=reply.author)
+    stale = False
+    if named:
+        memory = state.delivery_for(reply.work_item)
+        live = memory["gateTs"].get(named, "")
+        where = str((memory["gateMessage"].get(named) or {}).get("channel") or "")
+        # the same ts in another conversation is another message
+        stale = live != reply.ts or bool(
+            where and reply.channel_id and where != reply.channel_id
+        )
+    if not stale:
+        parked = _at_human_gate(reply.work_item, cli_config)
+        stale = parked is False
+        if parked and named:
+            node = _gate_read(reply.work_item, cli_config)[1]
+            stale = bool(node) and node != named
+    if stale:
+        _tell(bot, reply, strings.t("channels.inbound.tell.press-stale"))
+        return _drop(reply, "gate-not-open", actor=reply.author, node=named or None)
+    return None

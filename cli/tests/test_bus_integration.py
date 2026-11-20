@@ -37,7 +37,7 @@ class FakeSlackClient:
         self.replies = {}
         self.history = []
 
-    def chat_postMessage(self, *, channel, text, thread_ts=None, blocks=None):
+    def chat_postMessage(self, *, channel, text, thread_ts=None, blocks=None, **unfurl):
         self.posted.append(
             {"channel": channel, "text": text, "thread_ts": thread_ts, "blocks": blocks}
         )
@@ -188,7 +188,10 @@ def test_an_agents_comment_reaches_slack_and_a_humans_only_when_subscribed(
     assert agent is None  # dropped at ingress, exactly as before
     assert len(slack.posted) == 3
     assert slack.posted[2]["thread_ts"] == slack.posted[1]["thread_ts"]
-    assert "## Summary" in slack.posted[2]["text"]
+    # issue-549 R4.2: the central channel gets the short form, with the button to
+    # the whole comment on GitHub, and no long form
+    buttons = slack.posted[2]["blocks"][-1]["elements"]
+    assert buttons[0]["url"] == "https://github.com/o/r/issues/7#c9"
 
     human = router.route("issue_comment", comment("looks good"), "d2")
     assert isinstance(human, RoutedEvent)
@@ -199,7 +202,12 @@ def test_an_agents_comment_reaches_slack_and_a_humans_only_when_subscribed(
     )
     assert router.route("issue_comment", comment("ship it"), "d3") is not None
     assert len(slack.posted) == 4 and "ship it" in slack.posted[3]["text"]
-    assert "@octocat" in slack.posted[3]["blocks"][0]["text"]["text"]
+    # issue-549 R3: the short form is a lead that names the author, then the
+    # comment's first sentence
+    assert (
+        slack.posted[3]["blocks"][0]["text"]["text"]
+        == f"💬 *@{OPERATOR}* commented: ship it"
+    )
 
     record = env.stamp(
         mark_self_authored("> yes"), env.Envelope("work-item.reply", "slack")
@@ -456,7 +464,8 @@ def test_the_complete_node_announces_work_item_complete_with_a_link(
     done = notify(ctx("work-item-complete"))
     assert done.status == "pass" and done.data["delivered"] is True
     post = slack.posted[-1]
-    assert "Done" in post["blocks"][0]["text"]["text"]
+    # issue-549 R3.5: a runtime event's short form is its fixed lead
+    assert "*complete*" in post["blocks"][0]["text"]["text"]
     assert post["blocks"][-1]["elements"][0]["url"] == "https://github.com/o/r/issues/7"
 
     gate = notify(ctx("phase-approval-pending", artifact="requirements.md"))
@@ -464,7 +473,9 @@ def test_the_complete_node_announces_work_item_complete_with_a_link(
     text = " ".join(
         b["text"]["text"] for b in slack.posted[-1]["blocks"] if "text" in b
     )
-    assert "the thing" in text and "type: requirements" not in text
+    # issue-549 R3.5, R4.2: the gate's short form is its fixed lead; the
+    # artifact's excerpt is no longer drawn on the message (the button opens it)
+    assert "phase-approval-pending" in text and "type: requirements" not in text
 
 
 def test_the_pr_review_gate_names_the_pull_request_and_links_to_it(
@@ -800,3 +811,85 @@ def test_a_reply_for_a_work_item_with_no_session_record_is_left_to_the_ledger(
     assert (
         is_self_authored(records[0][1]) and _etype(records[0][1]) == "work-item.reply"
     )
+
+
+def test_a_session_started_notice_reaches_github_and_not_slack(
+    tmp_path, monkeypatch, slack
+):
+    """
+    Feature: bookkeeping stays out of Slack
+      Scenario: a session-started notice reaches GitHub and not Slack
+        Given a bound thread and a Slack channel subscribed to comment.agent
+        When the daemon announces a spawned session on the work item
+        Then the announcement is a comment on GitHub, carrying the
+             session-started notice kind in its hidden marker
+        And the event log records the announcement
+        When the webhook router mirrors that comment
+        Then the comment.agent event carries the notice kind
+        And no Slack message is posted for it
+
+    Requirement: docs/specs/issue-549/requirements.md R10.1, R10.2
+    """
+    from ghfakes import FakeGitHubClient
+
+    from the_loop import eventlog
+    from the_loop.announce import AnnounceConfig, SessionAnnouncer
+    from the_loop.channels.publishers import comment_publisher
+    from the_loop.sessions import Session, WorkItemRef
+
+    _ledger_writer(monkeypatch, [])
+    config = cli_config(tmp_path, subscribe=["session.awaiting_input", "comment.agent"])
+    _bound_thread(tmp_path, config, slack)
+    before = len(slack.posted)
+
+    emitted = []
+    monkeypatch.setattr(eventlog, "emit", lambda event, **fields: emitted.append(event))
+    github = FakeGitHubClient()
+    session = Session(
+        work_item=WorkItemRef.parse("github:o/r#7"),
+        harness="claude",
+        harness_session_id="sid",
+        cwd="/tmp",
+        tmux_target="loop-o-r-7",
+    )
+    assert SessionAnnouncer(AnnounceConfig(), client=github).announce(session)
+    (posted,) = github.posted
+    body = posted[3]
+    assert "<!-- the-loop:notice session-started -->" in body  # GitHub has it
+    assert "session.announced" in emitted  # the event log has it (R10.2)
+
+    published = []
+    monkeypatch.setattr(
+        "the_loop.channels.bus.publish",
+        _spy(
+            published, __import__("the_loop.channels.bus", fromlist=["publish"]).publish
+        ),
+    )
+    router = Router(
+        events=[],
+        authorized_users=[OPERATOR],
+        publisher=comment_publisher(lambda: config),
+    )
+    payload = {
+        "action": "created",
+        "repository": {"full_name": "o/r"},
+        "issue": {"number": 7, "html_url": "https://github.com/o/r/issues/7"},
+        "comment": {
+            "body": body,
+            "user": {"login": OPERATOR},
+            "html_url": "https://github.com/o/r/issues/7#c10",
+        },
+    }
+    assert router.route("issue_comment", payload, "d1") is None  # its own comment
+    (event,) = published
+    assert event.event_type == "comment.agent"
+    assert event.detail.get("notice") == "session-started"
+    assert len(slack.posted) == before  # nothing reached Slack (R10.1)
+
+
+def _spy(sink, real):
+    def publish(event, *args, **kwargs):
+        sink.append(event)
+        return real(event, *args, **kwargs)
+
+    return publish

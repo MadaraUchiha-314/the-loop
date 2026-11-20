@@ -428,16 +428,16 @@ class ManagerFacade:
     # these are the manager's own unless `instance` names a member.
 
     def post_work_item_comment(
-        self, ref: str, body: str, instance: str = ""
+        self, ref: str, body: str, instance: str = "", summary: str = ""
     ) -> Dict[str, Any]:
         member = self._target(instance)
         if self.fleet.is_local(member):
-            return self.core.post_work_item_comment(ref, body)
+            return self.core.post_work_item_comment(ref, body, summary=summary)
         return self._proxy(
             member,
             "POST",
             "/api/v1/work-items/comments",
-            body={"ref": ref, "body": body},
+            body={"ref": ref, "body": body, "summary": summary},
         )
 
     def get_ticket(self, ref: str, instance: str = "") -> Dict[str, Any]:

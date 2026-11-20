@@ -29,11 +29,18 @@ class FakeSlackClient:
     def __init__(self):
         self.posted = []
         self.error = ""  # set to a Slack error code to refuse every post
+        #: refuse only the post whose markdown block opens with this (issue-549)
+        self.refuse_part = ""
 
-    def chat_postMessage(self, *, channel, text, thread_ts=None, blocks=None):
+    def chat_postMessage(self, *, channel, text, thread_ts=None, blocks=None, **unfurl):
         if self.error:
             return {"ok": False, "error": self.error}
-        self.posted.append({"channel": channel, "text": text, "thread_ts": thread_ts})
+        markdown = [b["text"] for b in blocks or () if b.get("type") == "markdown"]
+        if self.refuse_part and markdown and markdown[0].startswith(self.refuse_part):
+            return {"ok": False, "error": "internal_error"}
+        self.posted.append(
+            {"channel": channel, "text": text, "thread_ts": thread_ts, "md": markdown}
+        )
         return {"ok": True, "channel": channel, "ts": f"1700.{len(self.posted):06d}"}
 
     def auth_test(self):
@@ -200,3 +207,68 @@ def test_a_status_whose_outbox_cannot_be_read_still_answers(tmp_path, monkeypatc
     assert report["channelDelivery"]["pending"] == 0
     assert [row["service"] for row in report["services"]]
     assert lifecycle.undelivered_line(report) == ""
+
+
+def test_an_outbox_replay_after_a_partial_delivery_posts_only_the_missing_parts(
+    tmp_path, slack, ticket, log
+):
+    """
+    Feature: a retried delivery never posts twice
+      Scenario: an outbox replay after a partial delivery posts only the missing parts
+        Given a work item whose conversation is a declared room
+        And an agent comment whose long form is three thread replies
+        When Slack refuses the second part, so the event is queued in the outbox
+        Then the short message and the first part are already in the room
+        When the outbox replays the event after Slack recovers
+        Then only the second and third parts are posted, in order, in the short
+             message's thread — no second short message, no second first part
+
+    Requirement: docs/specs/issue-549/requirements.md §Non-functional requirements
+                 (retries are idempotent, order)
+    """
+    from the_loop.channels import bus
+    from the_loop.channels.base import Event
+    from the_loop.workchannels import CollaborationChannelStore
+
+    config = cli_config(tmp_path)
+    config["channels"]["slack"]["subscribe"] = ["comment.agent"]
+    CollaborationChannelStore(tmp_path / "state" / "portable").add(
+        REF, "slack@C0ROOM549", actor=OPERATOR, source="cli"
+    )
+    paragraph = "A paragraph of the long form, written for the desk reader. " * 6
+    text = "\n\n".join(f"Paragraph {n}. {paragraph}" for n in range(1, 80))
+    slack.refuse_part = "_(2/3)_"
+
+    bus.publish(
+        Event(
+            event_type="comment.agent",
+            work_item=REF,
+            text=text,
+            url="https://gh/c/9",
+            source="cli",
+            summary="Three parts follow.",
+        ),
+        config,
+        record=False,
+    )
+
+    first_try = list(slack.posted)
+    assert len(first_try) == 3  # the room's opening, the short form, part 1
+    assert first_try[1]["md"] == [] and first_try[1]["thread_ts"] is None
+    assert first_try[2]["md"][0].startswith("_(1/3)_")
+    queued = outbox.entries(config)
+    assert len(queued) == 1 and queued[0]["event"]["eventType"] == "comment.agent"
+
+    slack.refuse_part = ""
+    assert outbox.drain(config) == {"attempted": 1, "delivered": 1, "pending": 0}
+
+    replayed = slack.posted[len(first_try) :]
+    assert [post["md"][0][:7] for post in replayed] == ["_(2/3)_", "_(3/3)_"]
+    short_ts = "1700.000002"
+    assert all(post["thread_ts"] == short_ts for post in replayed)
+    shorts = [
+        post
+        for post in slack.posted
+        if post["text"] == "Three parts follow." and not post["md"]
+    ]
+    assert len(shorts) == 1

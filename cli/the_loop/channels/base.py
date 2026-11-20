@@ -10,6 +10,7 @@ it is granted to become, ``post``s an event it rendered itself — and one chann
 from __future__ import annotations
 
 import logging
+import uuid
 from dataclasses import dataclass, field
 from typing import (
     Any,
@@ -49,6 +50,7 @@ __all__ = [
     "ledger_name",
     "load_channels",
     "load_ledger",
+    "new_event_id",
     "render",
 ]
 
@@ -85,8 +87,13 @@ class Event:
     it decided and what it is least sure of — what a reviewer on a phone actually
     wants from a gate, in place of the document's first 1,500 characters. It is
     optional and untrusted-adjacent (the session writes it): a renderer treats it
-    as text, capped and with mentions neutralised, and falls back to the digest
-    excerpt when it is absent. No consumer requires it.
+    as text, capped and with mentions neutralised, and builds a short form from
+    the text when it is absent (issue-549 R3). No consumer requires it.
+
+    ``event_id`` (issue-549) names this one occurrence. :func:`~the_loop.channels.bus.publish`
+    mints it when the publisher left it empty, and the outbox keeps it across a
+    replay, so a channel can recognise an event it has already delivered and a
+    retry never posts twice. Empty only on an event that never went through the bus.
     """
 
     event_type: str
@@ -97,6 +104,12 @@ class Event:
     source: str = "loop"
     actor: Optional[Principal] = None
     summary: str = ""
+    event_id: str = ""
+
+
+def new_event_id() -> str:
+    """A fresh event id: random, unique across the processes that publish."""
+    return uuid.uuid4().hex
 
 
 #: The pre-issue-309 name, kept so embedders and the standing-session module read on.

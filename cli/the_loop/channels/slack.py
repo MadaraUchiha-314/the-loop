@@ -32,9 +32,9 @@ import re
 import threading
 import time
 import unicodedata
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 from .. import eventlog, strings
 from ..cli_config import gateway_block
@@ -48,22 +48,46 @@ from .base import (
     Event,
     InboundReply,
     PostResult,
-    render,
 )
-from .digest import (
-    DEFAULT_DIGEST_MODE,
-    DIGEST_MODES,
-    fit,
-    sanitize_summary,
-    truncate,
+from .events import (
+    APPROVAL_EVENTS,
+    GATE_ANSWERED,
+    PUBLISHABLE_EVENTS,
+    SUBSCRIBABLE_EVENTS,
 )
-from .events import APPROVAL_EVENTS, PUBLISHABLE_EVENTS, SUBSCRIBABLE_EVENTS
-from . import room_policy
+from . import placement, room_policy, status as status_reactor
+from .preamble import Preamble, change_of, mention_line, recap_line, wait_key
+from .delivery import (
+    THREAD_OF_TOP,
+    Delivered,
+    MessagePlan,
+    deliver,
+    plan_message,
+    post_message,
+    summary_of,
+    with_retry,
+)
+from .render import LongForm, render_long_form
+from .shortform import build_short_form, long_form_adds
 from .state import ROOM_MODE, ChannelState, ChannelStores
-from .voice import room_lead
 from . import attachments
 
 logger = logging.getLogger("the-loop.channels")
+
+#: The deprecated keys of ``channels.slack`` (issue-549 R1.3), and the ones this
+#: process has already warned about: each is named once, however often the
+#: config is read.
+DEPRECATED_SLACK_KEYS: Tuple[str, ...] = ("maxChars", "longMessages")
+_DEPRECATED_WARNED: Set[str] = set()
+
+
+def _warn_deprecated(section: Mapping[str, Any]) -> None:
+    """Warn once per process for each deprecated key ``section`` still sets."""
+    for key in DEPRECATED_SLACK_KEYS:
+        if key in section and key not in _DEPRECATED_WARNED:
+            _DEPRECATED_WARNED.add(key)
+            logger.warning(strings.t("channels.slack.deprecated-key", key=key))
+
 
 __all__ = [
     "ACTION_PREFIX",
@@ -77,6 +101,11 @@ __all__ = [
     "Snapshot",
     "mention_findings",
     "APPROVE_VALUE",
+    "GATE_ACTIONS",
+    "GATE_BLOCK_PREFIX",
+    "approve_on_github_line",
+    "gate_node_of",
+    "gate_answered_line",
     "BUTTON_CHOICE_LIMIT",
     "KICKOFF_REFUSALS",
     "BUTTON_NAMES",
@@ -88,7 +117,6 @@ __all__ = [
     "OPTION_LIMIT",
     "DEFAULT_APP_TOKEN_ENV",
     "DEFAULT_BOT_TOKEN_ENV",
-    "DEFAULT_MAX_CHARS",
     "DEFAULT_REACTIONS",
     "PHASE_SELECTION_MARKER",
     "CHECKBOX_LIMIT",
@@ -141,7 +169,7 @@ __all__ = [
     "expected_commands",
     "is_kickoff_repo_action",
     "kickoff_cursor_key",
-    "render_blocks",
+    "render_short_blocks",
     "render_kickoff_question",
     "render_reply_blocks",
     "render_root",
@@ -152,7 +180,6 @@ __all__ = [
 
 DEFAULT_BOT_TOKEN_ENV = "THE_LOOP_SLACK_BOT_TOKEN"
 DEFAULT_APP_TOKEN_ENV = "THE_LOOP_SLACK_APP_TOKEN"
-DEFAULT_MAX_CHARS = 1500
 #: Slack refuses a section over 3000 characters; the cap never exceeds this.
 _SECTION_LIMIT = 2900
 _HEADER_LIMIT = 150
@@ -574,6 +601,13 @@ def probe_subscription(
 
 #: Block Kit action ids the-loop renders — and the only ones it acts on.
 ACTION_PREFIX = "the-loop:"
+#: The gate pair's actions block id: this prefix and the gate's node, so a press
+#: names the gate it answers (issue-549 abuse case 8).
+GATE_BLOCK_PREFIX = f"{ACTION_PREFIX}gate:"
+#: The two buttons that answer a gate.
+GATE_ACTIONS = (f"{ACTION_PREFIX}approve", f"{ACTION_PREFIX}changes")
+#: Slack's ceiling on a ``block_id``.
+_BLOCK_ID_LIMIT = 255
 #: The button values, which are the words `classify-feedback` already reads.
 APPROVE_VALUE = "approved"
 CHANGES_VALUE = "changes requested"
@@ -1327,11 +1361,6 @@ class SlackChannelConfig:
     subscribe: Tuple[str, ...] = DEFAULT_EVENTS
     publish: Tuple[str, ...] = DEFAULT_PUBLISH
     verbosity: str = "normal"
-    max_chars: int = DEFAULT_MAX_CHARS
-    #: What happens to a text section longer than ``max_chars`` (issue-338):
-    #: ``digest`` (the default — the ask first, choices numbered, code and
-    #: traces as pointers, cut at a sentence) or ``truncate`` (13.10.0's cut).
-    long_messages: str = DEFAULT_DIGEST_MODE
     #: How a work item's own room reads (issue-393 B8): ``agentic`` (the default
     #: — one message per moment, first-person voice, no machine header, gates
     #: collapsed, progress edited in place) or ``classic`` (16.x's rendering,
@@ -1507,23 +1536,10 @@ class SlackChannelConfig:
                     )
             subscribe = _subscribe_list(section.get("subscribe"))
             publish = _publish_list(section.get("publish"))
-            long_messages = str(section.get("longMessages") or DEFAULT_DIGEST_MODE)
-            if long_messages not in DIGEST_MODES:
-                logger.warning(
-                    "channels.slack.longMessages %r is not one of %s — resolving to %r",
-                    long_messages,
-                    "/".join(DIGEST_MODES),
-                    DEFAULT_DIGEST_MODE,
-                )
-                long_messages = DEFAULT_DIGEST_MODE
-            max_chars = int(section.get("maxChars") or DEFAULT_MAX_CHARS)
-            if max_chars < 200:
-                logger.warning(
-                    "channels.slack.maxChars %d is below 200 — using %d",
-                    max_chars,
-                    DEFAULT_MAX_CHARS,
-                )
-                max_chars = DEFAULT_MAX_CHARS
+            # Deprecated and ignored (issue-549 R1.2, R1.3): the long form reaches
+            # Slack whole, so neither key limits anything any more. A config that
+            # still sets one loads, and is told once per process.
+            _warn_deprecated(section)
             kickoff = section.get("kickoff") or {}
             if not isinstance(kickoff, Mapping):
                 logger.warning("channels.slack.kickoff is not a mapping — ignored")
@@ -1548,8 +1564,6 @@ class SlackChannelConfig:
                 subscribe=subscribe,
                 publish=publish,
                 verbosity=verbosity,
-                max_chars=min(max_chars, _SECTION_LIMIT),
-                long_messages=long_messages,
                 room_style=room_style,
                 kickoff_repo=str(kickoff.get("repo") or "").strip(),
                 kickoff_labels=tuple(
@@ -1738,126 +1752,25 @@ def _publish_list(raw: Any) -> Tuple[str, ...]:
 _TITLES: Dict[str, str] = strings.section("slack.title")
 
 
-#: 13.10.0's cut, kept for the verbose context lines (a detail value is a label,
-#: not prose) and for `longMessages: truncate`; the text sections go through
-#: :func:`fit` (issue-338).
-_cap = truncate
+def _label(value: str, limit: int = 300) -> str:
+    """A verbose detail value drawn as a label: one line's worth, never a body."""
+    value = value.strip()
+    return value if len(value) <= limit else value[:limit].rstrip() + "…"
 
 
-def render_blocks(
+def _message_actions(
     event: Event,
-    verbosity: str,
     *,
     interactive: bool = False,
-    max_chars: int = DEFAULT_MAX_CHARS,
     commands: Optional[Mapping[str, str]] = None,
-    long_messages: str = DEFAULT_DIGEST_MODE,
-    agentic: bool = False,
-    execute_keyword: str = "",
+    open_on_github: bool = True,
 ) -> List[Dict[str, Any]]:
-    """``event`` as Block Kit: header, text, context, and the buttons it earns.
-
-    Strict supersets by verbosity, as :func:`render`: ``quiet`` is the header and
-    the link; ``normal`` adds the text; ``verbose`` adds the detail. Buttons: a
-    link button whenever the event carries a URL; one **command button** per
-    entry of ``commands`` (``command → keyword``, issue-337 — the caller decides
-    which message earns which, see :func:`expected_commands` and
-    :meth:`SlackChannelConfig.command_buttons_for`); Approve / Request changes
-    only for an approval-shaped event **and** only when ``interactive`` (Socket
-    Mode with the ``gate.feedback`` grant) — decision-103 D5. Every text section
-    — the text, the artifact excerpt — is drawn as mrkdwn and, above
-    ``max_chars``, digested or truncated per ``long_messages`` (issue-338,
-    :func:`fit`).
-
-    The phase-selection checklist (issue-393 R9) is the one message drawn as a
-    **control** rather than a digest: where its Execute button can be pressed
-    (``commands`` names ``execute``), its phases and its outer-loop question are
-    checkboxes (:func:`selection_control_blocks`) in place of the text; where it
-    cannot, the digest stands and a line says the checklist is edited on GitHub
-    (R9.4) — ``execute_keyword`` is the configured keyword that line names.
-    """
-    cap = min(max_chars, _SECTION_LIMIT)
-
-    def section(text: str) -> Dict[str, Any]:
-        return {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": fit(text, cap, long_messages, event.url),
-            },
-        }
-
-    def header() -> Dict[str, Any]:
-        title = _TITLES.get(event.event_type, event.event_type)
-        who = f" · {event.actor.label}" if event.actor and event.actor.label else ""
-        author = event.detail.get("author") if event.detail else ""
-        if author and not who:
-            who = f" · @{author}"
-        text = f"{title}{who} · {event.work_item}"[:_HEADER_LIMIT]
-        return {"type": "header", "text": {"type": "plain_text", "text": text}}
-
-    selection = selection_rows(event.text) if is_phase_selection(event) else None
-    control_keyword = str((commands or {}).get("execute") or "")
-    blocks: List[Dict[str, Any]] = []
-    if selection is not None and control_keyword:
-        # The control (R9.1, R9.2): the header keeps its place outside a room;
-        # the checklist's prose gives way to the boxes, at every verbosity — the
-        # boxes are the point of the message, as the summary is of a gate's.
-        if not agentic:
-            blocks.append(header())
-        blocks.extend(selection_control_blocks(selection, control_keyword))
-    elif agentic:
-        # issue-393 B4/R7, R11: no machine header — the room's binding already
-        # says which item this is. One state emoji and the event's own
-        # first-person sentence lead instead (voice.room_lead). The text section
-        # below is skipped: the lead IS the text, drawn as mrkdwn.
-        lead = room_lead(event)
-        blocks.append(section(lead))
-    else:
-        blocks.append(header())
-        if verbosity != "quiet" and event.text.strip():
-            blocks.append(section(event.text))
-    # issue-393 B1/R8: the agent's own summary leads the message when it wrote
-    # one — what a reviewer on a phone wants from a gate, in place of the
-    # document's first N characters. Rendered at any verbosity (it is the point
-    # of a gate message), sanitized (a summary pings no one), and it stands in
-    # for the excerpt below; absent, the excerpt is the fallback exactly as before.
-    summary = sanitize_summary(getattr(event, "summary", "") or "")
-    if summary:
-        blocks.append(section(summary))
-    if verbosity == "verbose" and event.detail:
-        lines = [
-            f"*{key}:* {_cap(str(value), 300)}"
-            for key, value in event.detail.items()
-            if key not in ("excerpt",) and str(value).strip()
-        ]
-        excerpt = str(event.detail.get("excerpt") or "").strip()
-        if excerpt and not summary:
-            blocks.append(section(excerpt))
-        if lines:
-            blocks.append(
-                {
-                    "type": "context",
-                    "elements": [
-                        {"type": "mrkdwn", "text": "\n".join(lines)[:_SECTION_LIMIT]}
-                    ],
-                }
-            )
-    elif verbosity == "normal" and event.detail.get("excerpt"):
-        blocks.append(section(str(event.detail["excerpt"])))
-    if selection is not None and not control_keyword:
-        # No control can be posted here (R9.4): never "untick right here" where
-        # nothing can be unticked — say where the boxes are, and link them.
-        blocks.append(
-            {
-                "type": "context",
-                "elements": [
-                    _mrkdwn(github_checklist_line(event.url, execute_keyword))
-                ],
-            }
-        )
+    """The buttons ``event``'s message earns, in order: *Open on GitHub* (its own
+    URL, never one from its text — abuse case 5), the command buttons, the
+    default-answer button and the Approve / Request changes pair (the last two
+    only where a press can be received)."""
     actions: List[Dict[str, Any]] = []
-    if event.url:
+    if event.url and open_on_github:
         actions.append(
             {
                 "type": "button",
@@ -1914,9 +1827,130 @@ def render_blocks(
                 "value": CHANGES_VALUE,
             }
         )
+    return actions
+
+
+def render_short_blocks(
+    event: Event,
+    short_text: str,
+    *,
+    verbosity: str = "normal",
+    interactive: bool = False,
+    commands: Optional[Mapping[str, str]] = None,
+    execute_keyword: str = "",
+    open_on_github: bool = True,
+) -> List[Dict[str, Any]]:
+    """The short message as Block Kit (issue-549 R3, R4.4): the short form as one
+    mrkdwn section, the phase-selection control (or, where it cannot be pressed,
+    the line saying where the checklist is), the verbose detail lines, and the
+    buttons. Gate, command and selection controls are always here, on the short
+    message, so a decision is taken from it. Nothing is condensed or cut: the
+    short form is already within its cap, and the long form goes elsewhere."""
+    text = short_text.strip() or _TITLES.get(event.event_type, event.event_type)
+    blocks: List[Dict[str, Any]] = [_mrkdwn_section(text)]
+    selection = selection_rows(event.text) if is_phase_selection(event) else None
+    control_keyword = str((commands or {}).get("execute") or "")
+    if selection is not None and control_keyword:
+        blocks.extend(selection_control_blocks(selection, control_keyword))
+    elif selection is not None:
+        blocks.append(
+            {
+                "type": "context",
+                "elements": [
+                    _mrkdwn(github_checklist_line(event.url, execute_keyword))
+                ],
+            }
+        )
+    if verbosity == "verbose" and event.detail:
+        lines = [
+            f"*{key}:* {_label(str(value))}"
+            for key, value in event.detail.items()
+            if key not in ("excerpt",) and str(value).strip()
+        ]
+        if lines:
+            blocks.append(
+                {
+                    "type": "context",
+                    "elements": [
+                        {"type": "mrkdwn", "text": "\n".join(lines)[:_SECTION_LIMIT]}
+                    ],
+                }
+            )
+    gate = event.event_type in APPROVAL_EVENTS
+    if gate and not interactive:
+        # No press can reach this instance (R11.5): no buttons, and one line
+        # saying how to answer on GitHub, linked by the event's own URL.
+        blocks.append(
+            {
+                "type": "context",
+                "elements": [
+                    _mrkdwn(
+                        approve_on_github_line(
+                            event.url or _work_item_url(event.work_item)
+                        )
+                    )
+                ],
+            }
+        )
+    actions = _message_actions(
+        event,
+        interactive=interactive,
+        commands=commands,
+        open_on_github=open_on_github,
+    )
     if actions:
-        blocks.append({"type": "actions", "elements": actions})
+        block: Dict[str, Any] = {"type": "actions", "elements": actions}
+        node = str((event.detail or {}).get("node") or "")
+        if gate and interactive and node:
+            # The gate the buttons answer (issue-549 abuse case 8): a press
+            # names it, and counts only while that gate is open.
+            block["block_id"] = f"{GATE_BLOCK_PREFIX}{node}"[:_BLOCK_ID_LIMIT]
+        blocks.append(block)
     return blocks
+
+
+def approve_on_github_line(url: str) -> str:
+    """What a gate message says where no press can be received (issue-549
+    R11.5): how to answer the gate on GitHub, linked when there is a link."""
+    on_github = strings.t("channels.slack.checklist.on-github")
+    where = f"<{url}|{on_github}>" if url else on_github
+    return strings.t("channels.slack.gate.approve-on-github", where=where)
+
+
+#: The mark a gate's outcome line opens with, by outcome.
+_GATE_ICONS = {
+    "approved": "✅",
+    "approved-with-comments": "✅",
+    "changes-requested": "↩️",
+}
+
+
+def gate_answered_line(node: str, outcome: str, by: str) -> str:
+    """The line an answered gate's message gains (issue-549 R11.6): the gate,
+    its outcome in words, and who answered (GitHub logins, from the event)."""
+    words = strings.section("channels.slack.gate.outcome").get(outcome) or outcome
+    who = ", ".join(f"@{login.strip()}" for login in by.split(",") if login.strip())
+    return strings.t(
+        "channels.slack.gate.answered",
+        icon=_GATE_ICONS.get(outcome, "☑️"),
+        node=node,
+        outcome=words,
+        by=strings.t("channels.slack.gate.answered-by", who=who) if who else "",
+    )
+
+
+def gate_node_of(action: Mapping[str, Any]) -> str:
+    """The gate node a pressed Approve / Request changes button names through
+    its block (issue-549 abuse case 8), or ``""`` for a message posted before
+    the buttons named one."""
+    block_id = str(action.get("block_id") or "")
+    if block_id.startswith(GATE_BLOCK_PREFIX):
+        return block_id[len(GATE_BLOCK_PREFIX) :]
+    return ""
+
+
+def _mrkdwn_section(text: str) -> Dict[str, Any]:
+    return {"type": "section", "text": {"type": "mrkdwn", "text": text}}
 
 
 def _section_text(blocks: List[Dict[str, Any]]) -> str:
@@ -2316,6 +2350,12 @@ class SlackBotChannel:
         self._cli_config: Optional[Mapping[str, Any]] = cli_config
 
     def subscribes(self, event_type: str) -> bool:
+        if event_type == GATE_ANSWERED:
+            # A channel that posts a gate's message hears its answer, so the
+            # message can be closed (issue-549 R11.6) without a second key.
+            return event_type in self.config.subscribe or any(
+                name in self.config.subscribe for name in APPROVAL_EVENTS
+            )
         return event_type in self.config.subscribe
 
     def wants(self, event_type: str) -> bool:
@@ -2522,13 +2562,15 @@ class SlackBotChannel:
             old[0],
         )
 
-    def _room_decision(self, event: Event, agentic: bool) -> "room_policy.Decision":
-        """RoomPolicy's decision for ``event`` (issue-393 B5). Always ``post``
-        outside an agentic room, so the classic path never changes. Reads the
-        delivery memory under the lock, so it is a snapshot the post then acts on.
+    def _room_decision(self, event: Event, is_room: bool) -> "room_policy.Decision":
+        """RoomPolicy's decision for ``event`` (issue-393 B5) — for every
+        conversation since issue-549, the central channel included. ``is_room``
+        (an agentic room) scopes the two rules that make a room conversational.
+        Reads the delivery memory under the lock, so it is a snapshot the post
+        then acts on. An event with no work item has no memory and simply posts.
         """
-        if not agentic or not event.work_item:
-            return room_policy.Decision(room_policy.POST, rule="not-a-room")
+        if not event.work_item:
+            return room_policy.Decision(room_policy.POST, rule="no-work-item")
         try:
             with ChannelState.locked(self.state_path, self.stores) as state:
                 memory = state.delivery_for(event.work_item)
@@ -2538,30 +2580,18 @@ class SlackBotChannel:
         return room_policy.decide(
             event,
             memory,
-            is_room=True,
+            is_room=is_room,
             session_authored=(event.source in ("cli", "session")),
             is_operator_doc=bool((event.detail or {}).get("operatorDoc")),
         )
 
-    def _edit_or_post(self, client, channel_id, ts, text, blocks):
-        """chat.update the message at ``ts``; if it is gone/stale, post fresh and
-        adopt the new ts (issue-393 B5 error handling — a lost progress message
-        never wedges the phase)."""
-        try:
-            return client.chat_update(
-                channel=channel_id, ts=ts, text=text, blocks=blocks
-            )
-        except Exception as exc:  # noqa: BLE001 — a stale ts is recoverable
-            logger.debug("slack: chat.update at %s failed (%s); posting fresh", ts, exc)
-            return client.chat_postMessage(channel=channel_id, text=text, blocks=blocks)
-
     def _remember_delivery(
         self, event: Event, decision: "room_policy.Decision", ts: str
     ) -> None:
-        """Merge what the room now holds into the delivery memory. ``@ts`` in a
-        decision's ``remember`` is the placeholder for the message just posted —
-        resolved to ``ts`` here — and the last event/node are always recorded so
-        the dedupe rule can fire next time (issue-393 B5)."""
+        """Merge what the conversation now holds into the delivery memory. ``@ts``
+        in a decision's ``remember`` is the placeholder for the message just
+        posted — resolved to ``ts`` here — and the last event/node are always
+        recorded so the dedupe rule can fire next time (issue-393 B5)."""
         node = str(
             (event.detail or {}).get("node") or (event.detail or {}).get("phase") or ""
         )
@@ -2589,16 +2619,325 @@ class SlackBotChannel:
                 "slack: could not record delivery for %s (%s)", event.work_item, exc
             )
 
-    def post(self, event: Event) -> PostResult:
-        """Deliver ``event`` as a reply in its work item's thread — opening the
-        thread first, once, when none is bound (issue-312 R1).
+    # -- the posting path (issue-549): policy → placement → builders → plan → delivery
 
-        The lock covers the decision (is there a thread? open and bind one) and
-        not the delivery: the reply is posted after it is released, so a slow
-        Slack call never holds the watcher's cursor advance. A reply that fails
-        is a :class:`ChannelError` and never a second root (R2.3) — only "no
-        binding" opens one. An event with no work item posts top-level, unbound.
+    #: The clock the recap and the mentions read (issue-549 R9) — a test
+    #: substitutes it.
+    _now: Callable[[], float] = staticmethod(time.time)  # type: ignore[assignment]
+
+    def _preamble(self, event: Event) -> Preamble:
+        """What opens ``event``'s short form, inside its cap (issue-549 R7, R9):
+        the recap line when a person has been away and the loop moved, then the
+        mentions when ``event`` announces a wait not announced before. Built
+        from configuration and the delivery memory, never from the event's
+        text. A memory that cannot be read opens nothing."""
+        if not event.work_item:
+            return Preamble()
+        try:
+            with ChannelState.locked(self.state_path, self.stores) as state:
+                memory = state.delivery_for(event.work_item)
+        except Exception as exc:  # noqa: BLE001 — a preamble never fails a post
+            logger.debug("slack: delivery memory read failed (%s)", exc)
+            return Preamble()
+        wait = wait_key(event)
+        mentions = ""
+        if wait and wait not in memory["announced"]:
+            mentions = mention_line(self._mention_ids())
+            if not mentions and self.config.authorized_users:
+                # nobody resolved (a directory lookup that failed): the wait is
+                # not recorded as announced, so the next message of it mentions
+                # them again, rather than nobody for good
+                wait = ""
+        recap = recap_line(
+            memory["changes"],
+            last_human=memory["lastHuman"],
+            recapped_at=memory["recapAt"],
+            now=self._now(),
+        )
+        text = "\n".join(line for line in (recap, mentions) if line)
+        return Preamble(text=text, wait=wait, recapped=bool(recap))
+
+    def _mention_ids(self) -> List[str]:
+        """The member ids of the authorized users (``routing.authorizedUsers[]
+        .slack``), in configured order: an id as written, a handle through the
+        Slack directory. One that does not resolve is left out, never guessed
+        (abuse case 6)."""
+        from .directory import is_member_id
+
+        ids: List[str] = []
+        directory = None
+        for entry in self.config.authorized_users:
+            if is_member_id(entry):
+                ids.append(entry)
+                continue
+            try:
+                directory = directory or self.directory()
+                resolved = directory.user_id(entry)
+            except Exception as exc:  # noqa: BLE001 — unresolved: no mention
+                logger.debug(
+                    "slack: could not resolve %s for a mention (%s)", entry, exc
+                )
+                continue
+            if resolved:
+                ids.append(resolved)
+        return ids
+
+    def _remember_event(self, event: Event, preamble: Preamble) -> None:
+        """Record what ``event`` means for the next preamble (issue-549): its
+        change for the recap (dropped events too, R10.2), the wait it
+        announced, the recap it carried — and, once the work item is no longer
+        waiting, forget the announced waits, so a gate that reopens is a new
+        wait (R7.3). Best effort."""
+        if not event.work_item:
+            return
+        now = str(self._now())
+        changes: Dict[str, Any] = {}
+        change = change_of(event)
+        if change is not None:
+            changes["changes"] = [{"at": now, "kind": change[0], "value": change[1]}]
+        state_name = status_reactor.state_for(event)
+        if preamble.wait:
+            changes["announced"] = {preamble.wait: now}
+        elif state_name and state_name != status_reactor.WAITING:
+            changes["announced"] = None
+        if preamble.recapped:
+            changes["recapAt"] = now
+        if not changes:
+            return
+        try:
+            with ChannelState.locked(self.state_path, self.stores) as state:
+                state.remember_delivery(event.work_item, **changes)
+                state.save(self.state_path)
+        except Exception as exc:  # noqa: BLE001 — memory is best-effort
+            logger.debug("slack: could not record %s (%s)", event.work_item, exc)
+
+    def note_human(self, work_item: str) -> None:
+        """An authorized human spoke in ``work_item``'s conversation now — the
+        recap's reference point (issue-549 R9.1). Best effort."""
+        if not work_item:
+            return
+        try:
+            with ChannelState.locked(self.state_path, self.stores) as state:
+                state.remember_delivery(work_item, lastHuman=str(self._now()))
+                state.save(self.state_path)
+        except Exception as exc:  # noqa: BLE001 — memory is best-effort
+            logger.debug("slack: could not note a human in %s (%s)", work_item, exc)
+
+    def _plan(
+        self,
+        event: Event,
+        kind: str,
+        decision: "room_policy.Decision",
+        *,
+        channel_id: str,
+        thread: str,
+        preamble: str = "",
+    ) -> MessagePlan:
+        """``event`` as a :class:`MessagePlan` for a conversation of ``kind``.
+
+        ``thread`` is where the short message goes when it is a reply: the
+        central channel's item thread, the room mention's thread, or the gate
+        message an acknowledgement threads under (``""`` = top-level).
         """
+        short = build_short_form(event, preamble=preamble)
+        where = placement.place(kind, event, long_adds=long_form_adds(event, short))
+        blocks = render_short_blocks(
+            event,
+            short.text,
+            verbosity=self.config.verbosity,
+            interactive=self.config.interactive,
+            commands=self.config.command_buttons_for(*expected_commands(event)),
+            execute_keyword=self.config.keyword("execute"),
+            open_on_github=where.open_on_github,
+        )
+        editing = decision.action == room_policy.EDIT and bool(decision.ts)
+        long_form = render_long_form(event.text) if where.long else LongForm()
+        if where.long == placement.SHORT_THREAD:
+            # a room: the long form goes in the short message's own thread — or,
+            # when the short message is itself a reply, in that same thread
+            parts_thread = thread or THREAD_OF_TOP
+        else:
+            parts_thread = thread if where.long else ""
+        return plan_message(
+            event_id=event.event_id,
+            channel=channel_id,
+            short_text=short.fallback,
+            short_blocks=blocks,
+            top_thread=thread,
+            parts=long_form.parts,
+            parts_thread=parts_thread,
+            edit_ts=decision.ts if editing else "",
+            edit_parts=(
+                self._parts_under(event, channel_id, decision.ts) if editing else ()
+            ),
+            short_source=short.source,
+            tables_as_code=long_form.tables_as_code,
+            parts_text=_without_preamble(short.fallback, preamble),
+        )
+
+    def _parts_under(self, event: Event, channel_id: str, ts: str) -> Tuple[str, ...]:
+        """The long-form replies the message at ``ts`` holds today, from the
+        delivery memory: the newest event delivered to that message — its first
+        post or its last edit — other than ``event`` itself (issue-549 R6.2). A
+        lost memory yields none, so the edit posts its long form afresh."""
+        if not event.work_item:
+            return ()
+        try:
+            with ChannelState.locked(self.state_path, self.stores) as state:
+                posted = state.delivery_for(event.work_item)["posted"]
+        except Exception as exc:  # noqa: BLE001 — a memory read never fails a post
+            logger.debug("slack: posted memory read failed (%s)", exc)
+            return ()
+        for event_id, record in reversed(list(posted.items())):
+            if event_id == event.event_id:
+                continue
+            if record.get("channel") == channel_id and record.get("top") == ts:
+                return tuple(record.get("parts") or ())
+        return ()
+
+    def _deliver(self, client, event: Event, plan: MessagePlan) -> Delivered:
+        """Run the delivery step with this work item's delivery memory: what an
+        earlier attempt at this event id posted is skipped, and every new ts is
+        recorded before the next call (non-functional: idempotent retries)."""
+        if not (event.work_item and event.event_id):
+            return deliver(client, plan, sleep=self._sleep)
+        already: Dict[str, Any] = {}
+        try:
+            with ChannelState.locked(self.state_path, self.stores) as state:
+                already = state.posted_for(event.work_item, event.event_id)
+        except Exception as exc:  # noqa: BLE001 — a lost memory re-posts, never fails
+            logger.debug("slack: posted memory read failed (%s)", exc)
+
+        def record(delivered: Delivered) -> None:
+            try:
+                with ChannelState.locked(self.state_path, self.stores) as state:
+                    state.remember_posted(
+                        event.work_item, event.event_id, summary_of(delivered)
+                    )
+                    state.save(self.state_path)
+            except Exception as exc:  # noqa: BLE001 — memory is best-effort
+                logger.debug("slack: could not record posted parts (%s)", exc)
+
+        return deliver(client, plan, already=already, record=record, sleep=self._sleep)
+
+    #: How the delivery step waits out a 429 — a test substitutes it.
+    _sleep: Callable[[float], None] = staticmethod(time.sleep)  # type: ignore[assignment]
+
+    def _after_delivery(
+        self,
+        event: Event,
+        kind: str,
+        plan: MessagePlan,
+        delivered: Delivered,
+        client: Any = None,
+    ) -> None:
+        """The hook after a successful delivery, best effort: the status reactor
+        (issue-549 R8). In a room the status message moves to the short message
+        just posted top-level; in the central channel it is the thread root."""
+        target = ("", "")
+        if kind == placement.ROOM and not plan.top.thread_ts and not delivered.edited:
+            target = (plan.channel, delivered.top)
+        self._react_status(event, kind, target, client)
+
+    def _react_status(
+        self, event: Event, kind: str, target: Tuple[str, str], client: Any = None
+    ) -> None:
+        """Keep the work item's one status reaction current (issue-549 R8).
+
+        ``target`` is the new status message, or ``("", "")`` to keep the one
+        the memory names; in the central channel it is always the thread root.
+        Runs on dropped events too, so bookkeeping still moves the state
+        (R10.3). Never raises and never delays a delivery: a reaction that
+        fails is logged and the status left as it was (R8.4).
+        """
+        if not event.work_item:
+            return
+        state_name = status_reactor.state_for(event)
+        try:
+            with ChannelState.locked(self.state_path, self.stores) as state:
+                current = dict(state.delivery_for(event.work_item)["status"])
+                bound = state.conversation_for(event.work_item)
+            if kind == placement.CENTRAL and bound and bound[1]:
+                target = (bound[0], bound[1])
+            plan = status_reactor.plan_status(current, state_name, target)
+            if plan is None:
+                return
+            client = client or self._client()
+            if plan.add is not None and not self._status_call(
+                client, "add", *plan.add, event=event
+            ):
+                return  # the old reaction stays: still exactly one (R8.1)
+            if plan.remove is not None:
+                self._status_call(client, "remove", *plan.remove, event=event)
+            with ChannelState.locked(self.state_path, self.stores) as state:
+                state.remember_delivery(event.work_item, status=dict(plan.status))
+                state.save(self.state_path)
+        except Exception as exc:  # noqa: BLE001 — a reaction never fails delivery
+            logger.warning(
+                "slack: status reaction for %s failed (%s)", event.work_item, exc
+            )
+
+    def _status_call(
+        self, client, verb: str, channel_id: str, ts: str, name: str, *, event: Event
+    ) -> bool:
+        """``reactions.add`` / ``reactions.remove`` of one status emoji; ``False``
+        (logged, recorded as ``channel.reaction_failed``) when Slack refuses. A
+        reaction already there, or already gone, is the outcome wanted."""
+        try:
+            call = client.reactions_add if verb == "add" else client.reactions_remove
+            response = call(channel=channel_id, name=name, timestamp=ts)
+            data = (
+                response
+                if isinstance(response, Mapping)
+                else getattr(response, "data", None) or {}
+            )
+            if data.get("ok") is False and data.get("error") not in (
+                "already_reacted",
+                "no_reaction",
+            ):
+                raise ChannelError(str(data.get("error") or "error"))
+            return True
+        except Exception as exc:  # SlackApiError and transport errors alike
+            error = getattr(getattr(exc, "response", None), "data", None) or {}
+            if isinstance(error, Mapping) and error.get("error") in (
+                "already_reacted",
+                "no_reaction",
+            ):
+                return True
+            logger.warning(
+                "slack: could not %s the status reaction %s on %s: %s",
+                verb,
+                name,
+                event.work_item,
+                exc,
+            )
+            eventlog.emit(
+                "channel.reaction_failed",
+                level="warning",
+                channel=self.name,
+                work_item=event.work_item or None,
+                state="status",
+                content=name,
+                error=str(exc),
+            )
+            return False
+
+    def post(self, event: Event) -> PostResult:
+        """Deliver ``event`` into its work item's conversation — opening it first,
+        once, when none is bound (issue-312 R1).
+
+        The lock covers the decision (is there a conversation? open and bind one)
+        and not the delivery: the messages are posted after it is released, so a
+        slow Slack call never holds the watcher's cursor advance. A post that
+        fails is a :class:`ChannelError` and never a second root (R2.3) — only "no
+        binding" opens one. An event with no work item posts top-level, unbound.
+
+        Since issue-549 the path is one pipeline: the room policy (every
+        conversation) → placement (room, central thread, mention thread) → the
+        short and long builders → a :class:`MessagePlan` → one delivery step.
+        """
+        if event.event_type == GATE_ANSWERED:
+            return self._close_gate(event)
         if not self.home_for(event.work_item):
             raise self._no_channel(event.work_item)
         client = self._client()
@@ -2611,17 +2950,12 @@ class SlackBotChannel:
                 if before == bound and state.backfilled:
                     state.save(self.state_path)  # a 13.0.1 file, now keyed (R3.4)
                 reply_to = self._reply_thread(state, event, bound)
-        # The agentic voice (issue-393 B4) applies to a work item's own ROOM — a
-        # channel-mode binding, `thread_ts == ""` with a channel — and only when
-        # the operator has not asked for the classic rendering. A shared channel,
-        # a thread, or an unbound post keeps the header rendering.
+        # A declared room is a channel-mode binding: `thread_ts == ""` with a
+        # channel (issue-378). The conversational rules (issue-393 B4) apply only
+        # where the operator kept the agentic room style.
         in_room = bool(bound and bound[0] and not bound[1])
         agentic = in_room and self.config.room_style == "agentic"
 
-        # issue-393 B5: in an agentic room, RoomPolicy decides whether this event
-        # is a new message, an edit of one already there, a threaded reply, or
-        # nothing — over the room's delivery memory. Outside a room the decision
-        # is always "post", so the classic path is unchanged.
         decision = self._room_decision(event, agentic)
         if decision.action == room_policy.DROP:
             logger.debug(
@@ -2630,65 +2964,198 @@ class SlackBotChannel:
                 event.work_item,
                 decision.rule,
             )
+            # Not posted, but still the work item's state (R10.3) and the recap's
+            # record (R10.2).
+            self._remember_event(event, Preamble())
+            self._react_status(
+                event,
+                placement.ROOM if in_room else placement.CENTRAL,
+                ("", ""),
+                client,
+            )
             return PostResult(
                 channel=self.name, ok=True, thread=(bound and bound[1]) or ""
             )
 
-        blocks = render_blocks(
-            event,
-            self.config.verbosity,
-            interactive=self.config.interactive,
-            max_chars=self.config.max_chars,
-            commands=self.config.command_buttons_for(*expected_commands(event)),
-            long_messages=self.config.long_messages,
-            agentic=agentic,
-            execute_keyword=self.config.keyword("execute"),
-        )
-        # The plain-text fallback — what the phone's notification shows — carries
-        # the text section as drawn, so a digested message leads with the ask
-        # there too (issue-338 R1.5); a short text is the fallback it always was.
-        fallback = event
-        if len(event.text.strip()) > self.config.max_chars:
-            fallback = replace(event, text=_section_text(blocks))
-        text = render(fallback, self.config.verbosity)
         channel_id = bound[0] if bound and bound[0] else self.central_channel()
+        threaded = decision.action == room_policy.THREAD and bool(decision.ts)
+        if in_room:
+            # an ack threads under its gate's message; an answer to a mention
+            # goes in the mention's thread (issue-507); either way the long form
+            # follows the short message in that thread (R4.3)
+            thread = decision.ts if threaded else reply_to
+            kind = placement.ROOM_MENTION_THREAD if thread else placement.ROOM
+        else:
+            # the central channel: everything is a reply in the item's one thread
+            # (a gate message there is itself a reply, so an ack joins the thread)
+            thread = reply_to or ((bound[1] or "") if bound else "")
+            kind = placement.CENTRAL
+        preamble = self._preamble(event)
+        plan = self._plan(
+            event,
+            kind,
+            decision,
+            channel_id=channel_id,
+            thread=thread,
+            preamble=preamble.text,
+        )
         try:
-            if decision.action == room_policy.EDIT and decision.ts:
-                response = self._edit_or_post(
-                    client, channel_id, decision.ts, text, blocks
-                )
-            elif decision.action == room_policy.THREAD and decision.ts:
-                response = client.chat_postMessage(
-                    channel=channel_id,
-                    text=text,
-                    blocks=blocks,
-                    thread_ts=decision.ts,
-                )
-            else:
-                response = client.chat_postMessage(
-                    channel=channel_id,
-                    text=text,
-                    blocks=blocks,
-                    # A room conversation has no thread (issue-378): top-level,
-                    # never `thread_ts=""`, which Slack refuses — unless the agent
-                    # is answering a mention in a thread (issue-507).
-                    thread_ts=reply_to or ((bound[1] or None) if bound else None),
-                )
+            delivered = self._deliver(client, event, plan)
         except ChannelError:
             raise
         except Exception as exc:  # SlackApiError and transport errors alike
             raise ChannelError(f"slack: post failed: {exc}") from None
-        # Record what the room now holds, so the next decision reads it (B5).
-        if agentic and event.work_item:
-            self._remember_delivery(event, decision, str(response.get("ts") or ""))
+        logger.info(
+            "slack: delivered event %s to %s (%s): %d long-form part(s), short form "
+            "from %s%s, %d call(s)",
+            event.event_id or "-",
+            channel_id,
+            kind,
+            len(plan.parts),
+            plan.short_source or "-",
+            f", {plan.tables_as_code} table(s) as code" if plan.tables_as_code else "",
+            delivered.calls,
+        )
+        # Record what the conversation now holds, so the next decision reads it.
+        if event.work_item:
+            self._remember_delivery(event, decision, delivered.top)
+            self._remember_event(event, preamble)
+            if decision.rule == "gate-pending" and delivered.top:
+                self._remember_gate(event, channel_id, plan.top.text)
+        try:
+            self._after_delivery(event, kind, plan, delivered, client)
+        except Exception as exc:  # noqa: BLE001 — never fails a delivery
+            logger.debug("slack: after-delivery hook failed (%s)", exc)
         posted_plain = decision.action not in (room_policy.EDIT, room_policy.THREAD)
         if reply_to and posted_plain:
             return PostResult(channel=self.name, ok=True, thread=reply_to)
         if bound and bound[1]:
             return PostResult(channel=self.name, ok=True, thread=bound[1])
-        return PostResult(
-            channel=self.name, ok=True, thread=str(response.get("ts") or "")
+        return PostResult(channel=self.name, ok=True, thread=delivered.top)
+
+    def _remember_gate(self, event: Event, channel_id: str, text: str) -> None:
+        """Keep what an open gate's message says and where (issue-549 R11.6),
+        so it can be edited to its outcome when the gate is answered."""
+        node = str((event.detail or {}).get("node") or "")
+        if not node:
+            return
+        try:
+            with ChannelState.locked(self.state_path, self.stores) as state:
+                state.remember_delivery(
+                    event.work_item,
+                    gateMessage={
+                        node: {"channel": channel_id, "text": text, "url": event.url}
+                    },
+                )
+                state.save(self.state_path)
+        except Exception as exc:  # noqa: BLE001 — memory is best-effort
+            logger.debug("slack: could not remember the gate %s (%s)", node, exc)
+
+    def _close_gate(self, event: Event) -> PostResult:
+        """Edit an answered gate's message to its outcome (issue-549 R11.6).
+
+        The gate's message — remembered when it was posted — keeps its short
+        form and its link, loses its Approve / Request changes buttons, and
+        gains one line: the outcome and who answered. Nothing is posted: a gate
+        with no remembered message is left as it is. The gate is then forgotten
+        as open, so a later press on that message is stale (abuse case 8).
+        ``chat.update`` takes no unfurl flags, so the edit adds no preview.
+        """
+        detail = event.detail or {}
+        node = str(detail.get("node") or "")
+        ok = PostResult(channel=self.name, ok=True)
+        if not (event.work_item and node):
+            return ok
+        with ChannelState.locked(self.state_path, self.stores) as state:
+            memory = state.delivery_for(event.work_item)
+            ts = memory["gateTs"].get(node, "")
+            gate = dict(memory["gateMessage"].get(node) or {})
+            bound = state.conversation_for(event.work_item)
+            if ts:
+                state.remember_delivery(
+                    event.work_item, gateTs={node: None}, gateMessage={node: None}
+                )
+                state.save(self.state_path)
+        if not ts:
+            return ok
+        channel_id = gate.get("channel") or (bound[0] if bound else "")
+        if not channel_id:
+            return ok
+        line = gate_answered_line(
+            node, str(detail.get("outcome") or ""), str(detail.get("by") or "")
         )
+        short = gate.get("text") or ""
+        blocks: List[Dict[str, Any]] = []
+        if short:
+            blocks.append(_mrkdwn_section(short))
+        blocks.append({"type": "context", "elements": [_mrkdwn(line)]})
+        url = gate.get("url") or ""
+        if url:
+            blocks.append(
+                {
+                    "type": "actions",
+                    "elements": _message_actions(
+                        Event(
+                            event_type=GATE_ANSWERED,
+                            work_item=event.work_item,
+                            text="",
+                            url=url,
+                        )
+                    ),
+                }
+            )
+        error = ""
+        try:
+            client = self._client()
+            with_retry(
+                lambda: client.chat_update(
+                    channel=channel_id,
+                    ts=ts,
+                    text=f"{short}\n{line}" if short else line,
+                    blocks=blocks,
+                ),
+                "close the gate",
+                self._sleep,
+            )
+        except Exception as exc:  # SlackApiError and transport errors alike
+            error = str(exc)
+            logger.warning(
+                "slack: could not close the gate %s on %s: %s",
+                node,
+                event.work_item,
+                exc,
+            )
+        eventlog.emit(
+            "channel.gate_closed",
+            level="warning" if error else "info",
+            channel=self.name,
+            work_item=event.work_item,
+            node=node,
+            outcome=str(detail.get("outcome") or "") or None,
+            edited=not error,
+            error=error or None,
+        )
+        return ok
+
+    def delete_message(self, channel_id: str, ts: str) -> bool:
+        """``chat.delete`` of one of the bot's own messages (issue-549 R6.2, for a
+        long form that shrank). Best effort: ``False`` when Slack refused."""
+        try:
+            self._client().chat_delete(channel=channel_id, ts=ts)
+        except Exception as exc:  # noqa: BLE001 — best effort
+            logger.debug("slack: chat.delete of %s failed (%s)", ts, exc)
+            return False
+        return True
+
+    def remove_reaction(self, channel_id: str, ts: str, name: str) -> bool:
+        """``reactions.remove`` of a reaction the bot added (issue-549 R8.5). Best
+        effort: ``False`` when Slack refused."""
+        try:
+            self._client().reactions_remove(channel=channel_id, timestamp=ts, name=name)
+        except Exception as exc:  # noqa: BLE001 — best effort
+            logger.debug("slack: reactions.remove on %s failed (%s)", ts, exc)
+            return False
+        return True
 
     def _reply_thread(
         self, state: ChannelState, event: Event, bound: Optional[Tuple[str, str]]
@@ -2767,9 +3234,7 @@ class SlackBotChannel:
             work_item, url, reading=self.config.read_mode != "off"
         )
         try:
-            response = client.chat_postMessage(
-                channel=room, text=text, blocks=blocks, thread_ts=None
-            )
+            response = post_message(client, channel=room, text=text, blocks=blocks)
         except Exception as exc:  # SlackApiError and transport errors alike
             raise ChannelError(f"slack: could not open a thread: {exc}") from None
         ts = str(response.get("ts") or "")
@@ -2814,9 +3279,7 @@ class SlackBotChannel:
             work_item, url, reading=self.config.read_mode != "off"
         )
         try:
-            response = client.chat_postMessage(
-                channel=room, text=text, blocks=blocks, thread_ts=None
-            )
+            response = post_message(client, channel=room, text=text, blocks=blocks)
         except Exception as exc:  # SlackApiError and transport errors alike
             raise ChannelError(f"slack: could not open the room: {exc}") from None
         ts = str(response.get("ts") or "")
@@ -2855,10 +3318,11 @@ class SlackBotChannel:
         """A plain reply into ``thread`` — the kickoff's "here is your issue" —
         with ``blocks`` when the caller rendered any (its Do / Start buttons, issue-337, issue-529)."""
         try:
-            self._client().chat_postMessage(
+            post_message(
+                self._client(),
                 channel=channel_id or self.central_channel(),
                 text=text,
-                thread_ts=thread or None,
+                thread_ts=thread,
                 blocks=blocks,
             )
         except Exception as exc:  # best-effort; the issue exists either way
@@ -3914,3 +4378,16 @@ def run_socket_listener(
         client.close()
         logger.info("slack: Socket Mode listener stopped")
     return 0
+
+
+def _without_preamble(text: str, preamble: str) -> str:
+    """``text`` with the ``preamble`` it opens with removed: what a long-form
+    part's ``text`` fallback carries, so a mention reaches only the top message
+    (issue-549 R7.4). ``""`` when there is no preamble (the part uses the short
+    form itself)."""
+    preamble = preamble.strip()
+    if not preamble:
+        return ""
+    if text.startswith(preamble):
+        return text[len(preamble) :].lstrip("\n") or text
+    return text

@@ -135,7 +135,6 @@ INVALID = [
         {"routing": {"authorizedUsers": [{"github": 42}]}},
         "a channel id that is not a string",
     ),
-    ({"channels": {"slack": {"maxChars": 10}}}, "a cap below the minimum"),
 ]
 
 #: The collaborators file is validated against its own schema, so its corpus is its own.
@@ -454,3 +453,56 @@ def _keywords(node, out: set, in_names: bool = False) -> None:
         if key in _DATA_KEYWORDS:
             continue
         _keywords(value, out, in_names=key in ("properties", "$defs"))
+
+
+# -- the deprecated Slack keys (issue-549 R1.2, R1.3) ------------------------------
+
+
+@pytest.mark.parametrize(
+    "slack",
+    [
+        {"maxChars": 1500, "longMessages": "digest"},
+        {"maxChars": 600, "longMessages": "truncate"},
+        # Below the old minimum: the key is ignored, so it no longer refuses a load.
+        {"maxChars": 10},
+    ],
+)
+def test_deprecated_slack_keys_validate(slack):
+    """A config written before issue-549 still validates, and the schema says
+    the two keys are deprecated."""
+    assert configschema.validate({"channels": {"slack": slack}}) == []
+    keys = configschema.load_schema("cli-config")["properties"]["channels"][
+        "properties"
+    ]["slack"]["properties"]
+    assert keys["maxChars"]["deprecated"] is True
+    assert keys["longMessages"]["deprecated"] is True
+
+
+def test_deprecated_slack_keys_warn_once(tmp_path, caplog, monkeypatch):
+    """R1.3: the config loads, the values are ignored, and one warning per
+    process names each key present and the migration note."""
+    from the_loop.channels import slack as slack_module
+    from the_loop.channels.slack import SlackChannelConfig
+
+    monkeypatch.setattr(slack_module, "_DEPRECATED_WARNED", set())
+    config = {
+        "state": {"root": str(tmp_path)},
+        "channels": {
+            "slack": {
+                "enabled": True,
+                "channel": "C1",
+                "maxChars": 600,
+                "longMessages": "truncate",
+            }
+        },
+    }
+    with caplog.at_level("WARNING", logger="the-loop.channels"):
+        first = SlackChannelConfig.from_mapping(config)
+        SlackChannelConfig.from_mapping(config)
+    assert first.enabled
+    assert not hasattr(first, "max_chars") and not hasattr(first, "long_messages")
+    warned = [r.getMessage() for r in caplog.records if "deprecated" in r.getMessage()]
+    assert len(warned) == 2  # one per key present, once per process
+    assert any("channels.slack.maxChars" in line for line in warned)
+    assert any("channels.slack.longMessages" in line for line in warned)
+    assert all("issue-549" in line for line in warned)

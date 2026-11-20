@@ -95,10 +95,12 @@ from typing import (
     Callable,
     ClassVar,
     Dict,
+    Iterable,
     List,
     Mapping,
     Optional,
     Sequence,
+    Set,
     Tuple,
     Union,
 )
@@ -469,6 +471,29 @@ class ChannelTakenError(ValueError):
         self.work_item = work_item
 
 
+def _identity(ref: str) -> str:
+    from .graph.refs import identity_key
+
+    return identity_key(ref)
+
+
+def _one_per_work_item(refs: Iterable[str]) -> List[str]:
+    """``refs`` with every later spelling of an earlier work item dropped.
+
+    Two records whose refs differ only in the case of the owner/repo are one
+    work item (issue-549 R11.2), so their declarations of one room are not a
+    contest: the first record, in file order, speaks for both.
+    """
+    seen: Set[str] = set()
+    out: List[str] = []
+    for ref in refs:
+        key = _identity(ref)
+        if key not in seen:
+            seen.add(key)
+            out.append(ref)
+    return out
+
+
 def _as_ref(work_item: Union[str, WorkItemRef]) -> WorkItemRef:
     if isinstance(work_item, WorkItemRef):
         return work_item
@@ -546,7 +571,7 @@ class CollaborationChannelStore:
         )
         if target is None:
             return ""
-        found = [ref for ref, _ in self._declarations(target)]
+        found = _one_per_work_item(ref for ref, _ in self._declarations(target))
         if len(found) > 1:
             logger.warning(
                 "%s is declared by more than one work item (%s); no message there "
@@ -599,7 +624,11 @@ class CollaborationChannelStore:
                 if record.type == channel_type:
                     found.setdefault(record.target, []).append(ref)
         return {
-            target: owners[0] for target, owners in found.items() if len(owners) == 1
+            target: unique[0]
+            for target, unique in (
+                (target, _one_per_work_item(owners)) for target, owners in found.items()
+            )
+            if len(unique) == 1
         }
 
     def add(
@@ -644,7 +673,7 @@ class CollaborationChannelStore:
             )
         item = _as_ref(work_item)
         holder = self.declared_by(target)
-        if holder and holder != item.ref:
+        if holder and _identity(holder) != _identity(item.ref):
             raise ChannelTakenError(target, holder)
         current = self.list(item)
         existing = next(

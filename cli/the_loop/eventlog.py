@@ -139,6 +139,7 @@ _EVENT_NAMES: Tuple[str, ...] = (
     "channel.dropped",
     "channel.caught_up",
     "channel.heartbeat",
+    "channels.short_form_missing",
     "channel.split_suspected",
     "channel.split_cleared",
     "channel.command_received",
@@ -155,6 +156,7 @@ _EVENT_NAMES: Tuple[str, ...] = (
     "channel.reaction_added",
     "channel.reaction_failed",
     "channel.press_reported",
+    "channel.gate_closed",
     "channel.press_report_failed",
     # -- mention-gated rooms, records and shortcuts (issue-389) ---------------
     "channel.context_recorded",
