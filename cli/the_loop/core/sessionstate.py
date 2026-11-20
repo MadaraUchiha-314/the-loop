@@ -69,8 +69,9 @@ _BUDGET_RESETS = frozenset(
 #: Records that move the pointer, and the field that names where it went.
 _POINTER_MOVES = {"graph.started": "node", "graph.advanced": "to", "graph.forced": "to"}
 
-#: A human-owned node is parked as it is entered. The log names no node's
-#: owner, so this record is how a move onto a person's node is recognised.
+#: A node is parked when its exit reports a wait, and a human-owned node is
+#: also parked as it is entered (`via: entry`). The log names no node's owner,
+#: so the entry park is how a move onto a person's node is recognised.
 _PARKED = "graph.parked"
 
 #: A turn that ended for one of these waited on the node it was on, so the wait
@@ -285,6 +286,7 @@ def derive(
     # The pointer's move since the last turn record, and the last node parked.
     pointer: Optional[Tuple[_Moment, str]] = None
     parked = ""
+    parked_by_entry = False
     asks_open: Dict[str, _Ask] = {}
     ask_closed: Optional[_Moment] = None
     nudges_spent = 0
@@ -323,8 +325,14 @@ def derive(
             target = _text(record, _POINTER_MOVES[event])
             if target:
                 pointer = (moment, target)
+                # A park is about one visit to its node. The entry park of a
+                # person's node is written just before the move onto it.
+                if target != parked:
+                    parked, parked_by_entry = "", False
         elif event == _PARKED:
+            again = parked_by_entry and parked == _text(record, "node")
             parked = _text(record, "node")
+            parked_by_entry = again or record.get("via") == "entry"
         elif event == "session.wait_declared":
             wait = (moment, record)
         elif event == "session.awaiting_input":
@@ -465,9 +473,11 @@ def derive(
             moved_at, node = pointer
             if kind == _TURN_ENDED and (idle is not None or reason in _ENDED_BY_A_MOVE):
                 if parked == node:
-                    # A person's node: the session waits there, as it would
-                    # had its turn ended on it.
-                    state, reason, since = "waiting", "human-gate", moved_at[1]
+                    # The session waits there, as it would had its turn ended
+                    # on it: for a person at a node parked on entry, else for
+                    # whatever the node's exit reported.
+                    reason = "human-gate" if parked_by_entry else "graph-wait"
+                    state, since = "waiting", moved_at[1]
                     until = idle = None
                 else:
                     reason, idle = "pointer-moved", _later(moved_at, idle)

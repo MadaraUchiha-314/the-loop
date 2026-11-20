@@ -430,6 +430,62 @@ def test_a_pointer_moved_onto_a_human_gate_still_waits_for_the_person():
     assert state_at(log, 31).state == "stalled"
 
 
+def test_a_park_is_forgotten_when_the_pointer_moves_to_another_node():
+    """An agent's node whose exit reported a wait is parked too. That park is
+    about that visit: when the pointer comes back later, the session is idle
+    there and is nudged, not held as if a person owned the node.
+
+    Requirement: R4.1, R4.8
+    """
+    log = [
+        started(0, "verification"),
+        ev(4, "graph.parked", node="verification"),
+        ended(5, "graph-wait", "verification"),
+        moved(8, "review", node="verification"),
+        started(9, "review"),
+        ended(12, "exit-met", "review"),
+        moved(13, "verification", node="review"),
+    ]
+    state = state_at(log, 14)
+    assert (state.state, state.reason, state.node) == (
+        "idle",
+        "pointer-moved",
+        "verification",
+    )
+    assert state_at(log, 23).due == (Due("nudge", stall_id=stall_id(13)),)
+
+
+def test_a_node_parked_by_its_exit_after_a_move_waits_on_the_graph():
+    """A park that is not the entry of a person's node says only that the node
+    reports a wait: the session waits, and no surface calls it a human gate.
+
+    Requirement: R4.1, R7.1
+    """
+    log = [
+        started(0),
+        ended(5, "exit-met"),
+        moved(6, "verification"),
+        ev(7, "graph.parked", node="verification"),
+    ]
+    state = state_at(log, 60 * 24)
+    assert (state.state, state.reason, state.due) == ("waiting", "graph-wait", ())
+    assert (state.since, state.until) == (stamp(6), None)
+    assert sessionstate.session_view(state)["detail"] == "the node reports a wait"
+
+
+def test_a_human_gate_evaluated_again_is_still_a_human_gate():
+    """Requirement: R4.1"""
+    log = [
+        started(0),
+        ended(5, "exit-met"),
+        ev(5.9, "graph.parked", node="design-approval", via="entry"),
+        moved(6, "design-approval", node="design"),
+        ev(7, "graph.parked", node="design-approval"),
+    ]
+    state = state_at(log, 60 * 24)
+    assert (state.state, state.reason, state.due) == ("waiting", "human-gate", ())
+
+
 def test_the_node_is_where_the_pointer_last_went():
     """Requirement: R4.2 — the nudge names the node the work item is on now,
     and a node the session never ended a turn on has no exit it could have
