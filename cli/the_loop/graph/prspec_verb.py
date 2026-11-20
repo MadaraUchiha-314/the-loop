@@ -446,7 +446,10 @@ def record_pr_spec(req: PrSpecRequest, client: Any) -> PrSpecResult:
         )
 
     # Check 2: applicability.
-    if applicability(req.pull_requests, req.declared_repos, req.origin) == "single-pr":
+    # This PR's own repository counts as declared: a PR outside the origin is
+    # multi-PR (R1) whether or not the work-item state lists it yet.
+    declared = [*req.declared_repos, req.pr_repo]
+    if applicability(req.pull_requests, declared, req.origin) == "single-pr":
         record = base_record(required=False, reason="single-pr")
         return PrSpecResult(True, [], record, _write(req, record))
     if _spec_only(req, pull):

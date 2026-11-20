@@ -1413,3 +1413,13 @@ def test_verb_accepts_refs_that_differ_only_in_case(tmp_path):
     req = verb_request(tmp_path, co, pr_ref="github:Octo/API#12")
     write_pr_spec(co, req.spec_dir)
     assert record_pr_spec(req, VerbGitHub(visibility=PUBLIC)).findings == []
+
+
+def test_abuse_cross_repo_pr_missing_from_state_is_still_multi_pr(tmp_path):
+    # A PR outside the origin is multi-PR by definition (R1), even when the
+    # work-item state does not list it.
+    co = pr_checkout(tmp_path)
+    req = verb_request(tmp_path, co, pull_requests=[pr_row(ORIGIN, 2)])
+    write_pr_spec(co, req.spec_dir)
+    result = record_pr_spec(req, VerbGitHub(visibility=PUBLIC))
+    assert result.recorded and rec(result).reason == "multi-pr"
