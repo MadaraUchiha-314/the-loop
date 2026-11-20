@@ -424,9 +424,11 @@ does not block an agent node*, *A met exit gate still advances on a comment*, *A
 default is taken at its deadline*, *An answer cancels the default*, *A question with
 no default is reminded once*. Each abuse case in the table above is a negative test.
 The OpenAPI contract tests cover the four changed endpoints. The hook scripts are
-tested end to end against the CLI, including the fallback for an older CLI. Live
-evidence is one real stall and one real ask deadline on this work item's own
-session, with the Slack messages captured.
+tested end to end against the CLI, including the fallback for an older CLI. An
+end-to-end test runs the real hook scripts and the real watcher against a real tmux
+session that hosts a stub harness. A stall on a real harness can only happen once the
+daemon runs this code, which is after merge, so that observation is reported on the
+ticket then.
 
 ## Open questions
 
