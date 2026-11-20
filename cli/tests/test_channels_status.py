@@ -100,12 +100,15 @@ def test_the_five_states_have_five_distinct_emoji():
 def test_plan_moves_the_emoji_and_removes_only_its_own():
     current = {"channel": "C1", "ts": "1.1", "emoji": "gear"}
     plan = plan_status(current, WAITING, ("", ""))
+    assert plan is not None
     assert plan.add == ("C1", "1.1", "hourglass_flowing_sand")
     assert plan.remove == ("C1", "1.1", "gear")
     moved = plan_status(current, "", ("C1", "2.2"))  # R8.3: the message moved
+    assert moved is not None
     assert moved.add == ("C1", "2.2", "gear") and moved.remove == ("C1", "1.1", "gear")
     assert plan_status(current, WORKING, ("", "")) is None  # nothing changed
     first = plan_status({}, "", ("C1", "1.1"))  # R8.1: working until told
+    assert first is not None
     assert first.add == ("C1", "1.1", "gear") and first.remove is None
 
 

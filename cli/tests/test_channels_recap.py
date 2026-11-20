@@ -68,7 +68,12 @@ def test_recap_after_12h(tmp_path, monkeypatch):
     bot.post(_event("phase.started", phase="design", node="design"))  # bookkeeping
     clock.now += 3600
     bot.post(
-        _event("phase.completed", phase="design", node="design-approval", outcome="approved")
+        _event(
+            "phase.completed",
+            phase="design",
+            node="design-approval",
+            outcome="approved",
+        )
     )
     clock.now = T0 + 13 * 3600
     bot.post(_event("phase-approval-pending", node="tasks-approval"))
@@ -119,7 +124,9 @@ def test_recap_line_names_the_newest_changes_and_counts_the_rest():
     changes = [
         {"at": str(T0 + n), "kind": "phase", "value": f"p{n}"} for n in range(1, 10)
     ]
-    line = recap_line(changes, last_human=T0, recapped_at="", now=T0 + RECAP_AFTER_S + 60)
+    line = recap_line(
+        changes, last_human=T0, recapped_at="", now=T0 + RECAP_AFTER_S + 60
+    )
     assert "+3 earlier" in line and "*p9*" in line and "*p3*" not in line
 
 
