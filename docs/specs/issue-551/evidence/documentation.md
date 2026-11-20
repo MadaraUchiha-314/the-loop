@@ -54,3 +54,10 @@ Checked and left unchanged, with the reason:
 | `docs/index.md`, `docs/guide/what-is-the-loop.md` | Neither lists hooks or what the-loop guarantees about a session, so nothing in them became wrong |
 | `docs/.vitepress/config.mts` | `wait` was registered in the sidebar by task 8; no page was added here |
 | `skills/the-loop/SKILL.md`, `reference/context.md`, `reference/collaboration.md`, `reference/automation.md` | Updated by task 13 |
+
+## After the reviews
+
+The docs were corrected three more times, once after each review that changed
+behaviour: `590d5d87` (self-review round 1), `cf4d13a9` (round 2) and `a0b978dd`
+(security review), plus one sentence in `bf1ddf60` (critic). Round 2 checked twelve
+behaviours against the docs and found six false or missing; all were corrected.
