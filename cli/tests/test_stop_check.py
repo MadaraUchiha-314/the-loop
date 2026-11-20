@@ -788,3 +788,52 @@ def test_the_declared_wait_verb_refuses_a_foreign_work_item(bound, monkeypatch, 
     code = main(["wait", "--work-item", FOREIGN, "--for", "CI", "--until", "30m"])
     assert code == 1 and FOREIGN in capsys.readouterr().err
     assert declared(bound) == []
+
+
+# -- a daemon's session that does not name its work item ---------------------------
+
+
+@pytest.mark.parametrize("marker", ["THE_LOOP_INSTANCE", "THE_LOOP_CLI_CONFIG"])
+def test_the_verbs_refuse_a_daemon_session_that_names_no_work_item(
+    bound, monkeypatch, capsys, marker
+):
+    """Requirement: security considerations — the daemon names every session's
+    work item. A session that carries the daemon's marks and not that name
+    lost it, and the check on the ref must not switch itself off for it."""
+    working_on(monkeypatch)
+    monkeypatch.delenv("THE_LOOP_WORK_ITEM", raising=False)
+    monkeypatch.setenv(marker, "somewhere")
+    monkeypatch.setattr("sys.stdin", io.StringIO(""))
+
+    assert main(["sessions", "stop-check", "--work-item", REF]) == 2
+    stop = capsys.readouterr()
+    assert stop.out == "" and "THE_LOOP_WORK_ITEM" in stop.err and marker in stop.err
+
+    assert main(["wait", "--work-item", REF, "--for", "CI", "--until", "30m"]) == 2
+    wait = capsys.readouterr()
+    assert wait.out == "" and "THE_LOOP_WORK_ITEM" in wait.err
+
+    assert main(["sessions", "turn-start", "--work-item", REF]) == 0
+    start = capsys.readouterr()
+    assert (start.out, start.err) == ("", "")
+
+    for event in (
+        "session.turn_ended",
+        "session.wait_declared",
+        "session.turn_started",
+    ):
+        assert recorded(bound, event) == []
+
+
+def test_the_verbs_still_run_in_a_shell_the_daemon_did_not_start(
+    bound, monkeypatch, capsys
+):
+    """An operator may run them by hand; the service's own check still applies."""
+    working_on(monkeypatch)
+    for name in ("THE_LOOP_WORK_ITEM", "THE_LOOP_INSTANCE", "THE_LOOP_CLI_CONFIG"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr("sys.stdin", io.StringIO(""))
+    assert main(["sessions", "stop-check", "--work-item", REF]) == 0
+    assert main(["wait", "--work-item", REF, "--for", "CI", "--until", "30m"]) == 0
+    capsys.readouterr()
+    assert len(recorded(bound, "session.wait_declared")) == 1

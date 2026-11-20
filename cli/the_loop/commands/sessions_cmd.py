@@ -57,7 +57,7 @@ from .base import Command, register
 from ..poller.daemon import _build_dispatcher
 from ..webhook.daemon import _state_layout
 from .. import cli_config, eventlog, strings
-from ..client.routing import harness_routed, routed, service_error
+from ..client.routing import daemon_spawned, harness_routed, routed, service_error
 from ..control import CLEANUP, PAUSE, RESUME, START, STOP, ControlStore
 from ..core import sessions as core_sessions
 from ..reset import WORKSPACE, reset_work_item, work_items_with_state
@@ -105,12 +105,23 @@ def _foreign_work_item(ref: str) -> str:
 
     The daemon names a session's work item in its environment
     (``THE_LOOP_WORK_ITEM``). The hook verbs and `the-loop wait` act on that one
-    only (issue-551, design § Security design), so another ref is refused
-    before anything is sent. A session with no such variable is checked by the
-    service alone, against the session registry.
+    only, so another ref is refused before anything is sent. A process that
+    carries another of the daemon's marks and not that name is refused too:
+    the name was lost, and without it this check would pass every ref. A shell
+    the daemon did not start carries none of them and is let through, so an
+    operator can run the verbs by hand.
+
+    This is a check on the caller's own environment and nothing more. The
+    service authenticates no caller; what it checks is that the ref has a live
+    session in the registry.
     """
     own = os.environ.get(WORK_ITEM_ENV_VAR, "").strip()
     if not own:
+        marker = daemon_spawned()
+        if marker:
+            return strings.t(
+                "cli.sessions.unnamed-work-item", marker=marker, name=WORK_ITEM_ENV_VAR
+            )
         return ""
     try:
         if WorkItemRef.parse(own).ref == WorkItemRef.parse(ref).ref:

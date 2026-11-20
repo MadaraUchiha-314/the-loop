@@ -1065,6 +1065,7 @@
   "cli.sessions.stop-check.gave-up.help": "Record a stop the hook allowed after its own attempts ran out (reason gate-gave-up); nothing is judged",
   "cli.sessions.stop-check.help": "For the harness's Stop hook: decide whether this session's turn may end (issue-551). Reads the hook's payload on stdin and prints `allow` or `refuse` as JSON; an allow records session.turn_ended",
   "cli.sessions.turn-start.help": "For the harness's turn-start hook: record that this session's turn started (session.turn_started, issue-551). Always exits 0 and prints nothing",
+  "cli.sessions.unnamed-work-item": "error: this process was started by the-loop's daemon ({marker} is set) and {name} is not set, so the-loop cannot tell which work item it serves; nothing was done. Set {name} to this session's work item, or run the command from a shell the daemon did not start",
   "cli.sessions.work-item.help": "Work-item ref, e.g. github:OWNER/REPO#15",
   "cli.standing.create.cannot-read": "error: cannot read {prompt_file!r}: {exc}",
   "cli.standing.create.cwd.help": "Where the session runs",
