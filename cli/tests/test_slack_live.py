@@ -17,10 +17,12 @@ Environment (credentials by reference only, never printed):
 * ``THE_LOOP_SLACK_BOT_TOKEN``: the bot token (the name the channel reads).
 * ``THE_LOOP_LIVE_SLACK_CHANNEL``: the test channel's conversation id. Not the
   central channel and not a work item's room.
-* ``THE_LOOP_LIVE_SLACK_KEEP=1``: keep the messages for screenshots (T5); their
-  ids go to a file under the pytest temp root, and every message carries a run
-  marker so a cleanup run can find them either way.
-* ``THE_LOOP_LIVE_SLACK_CLEANUP=1``: delete kept messages, post nothing.
+* ``THE_LOOP_LIVE_SLACK_CLEANUP=1``: post nothing; delete any message an
+  interrupted run left behind (every message carries a run marker).
+
+The test never keeps what it posts: live checks are not for people to read. It
+refuses a channel where the bot has posted anything but live checks, because
+that is the central channel or a work item's room.
 * ``THE_LOOP_LIVE_SLACK_REPORT=<path>``: write a redacted read-back summary
   there: block types, part order, previews present or not, reactions. No ids,
   no token, no channel name.
@@ -63,12 +65,11 @@ pytestmark = [
 
 TOKEN_ENV = "THE_LOOP_SLACK_BOT_TOKEN"
 CHANNEL_ENV = "THE_LOOP_LIVE_SLACK_CHANNEL"
-KEEP_ENV = "THE_LOOP_LIVE_SLACK_KEEP"
 CLEANUP_ENV = "THE_LOOP_LIVE_SLACK_CLEANUP"
 REPORT_ENV = "THE_LOOP_LIVE_SLACK_REPORT"
 
 #: Every message this test posts carries this prefix and the run's id, so a
-#: cleanup run can find kept messages without the ids file.
+#: cleanup run can find what an interrupted run left.
 MARKER_PREFIX = "the-loop-live-check"
 
 #: How long Slack is given to unfurl a link before the read-back looks.
@@ -96,11 +97,20 @@ def channel() -> str:
     return os.environ.get(CHANNEL_ENV, "")
 
 
-def _kept_file(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Where kept message ids live between a KEEP run and a CLEANUP run: beside
-    pytest's temp root, which survives the run that made it."""
-    root = tmp_path_factory.getbasetemp().parent
-    return root / "the-loop-live-slack-kept.json"
+def _refuse_a_shared_channel(client: Any, channel: str) -> None:
+    """Stop before posting when the bot has posted anything other than a live
+    check in this channel: that is the central channel or a work item's room,
+    and people read it."""
+    bot_user: Optional[str] = client.auth_test().get("user_id")
+    history = client.conversations_history(channel=channel, limit=200)
+    for message in history.get("messages") or []:
+        if message.get("user") != bot_user or message.get("subtype"):
+            continue
+        if MARKER_PREFIX not in json.dumps(message):
+            pytest.fail(
+                "the live check needs a dedicated test channel: the bot already "
+                "posts here for people (the central channel or a room)"
+            )
 
 
 # -- the text ------------------------------------------------------------------------
@@ -232,10 +242,11 @@ def _delete(client: Any, channel: str, ts_list: List[str]) -> None:
 
 
 @pytest.mark.skipif(os.environ.get(CLEANUP_ENV) == "1", reason="cleanup run")
-def test_live_post_edit_react_and_delete(client, channel, tmp_path_factory):
+def test_live_post_edit_react_and_delete(client, channel):
     """
     Scenario: the pipeline's messages read back from a real workspace as planned
-      Given the bot token and a dedicated test channel
+      Given the bot token and a dedicated test channel, where the bot posts
+        nothing for people
       When a short message and its long form (a table, a task list, nested lists,
         a code block that splits, defused sequences) are delivered, then edited
       Then every long-form part reads back as blocks Slack drew from markdown
@@ -248,6 +259,7 @@ def test_live_post_edit_react_and_delete(client, channel, tmp_path_factory):
     Requirement: docs/specs/issue-549/requirements.md R2.1, R2.2, R5, R8;
                  design.md § Security design abuse cases 1-2
     """
+    _refuse_a_shared_channel(client, channel)
     marker = f"{MARKER_PREFIX}-{uuid.uuid4().hex[:12]}"
     summary = (
         f"Live check {marker}: a short message, with the whole text in its thread."
@@ -330,14 +342,7 @@ def test_live_post_edit_react_and_delete(client, channel, tmp_path_factory):
         observed["reactions"] = sequence
     finally:
         _write_report(observed)
-        if os.environ.get(KEEP_ENV) == "1":
-            kept = _kept_file(tmp_path_factory)
-            previous: List[str] = []
-            if kept.exists():
-                previous = list(json.loads(kept.read_text(encoding="utf-8")))
-            kept.write_text(json.dumps(previous + posted), encoding="utf-8")
-        else:
-            _delete(client, channel, posted)
+        _delete(client, channel, posted)
 
     assert observed["top block types"][0] == "section"
     # Slack stores a markdown block as the blocks it drew from it: no part is
@@ -361,13 +366,10 @@ def test_live_post_edit_react_and_delete(client, channel, tmp_path_factory):
 
 
 @pytest.mark.skipif(os.environ.get(CLEANUP_ENV) != "1", reason="not a cleanup run")
-def test_live_cleanup_deletes_kept_messages(client, channel, tmp_path_factory):
-    """A ``THE_LOOP_LIVE_SLACK_CLEANUP=1`` run deletes what a KEEP run left: the
-    ids it recorded, and any of the bot's messages carrying the run marker."""
-    kept = _kept_file(tmp_path_factory)
+def test_live_cleanup_deletes_left_messages(client, channel):
+    """A ``THE_LOOP_LIVE_SLACK_CLEANUP=1`` run deletes what an interrupted run
+    left: any of the bot's messages carrying the run marker, with its replies."""
     targets: List[str] = []
-    if kept.exists():
-        targets.extend(json.loads(kept.read_text(encoding="utf-8")))
     bot_user: Optional[str] = client.auth_test().get("user_id")
     history = client.conversations_history(channel=channel, limit=200)
     for message in history.get("messages") or []:
@@ -380,5 +382,3 @@ def test_live_cleanup_deletes_kept_messages(client, channel, tmp_path_factory):
         if message.get("reply_count"):
             targets.extend(str(r["ts"]) for r in _replies(client, channel, ts))
     _delete(client, channel, list(dict.fromkeys(targets)))
-    if kept.exists():
-        kept.unlink()

@@ -100,9 +100,10 @@ because existing configs and split records must keep working.
     1. `the-loop channels status` (confirms the token is set).
     2. Export `THE_LOOP_LIVE_SLACK=1` and `THE_LOOP_LIVE_SLACK_CHANNEL=<id>`.
     3. Run T4.
-  - **Tear-down:** T4 deletes what it posted, unless `THE_LOOP_LIVE_SLACK_KEEP=1` is
-    set for the screenshots in T5. In that case it is deleted after them by a second
-    run with `THE_LOOP_LIVE_SLACK_CLEANUP=1`.
+  - **Tear-down:** T4 always deletes what it posted. Live checks are not for people
+    to read, so nothing is kept. A run with `THE_LOOP_LIVE_SLACK_CLEANUP=1` deletes
+    what an interrupted run left. T4 refuses a channel where the bot already posts
+    for people.
   - **The live test is opt-in.** It carries a new pytest marker, `live_slack`, and
     skips unless `THE_LOOP_LIVE_SLACK=1`, so CI never posts to Slack.
 - **Mock-up screenshot (T5):** `chromium --headless=new --screenshot=… --window-size=1200,2100
@@ -138,7 +139,7 @@ cannot be redacted:
 - [x] T2 — `uv run the-loop scenarios --root "$PWD" --glob 'cli/tests/test_*_integration.py' --format markdown` (the trace above appears)
 - [x] T3 — `cd cli && uv run python -m pytest -q tests/test_api_contract_parity.py`
 - [x] T4 — `cd cli && THE_LOOP_LIVE_SLACK=1 uv run python -m pytest -q -m live_slack tests/test_slack_live.py`
-- [ ] T5 — mock-up screenshot (headless Chromium) and Slack client screenshots of the four shapes
+- [x] T5 — mock-up screenshot (headless Chromium); the Slack client view moves to the post-merge report (replanned, see below)
 - [x] T8 — `cd cli && uv run python -m pytest -q -k "abuse or defuse or unauthorized or stale_press or casefold"`
 - [x] T10 — migration cases pass within T1/T2 (named in `unit.md`)
 - [x] T12 — `uv run pre-commit run --all-files`
@@ -157,7 +158,7 @@ they point at the operator's own config, which some unrelated tests read.
 | T3 | `tests/test_api_contract_parity.py` | 7 passed | [`contract.md`](evidence/contract.md) |
 | T4 | live Slack test in a dedicated test channel | 1 passed: table drawn as a `table` block, parts in order `(1/2)`, `(2/2)`, no previews after post **and** edit, defused sequences inert, reaction ⏳ → ⚙️ → none | [`live-slack.md`](evidence/live-slack.md) |
 | T5 | mock-up rendered with headless Chromium | captured | [`ui/mockup.png`](evidence/ui/mockup.png) |
-| T5 | Slack client screenshots of the four shapes | **not executed**, see below | — |
+| T5 | Slack client screenshots of the four shapes | replanned: post-merge, with T11 | — |
 | T7 | 64 KB body within the time bound and part count (in T8) | passed | [`unit.md`](evidence/unit.md) |
 | T8 | `-k "abuse or defuse or unauthorized or stale_press or casefold"` | 334 passed | [`unit.md`](evidence/unit.md) |
 | T9 | `text` fallback is the short form (in T1) | passed | [`unit.md`](evidence/unit.md) |
@@ -173,19 +174,20 @@ The first T4 run failed on two assumptions in the test, not in the feature:
 The test was corrected (`93ba24e5`), and the second run passed. Details are in
 `live-slack.md`.
 
-**Not executed:** T5's Slack client screenshots. No browser logged in to the
-workspace could be reached from the verifying session: the browser tool timed out
-connecting. What stands in for them:
+**Replanned:** T5's Slack client screenshots. No browser logged in to the workspace
+could be reached from the verifying session. The first T4 run kept its messages for
+the author to look at, in the channel the author named, which is this work item's
+room. The author asked on PR #550 that live checks never show in a Slack channel
+people read. So:
 
-- the shapes are asserted structurally in T2;
-- T4 read back the room shape (short message and long-form thread) from a real
-  workspace;
-- the live messages are kept in the test channel, so the author can open them in
-  the Slack client.
+- the kept messages were deleted;
+- T4 no longer keeps anything, and refuses a channel where the bot posts for people;
+- the Slack client view of the four shapes moves to the post-merge report on the
+  ticket, with T11. There they are real messages about real work, not test posts.
 
-The central reply, the gate before and after a press, and the recap were not posted
-live. A real press needs the daemon running this code, so it waits until after
-merge (T11).
+What stands in for them before merge: the shapes are asserted structurally in T2,
+and T4 read back the room shape (short message and long-form thread) from a real
+workspace.
 
 ## Review comments
 

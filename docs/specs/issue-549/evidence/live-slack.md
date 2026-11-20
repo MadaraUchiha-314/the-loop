@@ -1,13 +1,13 @@
 # Live Slack (T4)
 
-Run on 2026-11-20 at `93ba24e5`, against the operator's workspace, in a dedicated
-test channel (`<channel>`) the bot is a member of. It was not the central channel
-and not a work item's room. The bot token was passed by reference
+Run on 2026-11-20 at `93ba24e5`, against the operator's workspace, in the channel
+the author named (`<channel>`). Correction: that channel is this work item's room,
+not a dedicated test channel. The test now refuses such a channel (see below). The bot token was passed by reference
 (`THE_LOOP_SLACK_BOT_TOKEN`) and never printed.
 
 ```text
 cd cli && THE_LOOP_LIVE_SLACK=1 THE_LOOP_LIVE_SLACK_CHANNEL=<channel> \
-  THE_LOOP_LIVE_SLACK_KEEP=1 THE_LOOP_LIVE_SLACK_REPORT=<path> \
+  THE_LOOP_LIVE_SLACK_REPORT=<path> \
   uv run python -m pytest -q -m live_slack tests/test_slack_live.py
 1 passed, 1 skipped (the cleanup test, which runs only with THE_LOOP_LIVE_SLACK_CLEANUP=1)
 ```
@@ -53,5 +53,12 @@ cd cli && THE_LOOP_LIVE_SLACK=1 THE_LOOP_LIVE_SLACK_CHANNEL=<channel> \
    request. The test reads reactions from the message itself instead. The feature
    never reads reactions, so it needs no new scope.
 
-The posted messages were kept (`THE_LOOP_LIVE_SLACK_KEEP=1`) for the Slack client
-screenshots in T5.
+The posted messages were first kept for the Slack client screenshots in T5. The
+author asked on PR #550 that live checks never show in a channel people read, so:
+
+- they were deleted (`THE_LOOP_LIVE_SLACK_CLEANUP=1`; only the room's opening
+  message is left);
+- the keep option was removed: the test always deletes what it posts;
+- the test now stops before posting when the bot has posted anything but live
+  checks in the channel. Run against this room again, it failed with that message
+  and posted nothing.
