@@ -22,17 +22,35 @@ Two layers, applied on different conditions:
 Every pattern here is linear in the input — a character class that excludes its
 own delimiter, or a line anchor — and the comment scan is forward-only, so a
 crafted 64 KB comment costs what prose costs (abuse case A1).
+
+Since issue-549 the drawing lives in :mod:`the_loop.channels.mrkdwn` and the
+block parser in :mod:`the_loop.channels.render`; both stay importable from here.
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Callable, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 from .. import strings
-from ..redact import neutralise_broadcasts, strip_html_comments
 from .defuse import USER_MENTION_RE
+from .mrkdwn import (
+    _CODE_SPAN,
+    _inline,
+    _neutralise,
+    _outside_code,
+    _unfold,
+    strip_comments,
+    to_mrkdwn,
+)
+from .render import (
+    HEADING_LINE_RE as _HEADING_LINE,
+    ITEM_RE as _ITEM,
+    QUOTE_RE as _QUOTE,
+    TABLE_RULE_RE as _TABLE_RULE,
+    block_spans,
+)
 
 __all__ = [
     "DEFAULT_DIGEST_MODE",
@@ -64,111 +82,6 @@ DEFAULT_DIGEST_MODE = "digest"
 
 # -- drawing markdown as mrkdwn (R3.4) ---------------------------------------------
 
-_BOLD = re.compile(r"\*\*([^*\n]+)\*\*")
-_BOLD_UNDERSCORE = re.compile(r"(?<!\w)__([^_\n]+)__(?!\w)")
-_STRIKE = re.compile(r"~~([^~\n]+)~~")
-_HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*#*\s*$", re.MULTILINE)
-_LINK = re.compile(r"!?\[([^\[\]\n]+)\]\(([^()\s]+)\)")
-_TASK_DONE = re.compile(r"^(\s*)[-*+]\s+\[[xX]\]\s*", re.MULTILINE)
-_TASK_OPEN = re.compile(r"^(\s*)[-*+]\s+\[ \]\s*", re.MULTILINE)
-_BULLET = re.compile(r"^(\s*)[-*+]\s+(?=\S)", re.MULTILINE)
-#: A collapsed block's tags (issue-472). Slack has no collapsible block and reads
-#: `<…>` as link syntax, so the open and close lines go and the summary becomes a
-#: bold line of its own; what was collapsed is simply shown.
-_DETAILS_TAG = re.compile(r"^[ \t]*</?details\b[^>\n]*>[ \t]*\n?", re.MULTILINE)
-_SUMMARY = re.compile(r"<summary\b[^>\n]*>([^<\n]*)</summary>")
-#: `<!channel>`, `<!here>`, `<!everyone>`, `<!subteam^…>` — the one thing in a
-#: comment's text that ACTS on Slack (A2). Rewritten after the comment scan, so
-#: the-loop's own `<!-- … -->` markers are already gone. Both rules live in
-#: :mod:`the_loop.redact` since issue-389, because the ledger applies them to a
-#: quoted snapshot too; this module keeps its names for its own callers.
-strip_comments = strip_html_comments
-
-
-_CODE_SPAN = re.compile(r"`[^`\n]+`")
-_FENCE = re.compile(r"^\s*(```|~~~)")
-_HOLE = "\x00"
-
-
-def _outside_code(text: str, draw: Callable[[str], str]) -> str:
-    """``draw`` applied to ``text`` outside fenced blocks and inline code spans,
-    which Slack shows verbatim — a ``# comment`` in a shell snippet is not a
-    heading, and ``**`` in a code span is two asterisks."""
-    out: List[str] = []
-    prose: List[str] = []
-    fence = ""
-
-    def flush() -> None:
-        if not prose:
-            return
-        segment = "\n".join(prose)
-        prose.clear()
-        spans: List[str] = []
-
-        def hold(match: "re.Match[str]") -> str:
-            spans.append(match.group(0))
-            return f"{_HOLE}{len(spans) - 1}{_HOLE}"
-
-        drawn = draw(_CODE_SPAN.sub(hold, segment.replace(_HOLE, "")))
-        for index, span in enumerate(spans):
-            drawn = drawn.replace(f"{_HOLE}{index}{_HOLE}", span, 1)
-        out.append(drawn)
-
-    for line in text.split("\n"):
-        opener = _FENCE.match(line)
-        if fence:
-            out.append(line)
-            if line.lstrip().startswith(fence):
-                fence = ""
-            continue
-        if opener:
-            flush()
-            fence = opener.group(1)
-            out.append(line)
-            continue
-        prose.append(line)
-    flush()
-    return "\n".join(out)
-
-
-def _inline_rules(text: str) -> str:
-    text = _BOLD.sub(r"*\1*", text)
-    text = _BOLD_UNDERSCORE.sub(r"*\1*", text)
-    text = _STRIKE.sub(r"~\1~", text)
-    return _LINK.sub(r"<\2|\1>", text)
-
-
-def _inline(text: str) -> str:
-    """The inline rules — emphasis, strike, links — on text whose line-level
-    shape (headings, bullets) the caller has already handled; code spans kept."""
-    return _outside_code(text, _inline_rules)
-
-
-def _neutralise(text: str) -> str:
-    return neutralise_broadcasts(text)
-
-
-def _unfold(text: str) -> str:
-    """``<details>`` blocks opened: the tags dropped, each summary drawn bold."""
-    return _SUMMARY.sub(r"**\1**", _DETAILS_TAG.sub("", text))
-
-
-def _line_rules(text: str) -> str:
-    text = _unfold(text)
-    text = _HEADING.sub(r"*\1*", text)
-    text = _TASK_DONE.sub("\\1☑ ", text)
-    text = _TASK_OPEN.sub("\\1☐ ", text)
-    text = _BULLET.sub("\\1• ", text)
-    return _inline_rules(text)
-
-
-def to_mrkdwn(text: str) -> str:
-    """GitHub markdown drawn as Slack mrkdwn (R3.4): the words unchanged, the
-    marks Slack cannot draw replaced by the ones it can, HTML comments gone,
-    broadcast sequences neutralised (everywhere — a fence is no safe harbour),
-    code fences and spans left exactly as written. Idempotent on its own output."""
-    return _outside_code(_neutralise(strip_comments(text)), _line_rules)
-
 
 # -- paths (R3.2) ----------------------------------------------------------------------
 
@@ -189,23 +102,6 @@ def shorten_paths(text: str) -> str:
 
 # -- the digest (R1, R2, R3) ---------------------------------------------------------
 
-_TABLE_ROW = re.compile(r"^\s*\|")
-_TABLE_RULE = re.compile(r"^\s*\|?\s*:?-{2,}")
-_HEADING_LINE = re.compile(r"^#{1,6}\s+(.+?)\s*#*\s*$")
-_ITEM = re.compile(
-    r"^(\s*)(?:[-*+]|\d{1,3}[.)]|[A-Z][.)]|[a-z]\))\s+(?:\[([ xX])\]\s*)?(.*)$"
-)
-_QUOTE = re.compile(r"^\s*>\s?")
-_TRACE_LINE = re.compile(
-    r"^(?:Traceback \(most recent call last\):?\s*$"
-    r"|\s+File \".*\", line \d+.*"
-    r"|\s+at \S.*"
-    r"|[\w.]*(?:Error|Exception)\b.*"
-    r"|\s*\^+\s*$)"
-)
-_TRACE_START = re.compile(
-    r"^(?:Traceback \(most recent call last\):?\s*$|\s+at \S.*\(.*:\d+.*\)\s*$)"
-)
 #: The end of a sentence: the mark, any closing quote / bracket / emphasis, then
 #: whitespace or the end. Abbreviations are filtered by :func:`_sentence_ends`.
 _SENTENCE_END = re.compile(r"[.!?]+[\"'’)\]*_~`]*(?=\s|$)")
@@ -253,100 +149,49 @@ def _sentences(text: str) -> List[str]:
 
 
 def _parse(text: str) -> List[_Block]:
-    """One pass over the lines into blocks (design § 1.2)."""
+    """One pass over the lines into blocks (design § 1.2). The block boundaries
+    come from :func:`the_loop.channels.render.block_spans` (issue-549 moved the
+    parser there, for the long form); this draws each block the digest's way."""
     lines = text.split("\n")
     blocks: List[_Block] = []
-    paragraph: List[str] = []
-    i = 0
-
-    def flush() -> None:
-        if paragraph:
-            blocks.append(_Block("paragraph", " ".join(paragraph)))
-            paragraph.clear()
-
-    while i < len(lines):
-        line = lines[i]
-        fence = _FENCE.match(line)
-        if fence:
-            flush()
-            marker = fence.group(1)
-            j = i + 1
-            while j < len(lines) and not lines[j].lstrip().startswith(marker):
-                j += 1
-            blocks.append(_Block("code", count=j - i - 1))
-            i = j + 1
-            continue
-        if (
-            _TABLE_ROW.match(line)
-            and i + 1 < len(lines)
-            and _TABLE_ROW.match(lines[i + 1])
-        ):
-            flush()
-            j = i
-            rows = 0
-            while j < len(lines) and _TABLE_ROW.match(lines[j]):
-                if not _TABLE_RULE.match(lines[j]):
-                    rows += 1
-                j += 1
+    for span in block_spans(lines):
+        body = lines[span.start : span.end]
+        if span.kind == "paragraph":
+            blocks.append(
+                _Block(
+                    "paragraph", " ".join(_QUOTE.sub("", line).strip() for line in body)
+                )
+            )
+        elif span.kind == "heading":
+            heading = _HEADING_LINE.match(body[0])
+            blocks.append(_Block("heading", heading.group(1) if heading else body[0]))
+        elif span.kind == "code":
+            inside = len(body) - (2 if span.closed else 1)
+            blocks.append(_Block("code", count=inside))
+        elif span.kind == "table":
+            rows = sum(1 for line in body if not _TABLE_RULE.match(line))
             blocks.append(_Block("table", count=max(rows - 1, 0)))
-            i = j
-            continue
-        if (
-            _TRACE_START.match(line)
-            and i + 1 < len(lines)
-            and _TRACE_LINE.match(lines[i + 1])
-        ):
-            flush()
-            j = i
-            while j < len(lines) and (
-                _TRACE_LINE.match(lines[j]) or lines[j].startswith("    ")
-            ):
-                j += 1
-            blocks.append(_Block("trace", count=j - i))
-            i = j
-            continue
-        if not line.strip():
-            flush()
-            i += 1
-            continue
-        heading = _HEADING_LINE.match(line)
-        if heading:
-            flush()
-            blocks.append(_Block("heading", heading.group(1)))
-            i += 1
-            continue
-        item = _ITEM.match(line)
-        if item:
-            flush()
-            items: List[Tuple[str, str]] = []
-            j = i
-            while j < len(lines):
-                current = _ITEM.match(lines[j])
-                if current:
-                    box = current.group(2)
-                    glyph = "" if box is None else ("☑ " if box.strip() else "☐ ")
-                    items.append((glyph, current.group(3).strip()))
-                    j += 1
-                    continue
-                probe = lines[j]
-                if (
-                    not probe.strip()
-                    or _FENCE.match(probe)
-                    or _HEADING_LINE.match(probe)
-                    or _TABLE_ROW.match(probe)
-                ):
-                    break
-                # lazy continuation, as GitHub draws it: the line joins the item
-                glyph, body = items[-1]
-                items[-1] = (glyph, body + " " + probe.strip())
-                j += 1
-            blocks.append(_Block("list", items=items))
-            i = j
-            continue
-        paragraph.append(_QUOTE.sub("", line).strip())
-        i += 1
-    flush()
+        elif span.kind == "trace":
+            blocks.append(_Block("trace", count=len(body)))
+        else:
+            blocks.append(_Block("list", items=_list_items(body)))
     return blocks
+
+
+def _list_items(body: List[str]) -> List[Tuple[str, str]]:
+    """A list block's items as ``(box, text)``; a lazy continuation line joins
+    the item above it, as GitHub draws it."""
+    items: List[Tuple[str, str]] = []
+    for line in body:
+        current = _ITEM.match(line)
+        if current:
+            box = current.group(2)
+            glyph = "" if box is None else ("☑ " if box.strip() else "☐ ")
+            items.append((glyph, current.group(3).strip()))
+        elif items:
+            glyph, text = items[-1]
+            items[-1] = (glyph, text + " " + line.strip())
+    return items
 
 
 def _find_ask(blocks: List[_Block]) -> Optional[str]:

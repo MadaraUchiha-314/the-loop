@@ -194,6 +194,7 @@
   "channels.slack.kickoff.showing": "_Showing {shown} of {total} — for the rest, start your message with `<repo>: `._",
   "channels.slack.kind-summary.needs": "{labels} — needs bot scope {scopes} and bot event {events}",
   "channels.slack.kind-summary.unrecognised": "unrecognised — not a Slack conversation id (C…, G… or D…)",
+  "channels.slack.long-form.part-mark": "_({n}/{m})_",
   "channels.slack.kind.im": "direct message",
   "channels.slack.kind.mention": "a mention in any channel",
   "channels.slack.kind.mpim": "group direct message",

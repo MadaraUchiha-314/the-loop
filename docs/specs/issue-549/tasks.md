@@ -94,7 +94,7 @@ Tests are named so the T8 `-k` filter in `testing-plan.md` finds the abuse cases
   - _Test:_ T8 — `tests/test_channels_defuse.py::test_defuse_broadcast_*` (cell, heading,
     label), `test_defuse_user_mention`, `test_defuse_unsafe_scheme`,
     `test_defuse_breakout_markup`, `test_defuse_strips_markers` (red→green)
-- [ ] 6. The long-form renderer and splitter.
+- [x] 6. The long-form renderer and splitter.
   - Reuse the digest's line-based block parser to find top-level blocks; pack them into
     parts of at most ~11,000 characters, one `markdown` block each; never split inside
     a table, code block, list item or word.
