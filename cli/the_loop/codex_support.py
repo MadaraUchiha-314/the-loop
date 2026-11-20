@@ -363,10 +363,12 @@ def _install_hook(
     """
     groups = hooks.setdefault(event, [])
     if not isinstance(groups, list):
-        raise ValueError(f"{event} hooks must be a list")
+        raise ValueError(strings.t("codex-support.error.hooks-not-a-list", event=event))
     for group in groups:
         if not isinstance(group, dict) or not isinstance(group.get("hooks"), list):
-            raise ValueError(f"each {event} matcher must contain a hooks list")
+            raise ValueError(
+                strings.t("codex-support.error.matcher-without-hooks", event=event)
+            )
     # Identify our hook by script and argument, not by the exact command:
     # another interpreter or install path must replace the old entry, not
     # add a second gate that shares (and halves) the attempts budget.

@@ -670,6 +670,28 @@ def test_a_malformed_turn_start_event_leaves_the_hooks_file_untouched(tmp_path):
     assert hooks.read_text() == original
 
 
+@pytest.mark.parametrize(
+    "event_hooks, key",
+    [
+        ("not a list", "codex-support.error.hooks-not-a-list"),
+        ([{"hooks": "not a list"}], "codex-support.error.matcher-without-hooks"),
+        (["not a matcher"], "codex-support.error.matcher-without-hooks"),
+    ],
+)
+def test_a_malformed_hooks_file_is_refused_in_the_catalogs_words(
+    tmp_path, event_hooks, key
+):
+    """The operator reads this message, so it comes from the string catalog."""
+    from the_loop import strings
+
+    hooks = tmp_path / ".codex/hooks.json"
+    hooks.parent.mkdir()
+    hooks.write_text(json.dumps({"hooks": {"Stop": event_hooks}}))
+    result = prepare_instructions(str(tmp_path))
+    assert not result.ok
+    assert strings.t(key, event="Stop") in result.error
+
+
 def test_codex_home_is_stripped_and_expanded_for_every_writer(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("CODEX_HOME", " ~/codex ")
