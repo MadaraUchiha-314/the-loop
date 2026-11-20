@@ -10,7 +10,8 @@ registry. :func:`stop_check` gathers its four inputs for one work item, records
 
 Every operation here answers only for a work item that has a live session in
 the session registry. The service authenticates no caller, so that is what
-"bound" can mean on this side; the CLI verbs add the caller's own ``THE_LOOP_WORK_ITEM`` before they call.
+"bound" can mean on this side; the CLI verbs add the caller's own
+``THE_LOOP_WORK_ITEM`` before they call.
 """
 
 from __future__ import annotations
@@ -304,8 +305,9 @@ def check_condition(condition: str) -> str:
     """A declared wait's condition as one line of words; ``ValueError`` when it
     is empty or longer than :data:`MAX_CONDITION_LENGTH`.
 
-    The status surfaces print it inside a line of a terminal. A line break or an escape sequence in it would be drawn there, not
-    read, so every run of whitespace and control characters becomes one space.
+    The status surfaces print it inside a line of a terminal. A line break or
+    an escape sequence in it would be drawn there, not read, so every run of
+    whitespace and control characters becomes one space.
     """
     text = condition if isinstance(condition, str) else ""
     text = " ".join("".join(c if c.isprintable() else " " for c in text).split())

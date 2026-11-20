@@ -282,11 +282,12 @@ def derive(
     # The wait made since the last turn record, and the one behind the last end.
     wait: Optional[Tuple[_Moment, Dict[str, Any]]] = None
     wait_at_end: Optional[Tuple[_Moment, Dict[str, Any]]] = None
-    # The open asks by id, oldest first, and when an ask was last closed.
-    # The pointer's move since the last turn record, and the last node parked.
+    # The pointer's move since the last turn record, and the last node parked
+    # with whether that was the entry park of a person's node.
     pointer: Optional[Tuple[_Moment, str]] = None
     parked = ""
     parked_by_entry = False
+    # The open asks by id, oldest first, and when an ask was last closed.
     asks_open: Dict[str, _Ask] = {}
     ask_closed: Optional[_Moment] = None
     nudges_spent = 0
