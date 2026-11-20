@@ -84,7 +84,7 @@ Tests are named so the T8 `-k` filter in `testing-plan.md` finds the abuse cases
 
 ### Rendering
 
-- [ ] 5. The defuser, applied to both forms. **Security-relevant.**
+- [x] 5. The defuser, applied to both forms. **Security-relevant.**
   - A new module (`channels/defuse.py`), in the order design.md fixes: strip markers
     and HTML comments → neutralise broadcasts → defuse user mentions → keep only
     `http`/`https`/`mailto` links → escape angle-bracket syntax. It covers table cells,

@@ -32,6 +32,7 @@ from typing import Callable, List, Optional, Tuple
 
 from .. import strings
 from ..redact import neutralise_broadcasts, strip_html_comments
+from .defuse import USER_MENTION_RE
 
 __all__ = [
     "DEFAULT_DIGEST_MODE",
@@ -54,7 +55,8 @@ SUMMARY_MAX_CHARS = 600
 #: A Slack user mention in text — `<@U…>` / `<@W…>`, with or without a `|label`.
 #: Neutralised in an agent-authored summary so it can ping no one (abuse case 3);
 #: broadcast sequences (`<!here>` …) are handled by `neutralise_broadcasts`.
-_USER_MENTION_RE = re.compile(r"<@([UW][A-Z0-9]+)(?:\|[^>]*)?>")
+#: Defined by the defuser since issue-549; this name stays for this module.
+_USER_MENTION_RE = USER_MENTION_RE
 
 #: What happens to a text section longer than ``maxChars`` (R1.4).
 DIGEST_MODES: Tuple[str, ...] = ("digest", "truncate")
