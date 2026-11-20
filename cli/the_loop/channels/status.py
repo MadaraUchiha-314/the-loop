@@ -158,7 +158,9 @@ def plan_status(
     if (channel, ts, emoji) == (old_channel, old_ts, old_emoji):
         return None
     remove = (
-        (old_channel, old_ts, old_emoji) if old_ts and old_channel and old_emoji else None
+        (old_channel, old_ts, old_emoji)
+        if old_ts and old_channel and old_emoji
+        else None
     )
     return StatusPlan(
         add=(channel, ts, emoji),

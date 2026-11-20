@@ -127,7 +127,10 @@ def change_of(event: Any) -> Optional[Tuple[str, str]]:
     detail = getattr(event, "detail", None) or {}
     phase = _name(detail.get("phase"))
     outcome = str(detail.get("outcome") or "")
-    if event_type in ("phase.completed", "phase.progress") and outcome in _GATE_OUTCOMES:
+    if (
+        event_type in ("phase.completed", "phase.progress")
+        and outcome in _GATE_OUTCOMES
+    ):
         where = phase or _name(detail.get("node"))
         return ("gate", f"{where}:{outcome}") if where else None
     if event_type == "phase.started" and phase:
@@ -144,7 +147,9 @@ def change_of(event: Any) -> Optional[Tuple[str, str]]:
 def _draw(kind: str, value: str) -> str:
     if kind == "gate":
         where, _, outcome = value.partition(":")
-        return strings.t("channels.slack.recap.change.gate", phase=where, outcome=outcome)
+        return strings.t(
+            "channels.slack.recap.change.gate", phase=where, outcome=outcome
+        )
     if kind == "phase":
         return strings.t("channels.slack.recap.change.phase", phase=value)
     if kind == "complete":

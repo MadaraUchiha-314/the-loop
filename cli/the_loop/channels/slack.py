@@ -2720,7 +2720,9 @@ class SlackBotChannel:
                 directory = directory or self.directory()
                 resolved = directory.user_id(entry)
             except Exception as exc:  # noqa: BLE001 — unresolved: no mention
-                logger.debug("slack: could not resolve %s for a mention (%s)", entry, exc)
+                logger.debug(
+                    "slack: could not resolve %s for a mention (%s)", entry, exc
+                )
                 continue
             if resolved:
                 ids.append(resolved)
