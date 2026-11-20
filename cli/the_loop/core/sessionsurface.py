@@ -14,15 +14,24 @@ Spec: docs/specs/issue-551/design/messages.html § 6.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from .. import cli_config, eventlog, strings
 from ..state import layout_from_config
 from ..watchconfig import AsksConfig, WatchdogConfig
 from . import sessionstate
-from .sessionstate import SessionState
+from .sessionstate import OpenAsk, SessionState
 
-__all__ = ["Reader", "clock", "elapsed", "log_path", "nudges", "summary"]
+__all__ = [
+    "Reader",
+    "clock",
+    "default_clause",
+    "elapsed",
+    "log_path",
+    "nudges",
+    "shown_ask",
+    "summary",
+]
 
 
 def log_path(config: Optional[dict]) -> str:
@@ -69,10 +78,14 @@ class Reader:
     def view(self, ref: str) -> Dict[str, Any]:
         """The contract's `session` object, with the state as one line."""
         state = self(ref)
-        return {
-            **sessionstate.session_view(state),
-            "summary": summary(state, self.now),
-        }
+        view = sessionstate.session_view(state)
+        clause = default_clause(state, self.now)
+        if clause and view["state"] != "asked":
+            # An asked session's detail is its question and default already.
+            view["detail"] = "; ".join(
+                part for part in (view["detail"], clause) if part
+            )
+        return {**view, "summary": summary(state, self.now)}
 
 
 def clock(stamp: Optional[str], now: datetime) -> str:
@@ -108,8 +121,80 @@ def nudges(state: SessionState) -> str:
     return text
 
 
+def _timed(ask: OpenAsk) -> bool:
+    """Whether ``ask``'s default will be taken at a time. An ask recorded
+    without an id of its own has no default the watcher takes."""
+    return ask.default_at is not None and not ask.legacy
+
+
+def shown_ask(state: SessionState) -> Tuple[Optional[OpenAsk], int]:
+    """The one open ask a line has room for, and how many others are open.
+
+    The ask whose default is due first, because that is the next thing to
+    happen by itself; the most recent ask when none has a default.
+    """
+    asks = state.open_asks
+    if not asks:
+        return None, 0
+    timed = [ask for ask in asks if _timed(ask)]
+    if not timed:
+        return asks[-1], len(asks) - 1
+    far = datetime.max.replace(tzinfo=timezone.utc)
+    first = min(timed, key=lambda ask: sessionstate.parse_ts(ask.default_at) or far)
+    return first, len(asks) - 1
+
+
+def _and_more(text: str, more: int) -> str:
+    if not more:
+        return text
+    return strings.t("core.sessionsurface.more", text=text, count=more)
+
+
+def default_clause(state: SessionState, now: datetime) -> str:
+    """`asked 12:01, default “Move it.” at 12:31`; ``""`` when no open ask has
+    a default that will be taken.
+
+    Said in every state: a session that asked with a default carries on
+    working, and the default is taken whatever it is doing by then.
+    """
+    ask, more = shown_ask(state)
+    if ask is None or not _timed(ask):
+        return ""
+    return _and_more(
+        strings.t(
+            "core.sessionsurface.default-clause",
+            asked=clock(ask.asked_at, now),
+            default=ask.default,
+            default_at=clock(ask.default_at, now),
+        ),
+        more,
+    )
+
+
 def summary(state: SessionState, now: datetime) -> str:
     """The state as the one line `the-loop check` prints after `session:`."""
+    ask, more = shown_ask(state)
+    if state.state == "waiting" and state.reason == "open-ask" and ask is not None:
+        asked = clock(ask.asked_at, now)
+        if not _timed(ask):
+            return _and_more(strings.t("core.sessionsurface.asked", asked=asked), more)
+        return _and_more(
+            strings.t(
+                "core.sessionsurface.asked-with-default",
+                asked=asked,
+                default=ask.default,
+                default_at=clock(ask.default_at, now),
+            ),
+            more,
+        )
+    line, clause = _state_line(state, now), default_clause(state, now)
+    if not clause:
+        return line
+    return strings.t("core.sessionsurface.with-default", line=line, clause=clause)
+
+
+def _state_line(state: SessionState, now: datetime) -> str:
+    """The state's own line, before anything about an open ask."""
     at = strings.t("core.sessionsurface.at", node=state.node) if state.node else ""
     since = clock(state.since, now)
     if state.state == "not-watched":
@@ -131,17 +216,7 @@ def summary(state: SessionState, now: datetime) -> str:
             elapsed=elapsed(state.since, now),
             nudges=nudges(state),
         )
-    ask, wait = state.open_ask, state.declared_wait
-    if state.reason == "open-ask" and ask is not None:
-        asked = clock(ask.asked_at, now)
-        if ask.default_at is None:
-            return strings.t("core.sessionsurface.asked", asked=asked)
-        return strings.t(
-            "core.sessionsurface.asked-with-default",
-            asked=asked,
-            default=ask.default,
-            default_at=clock(ask.default_at, now),
-        )
+    wait = state.declared_wait
     if state.reason == "declared-wait" and wait is not None:
         return strings.t(
             "core.sessionsurface.declared-wait",
