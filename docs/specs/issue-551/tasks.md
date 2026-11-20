@@ -50,7 +50,7 @@ green.
   - _Depends on:_ none
   - _Requirements:_ NFR configuration, NFR events, R6.5
   - _Test:_ T1 — `tests/test_eventlog.py`, `tests/test_configschema.py`, `tests/test_durations.py`; T10 — a config without the blocks loads with the defaults
-- [ ] 3. Derive the state of a session from the event log
+- [x] 3. Derive the state of a session from the event log
   - One read-only derivation: working, waiting (with its reason and end), idle,
     stalled, notified, not watched. It also yields the stall id, the idle start and
     the nudge budget left for the node visit.
