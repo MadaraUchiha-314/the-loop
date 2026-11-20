@@ -253,8 +253,8 @@
   "forced": [],
   "parked": {
     "node": "brainstorm-approval",
-    "reason": "awaiting a human",
-    "since": "2026-11-20T01:54:05+00:00"
+    "reason": "`classify-feedback` did not pass:\n- no authorized feedback yet",
+    "since": "2026-11-20T02:01:35+00:00"
   },
   "completions": {
     "brainstorming": {

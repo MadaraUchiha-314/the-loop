@@ -85,17 +85,17 @@ The issue names four problems:
 
 - **Option A: the whole text in the top-level message.** Swap the `section` for a
   `markdown` block (up to about 12 k) and split anything longer over several blocks.
-  *Pro:* exactly "show me everything". *Con:* a channel full of long walls of text,
+  _Pro:_ exactly "show me everything". _Con:_ a channel full of long walls of text,
   which works against the short-format goal. The phone notification is the first
   line only.
 - **Option B: short top-level message, full text as one thread reply** (lean).
   The top-level message is the short format. The full text is posted once as a reply
-  in that message's thread, drawn as `markdown` and `table` blocks. *Pro:* both goals
-  hold: the channel scans well and nothing is lost. *Con:* the reply costs one more API
+  in that message's thread, drawn as `markdown` and `table` blocks. _Pro:_ both goals
+  hold: the channel scans well and nothing is lost. _Con:_ the reply costs one more API
   call. In a room (issue-378), where updates are top-level and not threaded, each
   update grows its own small thread.
 - **Option C: short message plus "Show full text" button** that opens a modal or posts
-  the full text on demand. *Pro:* zero noise. *Con:* it needs interactivity (Socket
+  the full text on demand. _Pro:_ zero noise. _Con:_ it needs interactivity (Socket
   Mode with the `gate.feedback` grant). Not every operator has that, and a modal is
   not searchable later. ~~Rejected as the default~~; it could come later as an addition.
 - ~~**Option D: keep the digest, raise the cap.**~~ This changes nothing about tables or
@@ -121,13 +121,13 @@ The issue names four problems:
 
 - **S1: the agent writes both.** Every comment the session posts through
   `the-loop comment` or `the-loop ask` takes an optional `--summary`, which becomes
-  the short format. Extends issue-393's `summary` to every event. *Pro:* the best words.
-  *Con:* it depends on the agent; the fallback is needed anyway.
+  the short format. Extends issue-393's `summary` to every event. _Pro:_ the best words.
+  _Con:_ it depends on the agent; the fallback is needed anyway.
 - **S2: a fixed short layout per event type**, built from the event's fields:
-  `<emoji> <one-line lead> · <what I need from you> · [Open on GitHub]`. *Pro:*
-  deterministic, no model. *Con:* generic.
+  `<emoji> <one-line lead> · <what I need from you> · [Open on GitHub]`. _Pro:_
+  deterministic, no model. _Con:_ generic.
 - **Lean: S1 with S2 as the fallback**, and the digest's "ask first" logic (the first
-  question, or *reply `…`*) reused to fill "what I need from you" when there is
+  question, or _reply `…`_) reused to fill "what I need from you" when there is
   no summary.
 
 ### Other improvements (the issue asks "what else?")
