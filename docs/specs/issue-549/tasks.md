@@ -156,7 +156,7 @@ Tests are named so the T8 `-k` filter in `testing-plan.md` finds the abuse cases
   - _Requirements:_ R6.1–R6.3
   - _Test:_ T2 — `Scenario: a progress edit in the central channel edits one message`,
     `Scenario: a progress edit with fewer parts deletes the surplus` (red→green)
-- [ ] 12. The status reactor.
+- [x] 12. The status reactor.
   - One reaction from the five (⚙️ ⏳ 👀 🛑 ✅) on the status message (the thread root in
     central, the latest short message in a room); remove only the one it added; a
     reaction failure never fails delivery.

@@ -52,6 +52,13 @@ class FakeSlackClient:
         self.reactions.append((channel, timestamp, name))
         return {"ok": True}
 
+    @property
+    def acks(self):
+        """The acknowledgement reactions (issue-325) alone: every reaction but the
+        status reactor's, which sit on the bot's own messages (issue-549 R8)."""
+        own = {f"1700.{n:06d}" for n in range(1, len(self.posted) + 1)}
+        return [reaction for reaction in self.reactions if reaction[1] not in own]
+
 
 def cli_config(tmp_path, authorized=("UHUMAN",), **slack):
     section = {"enabled": True, "channel": "D123", **slack}
@@ -937,13 +944,13 @@ def test_an_accepted_reply_is_acknowledged_on_the_reply_itself(tmp_path, monkeyp
     summary = inbound.poll_once(config, client_factory=lambda token: client)
     assert summary["processed"] == 1 and summary["delivered"] == 1
     assert len(mirrors) == 1 and deliveries == ["slack:UHUMAN"]
-    assert client.reactions == [
+    assert client.acks == [
         ("D123", "1800.1", "eyes"),
         ("D123", "1800.1", "white_check_mark"),
     ]
     # Cursor semantics are untouched: a second cycle sees nothing, reacts to nothing.
     inbound.poll_once(config, client_factory=lambda token: client)
-    assert len(client.reactions) == 2
+    assert len(client.acks) == 2
 
 
 def test_a_socket_message_and_a_button_press_are_acknowledged(tmp_path, monkeypatch):
@@ -988,7 +995,7 @@ def test_a_socket_message_and_a_button_press_are_acknowledged(tmp_path, monkeypa
         client_factory=lambda token: client,
     )
     assert outcome["outcome"] == "processed"
-    assert client.reactions == [
+    assert client.acks == [
         ("D123", "1800.9", "eyes"),
         ("D123", "1800.9", "white_check_mark"),
     ]
@@ -1009,7 +1016,7 @@ def test_a_socket_message_and_a_button_press_are_acknowledged(tmp_path, monkeypa
         client_factory=lambda token: client,
     )
     assert outcome["outcome"] == "processed" and outcome["event"] == "gate.feedback"
-    assert client.reactions == [
+    assert client.acks == [
         ("D123", "1750.5", "eyes"),
         ("D123", "1750.5", "white_check_mark"),
     ]
@@ -1750,7 +1757,7 @@ def test_an_unlisted_members_press_leaves_the_message_untouched(tmp_path, monkey
         client_factory=lambda token: client,
     )
     assert outcome == {"outcome": "unauthorized-actor"}
-    assert records == [] and client.updates == [] and client.reactions == []
+    assert records == [] and client.updates == [] and client.acks == []
 
 
 def test_a_press_whose_record_was_refused_keeps_its_button(tmp_path, monkeypatch):
@@ -2092,5 +2099,5 @@ def test_an_unlisted_members_kickoff_is_told_nothing(tmp_path, monkeypatch):
     summary = inbound.poll_once(config)
 
     assert summary["created"] == 0 and summary["dropped"] == 1
-    assert calls == [] and client.reactions == []
+    assert calls == [] and client.acks == []
     assert not [p for p in client.posted if p["thread_ts"] == "1600.2"]

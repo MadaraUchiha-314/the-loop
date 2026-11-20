@@ -92,6 +92,13 @@ class FakeSlackClient:
         self.deleted.append((channel, ts))
         return {"ok": True}
 
+    @property
+    def acks(self):
+        """The acknowledgement reactions (issue-325) alone: every reaction but the
+        status reactor's, which sit on the bot's own messages (issue-549 R8)."""
+        own = {f"1700.{n:06d}" for n in range(1, len(self.posted) + 1)}
+        return [reaction for reaction in self.reactions if reaction[1] not in own]
+
 
 def cli_config(tmp_path, authorized=("UHUMAN",), **slack):
     """A CLI config mapping with a channels.slack section and a temp state root."""

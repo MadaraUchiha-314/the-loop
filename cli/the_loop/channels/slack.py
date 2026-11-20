@@ -56,7 +56,7 @@ from .digest import (
     truncate,
 )
 from .events import APPROVAL_EVENTS, PUBLISHABLE_EVENTS, SUBSCRIBABLE_EVENTS
-from . import placement, room_policy
+from . import placement, room_policy, status as status_reactor
 from .delivery import (
     THREAD_OF_TOP,
     Delivered,
@@ -2775,10 +2775,103 @@ class SlackBotChannel:
     _sleep: Callable[[float], None] = staticmethod(time.sleep)  # type: ignore[assignment]
 
     def _after_delivery(
-        self, event: Event, kind: str, plan: MessagePlan, delivered: Delivered
+        self,
+        event: Event,
+        kind: str,
+        plan: MessagePlan,
+        delivered: Delivered,
+        client: Any = None,
     ) -> None:
         """The hook after a successful delivery, best effort: the status reactor
-        (issue-549 R8, task 12) attaches here. Nothing yet."""
+        (issue-549 R8). In a room the status message moves to the short message
+        just posted top-level; in the central channel it is the thread root."""
+        target = ("", "")
+        if kind == placement.ROOM and not plan.top.thread_ts and not delivered.edited:
+            target = (plan.channel, delivered.top)
+        self._react_status(event, kind, target, client)
+
+    def _react_status(
+        self, event: Event, kind: str, target: Tuple[str, str], client: Any = None
+    ) -> None:
+        """Keep the work item's one status reaction current (issue-549 R8).
+
+        ``target`` is the new status message, or ``("", "")`` to keep the one
+        the memory names; in the central channel it is always the thread root.
+        Runs on dropped events too, so bookkeeping still moves the state
+        (R10.3). Never raises and never delays a delivery: a reaction that
+        fails is logged and the status left as it was (R8.4).
+        """
+        if not event.work_item:
+            return
+        state_name = status_reactor.state_for(event)
+        try:
+            with ChannelState.locked(self.state_path, self.stores) as state:
+                current = dict(state.delivery_for(event.work_item)["status"])
+                bound = state.conversation_for(event.work_item)
+            if kind == placement.CENTRAL and bound and bound[1]:
+                target = (bound[0], bound[1])
+            plan = status_reactor.plan_status(current, state_name, target)
+            if plan is None:
+                return
+            client = client or self._client()
+            if plan.add is not None and not self._status_call(
+                client, "add", *plan.add, event=event
+            ):
+                return  # the old reaction stays: still exactly one (R8.1)
+            if plan.remove is not None:
+                self._status_call(client, "remove", *plan.remove, event=event)
+            with ChannelState.locked(self.state_path, self.stores) as state:
+                state.remember_delivery(event.work_item, status=dict(plan.status))
+                state.save(self.state_path)
+        except Exception as exc:  # noqa: BLE001 — a reaction never fails delivery
+            logger.warning(
+                "slack: status reaction for %s failed (%s)", event.work_item, exc
+            )
+
+    def _status_call(
+        self, client, verb: str, channel_id: str, ts: str, name: str, *, event: Event
+    ) -> bool:
+        """``reactions.add`` / ``reactions.remove`` of one status emoji; ``False``
+        (logged, recorded as ``channel.reaction_failed``) when Slack refuses. A
+        reaction already there, or already gone, is the outcome wanted."""
+        try:
+            call = client.reactions_add if verb == "add" else client.reactions_remove
+            response = call(channel=channel_id, name=name, timestamp=ts)
+            data = (
+                response
+                if isinstance(response, Mapping)
+                else getattr(response, "data", None) or {}
+            )
+            if data.get("ok") is False and data.get("error") not in (
+                "already_reacted",
+                "no_reaction",
+            ):
+                raise ChannelError(str(data.get("error") or "error"))
+            return True
+        except Exception as exc:  # SlackApiError and transport errors alike
+            error = getattr(getattr(exc, "response", None), "data", None) or {}
+            if isinstance(error, Mapping) and error.get("error") in (
+                "already_reacted",
+                "no_reaction",
+            ):
+                return True
+            logger.warning(
+                "slack: could not %s the status reaction %s on %s: %s",
+                verb,
+                name,
+                event.work_item,
+                exc,
+            )
+            eventlog.emit(
+                "channel.reaction_failed",
+                level="warning",
+                channel=self.name,
+                work_item=event.work_item or None,
+                state="status",
+                content=name,
+                error=str(exc),
+            )
+            return False
 
     def post(self, event: Event) -> PostResult:
         """Deliver ``event`` into its work item's conversation — opening it first,
@@ -2820,6 +2913,13 @@ class SlackBotChannel:
                 event.work_item,
                 decision.rule,
             )
+            # Not posted, but still the work item's state (R10.3).
+            self._react_status(
+                event,
+                placement.ROOM if in_room else placement.CENTRAL,
+                ("", ""),
+                client,
+            )
             return PostResult(
                 channel=self.name, ok=True, thread=(bound and bound[1]) or ""
             )
@@ -2859,7 +2959,7 @@ class SlackBotChannel:
         if event.work_item:
             self._remember_delivery(event, decision, delivered.top)
         try:
-            self._after_delivery(event, kind, plan, delivered)
+            self._after_delivery(event, kind, plan, delivered, client)
         except Exception as exc:  # noqa: BLE001 — never fails a delivery
             logger.debug("slack: after-delivery hook failed (%s)", exc)
         posted_plain = decision.action not in (room_policy.EDIT, room_policy.THREAD)

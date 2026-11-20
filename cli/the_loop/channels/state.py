@@ -422,7 +422,8 @@ class ChannelState:
     snapshots: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     #: The delivery memory (issue-393 B2; every conversation since issue-549):
     #: work item → ``{lastNode, lastEvent, progressTs{phase}, gateTs{node},
-    #: phaseSelectionTs, posted{eventId: {channel, top, parts[]}}}`` — what THIS
+    #: phaseSelectionTs, posted{eventId: {channel, top, parts[]}},
+    #: status{channel, ts, emoji}}`` — what THIS
     #: deployment has already shown in the room, so RoomPolicy can collapse a
     #: transition, suppress a gate's duplicate announcements, edit a phase's
     #: progress message in place, and thread an acknowledgement under the message
@@ -1087,7 +1088,24 @@ def _delivery_record(info: Dict[str, Any]) -> Dict[str, Any]:
         # What was posted per event id (issue-549): a replay posts only the
         # missing parts. The newest POSTED_CAP events are kept.
         "posted": _posted_map(info.get("posted")),
+        # The status message and the status reaction the-loop put on it
+        # (issue-549 R8): ``{channel, ts, emoji}``, so only a reaction it added
+        # itself is ever removed.
+        "status": _status_record(info.get("status")),
     }
+
+
+def _status_record(value: Any) -> Dict[str, str]:
+    """The status reaction record, coerced; malformed → none (the next event
+    adds a reaction and removes nothing)."""
+    if not isinstance(value, dict):
+        return {}
+    ts = _ts_or_empty(value.get("ts"))
+    channel = _str_or_empty(value.get("channel"))
+    emoji = _str_or_empty(value.get("emoji"))
+    if not (ts and channel and emoji):
+        return {}
+    return {"channel": channel, "ts": ts, "emoji": emoji}
 
 
 def _posted_map(value: Any) -> Dict[str, Dict[str, Any]]:

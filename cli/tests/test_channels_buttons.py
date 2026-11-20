@@ -65,6 +65,13 @@ class FakeSlackClient:
         self.reactions.append((channel, timestamp, name))
         return {"ok": True}
 
+    @property
+    def acks(self):
+        """The acknowledgement reactions (issue-325) alone: every reaction but the
+        status reactor's, which sit on the bot's own messages (issue-549 R8)."""
+        own = {f"1700.{n:06d}" for n in range(1, len(self.posted) + 1)}
+        return [reaction for reaction in self.reactions if reaction[1] not in own]
+
 
 def cli_config(tmp_path, authorized=("UHUMAN",), control=None, **slack):
     section = {"enabled": True, "channel": "C123", **slack}
@@ -697,7 +704,7 @@ def test_an_unlisted_members_press_edits_nothing(tmp_path, monkeypatch):
         client_factory=lambda token: client,
     )
     assert outcome == {"outcome": "unauthorized-actor"}
-    assert records == [] and client.updates == [] and client.reactions == []
+    assert records == [] and client.updates == [] and client.acks == []
 
 
 def test_a_press_after_the_grant_was_removed_is_dropped_and_edits_nothing(
