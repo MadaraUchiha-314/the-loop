@@ -63,7 +63,7 @@ Tests are named so the T8 `-k` filter in `testing-plan.md` finds the abuse cases
   - _Requirements:_ NFR idempotent retries
   - _Test:_ T1 — `tests/test_channels_outbox.py::test_event_id_survives_replay`; T10 —
     `test_legacy_outbox_entry_without_id_replays` (red→green)
-- [ ] 3. `the-loop comment --summary`, and `summary` on `POST /api/v1/work-items/comments`.
+- [x] 3. `the-loop comment --summary`, and `summary` on `POST /api/v1/work-items/comments`.
   - OpenAPI first: `docs/api-specs/openapi/the-loop.v1.yaml`. Then `api/routes.py`,
     the `comment` verb, and the event's `summary` field, with the 600-character cap
     shared with `the-loop ask --summary`.

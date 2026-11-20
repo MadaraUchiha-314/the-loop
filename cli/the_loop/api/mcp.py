@@ -173,9 +173,14 @@ def build_server(cli_config: Optional[dict] = None, *, facade: Any = None) -> MC
 
     # -- the harness's GitHub verbs (issue-447): what an agent used `gh` for ----
 
-    def post_comment(ref: str, body: str, instance: str = "") -> Dict[str, Any]:
-        """Post the agent's comment on a work item."""
-        return facade.post_work_item_comment(ref, body, instance=instance)
+    def post_comment(
+        ref: str, body: str, instance: str = "", summary: str = ""
+    ) -> Dict[str, Any]:
+        """Post the agent's comment on a work item. ``summary`` is its short form
+        for a phone: what happened and what is needed (600 characters at most)."""
+        return facade.post_work_item_comment(
+            ref, body, instance=instance, summary=summary
+        )
 
     def get_ticket(ref: str, instance: str = "") -> Dict[str, Any]:
         """A ticket with its comments and attachment links."""

@@ -352,8 +352,12 @@ def comment(
     config: Optional[Mapping[str, Any]] = None,
     *,
     client: Optional[GitHubClient] = None,
+    summary: str = "",
 ) -> Dict[str, Any]:
     """Post the agent's comment on its work item, marked and enveloped (R1.1).
+
+    ``summary`` (issue-549 R3.1) rides on the event as its short form, for the
+    channels to lead with. It never reaches the GitHub comment (R3.8).
 
     The comment is a ``comment.agent`` event published on the bus with
     ``record=True``: the GitHub ledger writes it (the self-authored marker and
@@ -385,6 +389,7 @@ def comment(
                 text=text,
                 detail={"actor": core_sessions._local_actor()},
                 source="cli",
+                summary=summary or "",
             ),
             cli_config,
             ledger=ledger,

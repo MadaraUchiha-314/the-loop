@@ -240,3 +240,12 @@ def test_the_schema_declares_the_mode_enum():
     mode = routing["properties"]["interaction"]["properties"]["mode"]
     assert mode["enum"] == list(MODES)
     assert mode["default"] == DEFAULT_MODE
+
+
+@pytest.mark.parametrize("mode", ["work-item", "cli"])
+def test_the_directive_asks_for_a_phone_sized_summary(mode):
+    """issue-549 R3.7: the session is told to pass a short form with every
+    comment, what it is for, and its cap."""
+    directive = directive_for(mode)
+    assert "--summary" in directive and "the-loop comment" in directive
+    assert "phone" in directive and "600 characters" in directive

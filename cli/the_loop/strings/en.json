@@ -608,6 +608,7 @@
   "cli.github.add-pr.pull-request.help": "The pull request: a ref (github:OWNER/REPO#16), its URL, or a number with --work-item.",
   "cli.github.add-pr.work-item.help": "Work-item ref a bare PR number is resolved against.",
   "cli.github.comment.help": "Post a comment on a work item as the agent — marked, enveloped and mirrored to subscribed channels (never needs gh)",
+  "cli.github.comment.summary.help": "The comment's short form, written for a phone: what happened and what is needed from the reader, in 600 characters at most (issue-549 R3.1). Slack leads with it; the GitHub comment is the body alone.",
   "cli.github.comment.work-item.help": "Work-item ref, e.g. github:OWNER/REPO#15 (a PR's conversation too) or jira:SITE/KEY-7.",
   "cli.github.pr.checks.failing.help": "List only the failing checks.",
   "cli.github.pr.checks.help": "Every check on the PR's head, with failed jobs' log tails, as JSON",

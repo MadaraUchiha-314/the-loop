@@ -14,6 +14,17 @@ see it and answer it. Then stop and wait: the reply reaches you as a new event
 in this same conversation. Only if the `the-loop` CLI is unavailable, post the
 comment yourself and mark it as your own (the loop-prevention marker).
 
+Give every question and every comment you post a short form with `--summary`:
+
+    the-loop ask --work-item <ref> --question-file <path> --summary '<short form>'
+    the-loop comment --work-item <ref> --body-file <path> --summary '<short form>'
+
+The short form is what a person reads first, on a phone, in Slack: what happened
+and what is needed from them, in two or three plain sentences and 600 characters
+at most. The full text still goes to the work item and to the thread under the
+short form, so put no detail in the short form that the full text does not
+carry. Leave it out only when the comment is itself that short.
+
 Never block on an interactive prompt, and never read silence as consent. If you
 are genuinely blocked, log the conflict, escalate once, and move on to the next
 available work — the-loop's normal rules.

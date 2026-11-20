@@ -277,6 +277,9 @@ class SessionLinkPrBody(BaseModel):
 class WorkItemCommentBody(BaseModel):
     ref: str
     body: str
+    # The short form channels lead with (issue-549 R3.1); never part of the
+    # GitHub comment, which is `body` alone (R3.8).
+    summary: str = ""
     instance: str = ""
 
 
@@ -831,9 +834,9 @@ def build_router(
         operation_id="postWorkItemComment",
     )
     def post_work_item_comment(body: WorkItemCommentBody) -> Dict[str, Any]:
-        body = scrubbed(body, "body")
+        body = scrubbed(body, "body", "summary")
         return facade.post_work_item_comment(
-            body.ref, body.body, instance=body.instance
+            body.ref, body.body, instance=body.instance, summary=body.summary
         )
 
     @router.get(f"{API_PREFIX}/work-items/ticket", operation_id="getTicket")

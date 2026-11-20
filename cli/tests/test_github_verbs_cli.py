@@ -87,6 +87,36 @@ def test_comment_posts_the_marked_body_and_prints_its_url(fake, config, capsys):
     assert fake.comment_url in capsys.readouterr().out
 
 
+def test_comment_summary_reaches_the_event_and_the_whole_text_reaches_github(
+    fake, config, monkeypatch
+):
+    """issue-549 R3.1, R3.8: `--summary` is the event's short form, and the
+    GitHub comment is the long form exactly as before, summary-free."""
+    from the_loop.channels.base import PostResult
+
+    seen = []
+
+    class Room:
+        name = "room"
+
+        def subscribes(self, event_type):
+            return event_type == "comment.agent"
+
+        def post(self, event):
+            seen.append(event)
+            return PostResult(channel=self.name, ok=True)
+
+    monkeypatch.setattr("the_loop.channels.bus.load_channels", lambda *a, **k: [Room()])
+    long_form = "## Design ready\n\nEvery word of the long form."
+    argv = ["comment", "--work-item", REF, "--body", long_form]
+    assert _cli(config(), *argv, "--summary", "Design is up: approve?") == 0
+    (event,) = seen
+    assert event.summary == "Design is up: approve?"
+    assert event.text == long_form
+    body = fake.posted[0][3]
+    assert long_form in body and "Design is up" not in body
+
+
 def test_comment_reads_a_body_file_from_stdin(fake, config, monkeypatch):
     monkeypatch.setattr("sys.stdin", io.StringIO("line one\nline two\n"))
     assert _cli(config(), "comment", "--work-item", REF, "--body-file", "-") == 0

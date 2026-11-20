@@ -2658,6 +2658,14 @@ components:
         body:
           type: string
           title: Body
+        summary:
+          type: string
+          title: Summary
+          description: The comment's short form, written for a phone (issue-549 R3.1)
+            — what happened and what is needed. Channels lead with it, capped at
+            600 characters as on `/sessions/ask`; the GitHub comment is `body`
+            alone.
+          default: ''
         instance:
           type: string
           title: Instance

@@ -90,6 +90,11 @@ class CommentCommand(Command):
             help=strings.t("cli.github.comment.work-item.help"),
         )
         _add_body(parser)
+        parser.add_argument(
+            "--summary",
+            default="",
+            help=strings.t("cli.github.comment.summary.help"),
+        )
 
     def run(self, args: argparse.Namespace) -> int:
         eventlog.configure_from_file("comment")
@@ -98,9 +103,12 @@ class CommentCommand(Command):
             body = _read_body(args, "comment")
             return harness_routed(
                 lambda c: c.post(
-                    "/work-items/comments", {"ref": args.work_item, "body": body}
+                    "/work-items/comments",
+                    {"ref": args.work_item, "body": body, "summary": args.summary},
                 ),
-                lambda: tickets.comment(args.work_item, body, _cli_config()),
+                lambda: tickets.comment(
+                    args.work_item, body, _cli_config(), summary=args.summary
+                ),
             )
 
         return _run(call)
