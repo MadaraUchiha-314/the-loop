@@ -48,9 +48,8 @@ import io
 import json
 import logging
 import os
-import select
 import sys
-import time
+import threading
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -146,36 +145,46 @@ _PAYLOAD_WAIT_SECONDS = 1.0
 
 
 def _read_what_is_there(stream: Any) -> str:
-    """What ``stream`` holds now, or within the wait, without needing its end.
+    """What ``stream`` gives within the wait, without needing its end.
 
-    A pipe nobody writes to, or one whose writer never closes it, would block a
-    plain ``read()`` for the whole turn.
+    The read runs on a thread, and the thread is left behind when the wait is
+    over: nothing asks the platform whether a read would block, so the bound
+    holds for a pipe on Windows too. A stream with a descriptor is read from
+    it a piece at a time, so what has come is kept when the rest never does.
+    Any other stream is read whole, or not at all.
     """
-    try:
-        descriptor = stream.fileno()
-    except (AttributeError, OSError, ValueError):
-        return stream.read()  # an in-memory stream: it cannot block
-    chunks: List[bytes] = []
-    deadline = time.monotonic() + _PAYLOAD_WAIT_SECONDS
-    while True:
+    pieces: List[Any] = []
+    #: Set by the first piece, and when the reader ends.
+    first = threading.Event()
+
+    def read() -> None:
         try:
-            ready = select.select(
-                [descriptor], [], [], max(0.0, deadline - time.monotonic())
-            )[0]
-        except (OSError, ValueError, TypeError):
-            # Not selectable (Windows). Reading it is all that is left.
-            if not chunks:
-                return stream.read()
-            break
-        if not ready:
-            break
-        chunk = os.read(descriptor, 65536)
-        if not chunk:
-            break
-        if not chunks:
-            deadline = time.monotonic() + _PAYLOAD_WAIT_SECONDS
-        chunks.append(chunk)
-    return b"".join(chunks).decode("utf-8", errors="replace")
+            try:
+                descriptor = stream.fileno()
+            except (AttributeError, OSError, ValueError):
+                pieces.append(stream.read())
+                return
+            while True:
+                chunk = os.read(descriptor, 65536)
+                if not chunk:
+                    return
+                pieces.append(chunk)
+                first.set()
+        except (OSError, ValueError):
+            return
+        finally:
+            first.set()
+
+    reader = threading.Thread(target=read, name="the-loop-stdin", daemon=True)
+    reader.start()
+    # This long for the first of it, and this long again for the rest.
+    first.wait(_PAYLOAD_WAIT_SECONDS)
+    reader.join(_PAYLOAD_WAIT_SECONDS if pieces else 0)
+    return "".join(
+        piece.decode("utf-8", errors="replace") if isinstance(piece, bytes) else piece
+        for piece in list(pieces)
+        if isinstance(piece, (bytes, str))
+    )
 
 
 def _background_work(stream: Any) -> bool:

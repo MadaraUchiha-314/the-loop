@@ -800,6 +800,56 @@ class TestThePayloadIsReadOnce:
         monkeypatch.setattr(gate.sys, "stdin", None)
         assert gate.read_payload() == ""
 
+    def test_a_read_that_never_returns_does_not_hold_the_stop(self, gate, monkeypatch):
+        """Requirement: R3.2 — the bound holds for a stream that cannot be
+        polled (a pipe on Windows): its read is left behind, not waited for."""
+        import threading
+
+        released = threading.Event()
+
+        class Stuck:
+            def isatty(self):
+                return False
+
+            def fileno(self):
+                raise OSError("no descriptor")
+
+            def read(self, *args):
+                released.wait(8)
+                return '{"background_tasks": []}'
+
+        monkeypatch.setattr(gate, "PAYLOAD_WAIT_SECONDS", 0.2)
+        monkeypatch.setattr(gate.sys, "stdin", Stuck())
+        begun = time.monotonic()
+        try:
+            assert gate.read_payload() == ""
+            assert time.monotonic() - begun < 4
+        finally:
+            released.set()
+
+    def test_a_silent_open_stdin_does_not_hold_claude_codes_stop(self, tmp_path):
+        """The script as Claude Code runs it, its stdin open and never written:
+        the reader left behind does not keep the process alive."""
+        empty = tmp_path / "empty-bin"
+        empty.mkdir()
+        proc = subprocess.Popen(
+            [sys.executable, str(GATE), "claude"],
+            env={"PATH": str(empty), "THE_LOOP_WORK_ITEM": GATE_REF},
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            assert proc.wait(timeout=20) == 0
+            assert proc.stderr is not None
+            assert "Fatal Python error" not in proc.stderr.read()
+        finally:
+            proc.kill()
+            for stream in (proc.stdin, proc.stdout, proc.stderr):
+                if stream is not None:
+                    stream.close()
+
     def test_a_pipe_nobody_writes_to_does_not_hold_the_stop(self, tmp_path):
         """The script as a harness runs it, with stdin left open and silent."""
         empty = tmp_path / "empty-bin"

@@ -491,6 +491,36 @@ def test_a_pipe_left_open_never_holds_the_verb(written, background):
         os.close(reader)
 
 
+def test_a_read_that_never_returns_never_holds_the_verb(monkeypatch):
+    """Requirement: R3.2 — the bound holds for a stream that cannot be polled
+    (a pipe on Windows): its read is left behind, not waited for."""
+    import threading
+    import time
+
+    from the_loop.commands import sessions_cmd
+
+    released = threading.Event()
+
+    class Stuck:
+        def isatty(self):
+            return False
+
+        def fileno(self):
+            raise OSError("no descriptor")
+
+        def read(self, *args):
+            released.wait(8)
+            return '{"background_tasks": [{"id": "b1", "status": "running"}]}'
+
+    monkeypatch.setattr(sessions_cmd, "_PAYLOAD_WAIT_SECONDS", 0.2)
+    begun = time.monotonic()
+    try:
+        assert sessions_cmd._background_work(Stuck()) is False
+        assert time.monotonic() - begun < 4
+    finally:
+        released.set()
+
+
 def test_the_verb_reports_a_give_up(bound, monkeypatch, capsys):
     standing(monkeypatch, report("build", build="block"))
     code, captured = run_verb(monkeypatch, capsys, "", "--gave-up")
