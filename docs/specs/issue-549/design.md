@@ -2,8 +2,8 @@
 type: design
 phase: design
 workItem: issue-549
-status: draft
-approvedBy: []
+status: approved
+approvedBy: ["MadaraUchiha-314"]
 overrides: {}
 ---
 
@@ -325,3 +325,9 @@ decision table.
 
 > Appended by the-loop's `record-feedback` hook when a human gate approves with
 > comments (issue-109).
+
+### 2026-11-19 — approved
+
+**@MadaraUchiha-314** wrote:
+
+approved
