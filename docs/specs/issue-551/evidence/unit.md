@@ -1,15 +1,15 @@
 # Unit, performance and migration tests (T1, T7, T10)
 
-Run on 2026-11-20 at `82db8f0a`, from `cli/`, with `THE_LOOP_CLI_CONFIG`,
+Run on 2026-11-20 at `a0b978dd`, after the review fixes, from `cli/`, with `THE_LOOP_CLI_CONFIG`,
 `THE_LOOP_INSTANCE` and `THE_LOOP_WORK_ITEM` unset. A daemon-spawned session exports
 those, and with them set some unrelated status tests read the live daemon.
 
 | Row | Command | Result |
 |---|---|---|
-| T1 | `uv run python -m pytest -q tests/test_session_state.py tests/test_stop_check.py tests/test_durations.py tests/test_graph_claim_assignment.py tests/test_configschema.py tests/test_eventlog.py` | 304 passed in 9.66s |
+| T1 | `uv run python -m pytest -q tests/test_session_state.py tests/test_stop_check.py tests/test_durations.py tests/test_graph_claim_assignment.py tests/test_configschema.py tests/test_eventlog.py` | 341 passed in 13.87s |
 | T7 | `uv run python -m pytest -q tests/test_session_state.py -k cycle_budget --durations=1` | 1 passed; the cycle over 50 work items and a 50,000-line log took 0.70 s (bound: 2 s) |
-| T10 | `uv run python -m pytest -q tests/test_harness_gate.py` | 85 passed in 1.90s |
-| T10 | `uv run python -m pytest -q tests/test_session_state.py -k legacy` | 5 passed, 94 deselected in 0.18s |
+| T10 | `uv run python -m pytest -q tests/test_harness_gate.py` | 95 passed in 3.22s |
+| T10 | `uv run python -m pytest -q tests/test_session_state.py -k legacy` | 6 passed, 121 deselected in 0.19s |
 
 Tests the plan did not name, added during implementation and run in the whole
 suite: `tests/test_watchconfig.py`, `tests/test_watchdog.py`,

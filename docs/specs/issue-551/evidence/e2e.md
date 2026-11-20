@@ -1,12 +1,12 @@
 # End to end: real hooks, real tmux, stub harness (T4)
 
-Run on 2026-11-20 at `82db8f0a`, from `cli/`, with `THE_LOOP_CLI_CONFIG`,
+Run on 2026-11-20 at `a0b978dd`, after the review fixes, from `cli/`, with `THE_LOOP_CLI_CONFIG`,
 `THE_LOOP_INSTANCE` and `THE_LOOP_WORK_ITEM` unset. A daemon-spawned session exports
 those, and with them set some unrelated status tests read the live daemon.
 
 | Row | Command | Result |
 |---|---|---|
-| T4 | `uv run python -m pytest -q tests/test_idle_watchdog_e2e.py` | 1 passed in 8.44s |
+| T4 | `uv run python -m pytest -q tests/test_idle_watchdog_e2e.py` | 1 passed in 8.81s |
 
 Five consecutive runs during implementation took 8.88, 8.88, 8.34, 8.44 and
 8.44 seconds, all passing.

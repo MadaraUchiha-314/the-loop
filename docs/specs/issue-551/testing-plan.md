@@ -132,24 +132,25 @@ let an agent run.
 
 ## Verification results
 
-Executed on 2026-11-20 at `82db8f0a` (T13 at `c384908c`), with `THE_LOOP_CLI_CONFIG`,
+Executed on 2026-11-20, and again at `a0b978dd` after the two self-review rounds, the critic
+round and the security review. The numbers below are from that last run, with `THE_LOOP_CLI_CONFIG`,
 `THE_LOOP_INSTANCE` and `THE_LOOP_WORK_ITEM` unset. Every planned activity ran and
 passed.
 
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
-| T1 | the T1 command above | 304 passed | [`evidence/unit.md`](evidence/unit.md) |
-| T2 | the T2 command above | 49 passed | [`evidence/integration.md`](evidence/integration.md) |
+| T1 | the T1 command above | 341 passed | [`evidence/unit.md`](evidence/unit.md) |
+| T2 | the T2 command above | 55 passed | [`evidence/integration.md`](evidence/integration.md) |
 | T2 | `the-loop scenarios … --format markdown` | every planned scenario title appears | [`evidence/integration.md`](evidence/integration.md) |
-| T3 | `pytest tests/test_api_contract_parity.py` | 7 passed | [`evidence/contract.md`](evidence/contract.md) |
-| T4 | `pytest tests/test_idle_watchdog_e2e.py` | 1 passed in 8.4 s; five runs in a row passed | [`evidence/e2e.md`](evidence/e2e.md) |
+| T3 | `pytest tests/test_api_contract_parity.py` | 8 passed | [`evidence/contract.md`](evidence/contract.md) |
+| T4 | `pytest tests/test_idle_watchdog_e2e.py` | 1 passed in 8.8 s; five runs in a row passed | [`evidence/e2e.md`](evidence/e2e.md) |
 | T5 | headless Chromium screenshot of the mock-up | captured; five wording differences recorded | [`evidence/ui.md`](evidence/ui.md) |
 | T7 | `pytest tests/test_session_state.py -k cycle_budget` | 0.70 s against a 2 s bound | [`evidence/unit.md`](evidence/unit.md) |
-| T8 | the T8 command above | 308 passed; each abuse case mapped to its test | [`evidence/security-tests.md`](evidence/security-tests.md) |
+| T8 | the T8 command above | 324 passed; each abuse case mapped to its test | [`evidence/security-tests.md`](evidence/security-tests.md) |
 | T9 | within the whole suite | passed | [`evidence/integration.md`](evidence/integration.md) |
-| T10 | `pytest tests/test_harness_gate.py`; `-k legacy` | 85 passed; 5 passed | [`evidence/unit.md`](evidence/unit.md) |
+| T10 | `pytest tests/test_harness_gate.py`; `-k legacy` | 95 passed; 6 passed | [`evidence/unit.md`](evidence/unit.md) |
 | T12 | the grep; `pytest tests/test_docs_parity.py` | no output; 5 passed | [`evidence/documentation-check.md`](evidence/documentation-check.md) |
-| T13 | `uv run pre-commit run --all-files` | exit 0; whole suite 7810 passed, 2 skipped | [`evidence/ci-parity.md`](evidence/ci-parity.md) |
+| T13 | `uv run pre-commit run --all-files` | exit 0; whole suite 7928 passed, 2 skipped | [`evidence/ci-parity.md`](evidence/ci-parity.md) |
 
 **Deviations from the plan as written:**
 

@@ -1,6 +1,6 @@
 # CI parity (T13)
 
-Run on 2026-11-20 at `c384908c` from the repository root, with the three
+Run on 2026-11-20 at `a0b978dd`, after the review fixes from the repository root, with the three
 `THE_LOOP_*` variables unset.
 
 | Row | Command | Result |
@@ -16,4 +16,4 @@ markdownlint (all markdown, incl. docs)..................................Passed
 validate .the-loop config against schema.................................Passed
 ```
 
-The whole CLI suite inside that run: 7810 passed, 2 skipped.
+The whole CLI suite inside that run: 7928 passed, 2 skipped.
