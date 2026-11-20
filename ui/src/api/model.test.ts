@@ -878,10 +878,28 @@ describe("awaitingInput", () => {
     for (const event of ["session.ask_answered", "session.ask_default_taken"]) {
       expect(
         awaitingInput([
-          ask("github:octo/repo#15", "2026-08-12T10:00:00Z"),
-          { ts: "2026-08-12T10:05:00Z", event, work_item: "github:octo/repo#15" },
+          { ...ask("github:octo/repo#15", "2026-08-12T10:00:00Z"), ask_id: "a1" },
+          { ts: "2026-08-12T10:05:00Z", event, work_item: "github:octo/repo#15", ask_id: "a1" },
         ]),
       ).toEqual({});
+    }
+  });
+
+  it("keeps the other open question when one question's default is taken (issue-551)", () => {
+    const ref = "github:octo/repo#15";
+    const two = [
+      { ...ask(ref, "2026-08-12T10:00:00Z", "first?"), ask_id: "a1" },
+      { ...ask(ref, "2026-08-12T10:01:00Z", "second?"), ask_id: "a2" },
+    ];
+    // The default of the later one is taken: the earlier one is still open.
+    const earlier = awaitingInput([...two, { ts: "2026-08-12T10:31:00Z", event: "session.ask_default_taken", work_item: ref, ask_id: "a2" }]);
+    expect(questionOf(earlier[ref])).toBe("first?");
+    // The default of the earlier one is taken: the later one is still open.
+    const later = awaitingInput([...two, { ts: "2026-08-12T10:31:00Z", event: "session.ask_default_taken", work_item: ref, ask_id: "a1" }]);
+    expect(questionOf(later[ref])).toBe("second?");
+    // A person's answer closes every open question, whichever one it names.
+    for (const event of ["session.ask_answered", "session.reply_sent"]) {
+      expect(awaitingInput([...two, { ts: "2026-08-12T10:05:00Z", event, work_item: ref, ask_id: "a1" }])).toEqual({});
     }
   });
 
