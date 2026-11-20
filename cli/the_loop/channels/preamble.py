@@ -53,7 +53,7 @@ RECAP_AFTER_S = 12 * 60 * 60
 #: How many changes the recap line names; older ones are counted, not named.
 RECAP_MAX_CHANGES = 6
 
-#: The watcher's two messages that need a person (issue-551): the stall notice
+#: The watcher's two messages that need a person: the stall notice
 #: and the reminder for a question with no default. Each names its own wait:
 #: the stall, the ask.
 _WATCHER_WAITS = {"session.stalled": "stall_id", "session.ask_reminded": "ask_id"}

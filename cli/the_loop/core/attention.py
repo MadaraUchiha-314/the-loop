@@ -2,8 +2,8 @@
 
 Derived, never stored: paused sessions, recent delivery/dispatch failures from
 the event log, armed work items with no live session, and what
-:mod:`sessionstate` derives from the event log (issue-551): an open question
-(issue-208), a stalled session and — as information — a declared wait.
+:mod:`sessionstate` derives from the event log: an open question, a stalled
+session and — as information — a declared wait.
 Graph-gate waits are
 repo-scoped (they live in each checkout's work-item state), so they surface through
 ``graphs.check`` per work item; this module aggregates only what the machine's
@@ -37,7 +37,7 @@ def _recent_error_cutoff(now: Optional[datetime] = None) -> str:
 def list_attention(config: Optional[dict] = None) -> List[Dict[str, Any]]:
     items: List[Dict[str, Any]] = []
 
-    # One read of the event log serves every session's state (issue-551).
+    # One read of the event log serves every session's state.
     states = sessionsurface.Reader(config)
     sessions = core_sessions.list_sessions(config=config, states=states)
     by_ref = {s["ref"]: s for s in sessions}
@@ -94,10 +94,10 @@ def list_attention(config: Optional[dict] = None) -> List[Dict[str, Any]]:
     log_path = layout_from_config(config or {}).event_log if config else None
 
     # Whether a question is open, and whether a session is stalled or waits, is
-    # :mod:`sessionstate`'s answer (issue-551): an ask closes on a reply, an
-    # authorized answer or its default being taken. The dashboard mirrors the
-    # open-ask rule in ui/src/api/model.ts::awaitingInput — change one and the
-    # other is a reviewable change, or the two surfaces disagree.
+    # :mod:`sessionstate`'s answer: a reply or an authorized answer closes
+    # every open ask, and a default being taken closes its own. The dashboard
+    # mirrors the open-ask rule in ui/src/api/model.ts::awaitingInput — change
+    # one and the other is a reviewable change, or the two surfaces disagree.
     active = {s["ref"] for s in sessions if s["status"] == "active"}
     # A pull request with a conversation of its own stalls like any other. It
     # is stored under its work item, and counts only once it has a terminal: a
@@ -152,7 +152,7 @@ def list_attention(config: Optional[dict] = None) -> List[Dict[str, Any]]:
                 row["defaultAt"] = ask.default_at
             items.append(row)
         # A turn record outlives its session, so only a live session stalls or
-        # waits. Neither row is stored: each leaves when the state does (R7.5).
+        # waits. Neither row is stored: each leaves when the state does.
         if ref not in active:
             continue
         if state.state == "stalled":
@@ -228,5 +228,5 @@ def list_attention(config: Optional[dict] = None) -> List[Dict[str, Any]]:
             }
         )
     # Information, not a call to act: a row has no severity field, so a
-    # declared wait says so in its text and comes last (issue-551).
+    # declared wait says so in its text and comes last.
     return items + waits

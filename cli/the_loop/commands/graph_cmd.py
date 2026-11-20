@@ -497,7 +497,7 @@ class CheckCommand(Command):
                     if note:
                         print(f"  {note}")
                     print(f"  {_state_line(report, recompute=args.recompute)}")
-                    # What the session is doing (issue-551, R7). Absent when
+                    # What the session is doing. Absent when
                     # no session of this machine works the item.
                     session = report.get("session") or {}
                     if session.get("summary"):

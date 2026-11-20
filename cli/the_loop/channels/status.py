@@ -55,9 +55,9 @@ _WAITING_EVENTS = frozenset(
     {"session.awaiting_input", "decision-pending", *APPROVAL_EVENTS}
 )
 _COMPLETE_EVENTS = frozenset({"work-item-complete", "work-item.closed"})
-# A stalled session (issue-551) is blocked until a person wakes it.
+# A stalled session is blocked until a person wakes it.
 _BLOCKED_EVENTS = frozenset({"conflict-escalated", "session.stalled"})
-#: The session moves again (issue-551): its stall ended, or an ask's deadline
+#: The session moves again: its stall ended, or an ask's deadline
 #: passed and it went ahead with its default.
 _WORKING_EVENTS = frozenset({"session.stall_ended", "session.ask_default_taken"})
 _LIFECYCLE = frozenset({"phase.started", "phase.progress", "phase.completed"})

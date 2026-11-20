@@ -488,7 +488,7 @@ class RoutingConfig:
     # before the session is told to stop and escalate (issue-462).
     ci: CiConfig = field(default_factory=CiConfig)
     # When an idle session is nudged and a person is told, and the deadline of
-    # an ask's default (issue-551).
+    # an ask's default.
     watchdog: WatchdogConfig = field(default_factory=WatchdogConfig)
     asks: AsksConfig = field(default_factory=AsksConfig)
 
@@ -4231,7 +4231,7 @@ class Dispatcher:
             eventlog.emit(
                 "dispatch.succeeded",
                 work_item=key,
-                # Only for an authorized person's comment or review (issue-551):
+                # Only for an authorized person's comment or review:
                 # the one delivery that starts a new nudge budget.
                 actor=person or None,
                 # Which conversation actually got it, when that is not the work
@@ -4292,8 +4292,8 @@ class Dispatcher:
         action carry no text of a person's. The-loop's own marked comment and an
         unauthorized author never reach the dispatcher (the router drops both).
         The allow-list is asked again here because a work-item collaborator is
-        let through as input and nothing more (issue-307): an answer that
-        cancels a default is an authorized user's (issue-551, abuse case 1).
+        let through as input and nothing more: an answer that cancels a
+        default is an authorized user's.
         """
         if event_body(routed.event, routed.payload) is None:
             return ""

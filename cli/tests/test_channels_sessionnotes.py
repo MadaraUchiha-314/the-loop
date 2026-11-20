@@ -131,7 +131,8 @@ def test_the_four_events_are_in_the_catalog_and_recorded():
     for name in WATCHER_EVENTS:
         assert name in EVENTS and name in SUBSCRIBABLE_EVENTS
         assert is_recorded(name)
-        assert "issue-551" in EVENTS[name].description
+        # The description explains the event in its own words: no work item id.
+        assert EVENTS[name].description and "issue-" not in EVENTS[name].description
 
 
 def test_the_stall_notice_joins_the_default_subscription(tmp_path):

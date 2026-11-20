@@ -302,7 +302,7 @@ export interface AttentionItem {
   workItem: string;
   /**
    * `session-paused` | `armed-without-session` | `awaiting-input` |
-   * `recent-error` | `stalled` | `declared-wait` (informational) — issue-551.
+   * `recent-error` | `stalled` | `declared-wait` (informational).
    */
   kind: string;
   detail: string;

@@ -238,13 +238,13 @@ DEFAULT_QUOTE_CHARS = 200
 
 
 def default_line(event: Any) -> str:
-    """The line a question with a default and a deadline gains (issue-551, R6.1):
-    when the session goes ahead, and with what. mrkdwn; ``""`` for any other
-    event, and for a default with no readable time.
+    """The line a question with a default and a deadline gains: when the
+    session goes ahead, and with what. mrkdwn; ``""`` for any other event, and
+    for a default with no readable time.
 
     The default is the session's own text, so it is flattened to one line, its
-    links are drawn as words and it is defused before it is quoted (abuse case
-    6). It is not drawn as mrkdwn: nothing in it becomes a link."""
+    links are drawn as words and it is defused before it is quoted. It is not
+    drawn as mrkdwn: nothing in it becomes a link."""
     if str(getattr(event, "event_type", "") or "") != "session.awaiting_input":
         return ""
     from ..core.sessionstate import parse_ts  # core imports the channels
@@ -377,7 +377,7 @@ def _normalise(text: str) -> str:
     return " ".join(text.split())
 
 
-#: The watcher's messages (issue-551): each is its short form and nothing else.
+#: The watcher's messages: each is its short form and nothing else.
 #: Their ``text`` is the same statement worded for the ticket, not a long form.
 SHORT_ONLY_EVENTS = frozenset(
     {

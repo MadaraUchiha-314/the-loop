@@ -206,11 +206,11 @@ class SessionReplyBody(BaseModel):
 
 class SessionWaitBody(BaseModel):
     ref: str
-    # What the session waits for, in its own words (issue-551 R4.7).
+    # What the session waits for, in its own words.
     condition: str = Field(max_length=200)
     # Refused over the operator's `routing.watchdog.maxWaitSeconds`.
     seconds: int = Field(ge=1)
-    # Which instance this is for (issue-374 R2.6): empty means this one.
+    # Which instance this is for: empty means this one.
     instance: str = ""
 
 
@@ -218,15 +218,15 @@ class SessionStopCheckBody(BaseModel):
     ref: str
     # What the harness's own Stop payload reports, never the session's word.
     backgroundWork: bool = False
-    # The hook allowed this stop after its own attempts ran out (issue-551 R3.6).
+    # The hook allowed this stop after its own attempts ran out.
     gaveUp: bool = False
-    # Which instance this is for (issue-374 R2.6): empty means this one.
+    # Which instance this is for: empty means this one.
     instance: str = ""
 
 
 class SessionTurnStartBody(BaseModel):
     ref: str
-    # Which instance this is for (issue-374 R2.6): empty means this one.
+    # Which instance this is for: empty means this one.
     instance: str = ""
 
 
@@ -828,7 +828,7 @@ def build_router(
         operation_id="stopCheckSession",
     )
     def stop_check_session(body: SessionStopCheckBody) -> Dict[str, Any]:
-        # Served for the Stop hook (issue-551): the verdict needs the event log's
+        # Served for the Stop hook: the verdict needs the event log's
         # asks and waits, which a session the daemon spawned does not hold.
         return facade.stop_check_session(
             body.ref,

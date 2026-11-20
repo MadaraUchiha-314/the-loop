@@ -1939,7 +1939,7 @@ def gate_answered_line(node: str, outcome: str, by: str) -> str:
     )
 
 
-#: The watcher's follow-up events (issue-551), and the event whose message each
+#: The watcher's follow-up events, and the event whose message each
 #: one is about: a channel subscribed to the opener hears the follow-up.
 _FOLLOW_UPS: Dict[str, str] = {
     sessionnotes.STALL_ENDED: sessionnotes.STALLED,
@@ -1949,9 +1949,9 @@ _FOLLOW_UPS: Dict[str, str] = {
 
 
 def _note_key(event: Event) -> str:
-    """Where the message of ``event`` is remembered so it can be edited later
-    (issue-551): a stall notice by its stall, a question by its ask. ``""``
-    for any other event."""
+    """Where the message of ``event`` is remembered so it can be edited later:
+    a stall notice by its stall, a question by its ask. ``""`` for any other
+    event."""
     detail = event.detail or {}
     if event.event_type == sessionnotes.STALLED and detail.get("stall_id"):
         return sessionnotes.stall_key(str(detail["stall_id"]))
@@ -2377,7 +2377,7 @@ class SlackBotChannel:
             return event_type in self.config.subscribe or any(
                 name in self.config.subscribe for name in APPROVAL_EVENTS
             )
-        # The same rule for the watcher's follow-ups (issue-551): a channel that
+        # The same rule for the watcher's follow-ups: a channel that
         # posts the stall notice hears its end, and one that posts the question
         # hears its reminder and its default being taken.
         opener = _FOLLOW_UPS.get(event_type)
@@ -3026,7 +3026,7 @@ class SlackBotChannel:
             # goes in the mention's thread (issue-507); either way the long form
             # follows the short message in that thread (R4.3)
             # and the reminder goes under the question it is about, when this
-            # channel posted that question (issue-551, R6.7)
+            # channel posted that question
             thread = decision.ts if threaded else (question_ts or reply_to)
             kind = placement.ROOM_MENTION_THREAD if thread else placement.ROOM
         else:
@@ -3187,8 +3187,8 @@ class SlackBotChannel:
     def _remember_note(
         self, event: Event, key: str, channel_id: str, text: str
     ) -> None:
-        """Keep what a stall notice or a question says and where (issue-551), as
-        an open gate's message is kept, so it can be edited when the stall ends
+        """Keep what a stall notice or a question says and where, as an open
+        gate's message is kept, so it can be edited when the stall ends
         or the default is taken. A work item has one open question: remembering
         a new one forgets the one before it."""
         try:
@@ -3210,9 +3210,9 @@ class SlackBotChannel:
             logger.debug("slack: could not remember %s (%s)", key, exc)
 
     def _close_note(self, event: Event, key: str) -> PostResult:
-        """Edit a remembered message to how it ended (issue-551): the stall
-        notice to its resolved form (R4.5), the question to "default taken"
-        (R6.2). The status reaction returns to working.
+        """Edit a remembered message to how it ended: the stall notice to its
+        resolved form, the question to "default taken". The status reaction
+        returns to working.
 
         Nothing is posted, ever: a stall with no remembered notice was fixed by
         a nudge before anyone was told, and is left unsaid. The stall notice is

@@ -908,8 +908,8 @@ export interface AttentionEntry {
 }
 
 /**
- * needs input > human gate > awaiting/armed/paused/stalled > errors
- * (issue-283 B4) > information: a declared wait asks for nothing (issue-551).
+ * needs input > human gate > awaiting/armed/paused/stalled > errors >
+ * information: a declared wait asks for nothing.
  */
 const TIER_NEEDS_INPUT = 0;
 const TIER_GATE = 1;

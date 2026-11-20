@@ -195,9 +195,9 @@ def _inert(text: str) -> str:
 
 
 def default_block(event: Event) -> str:
-    """What the-loop states below a question that has a default and a deadline
-    (issue-551, R6.1): the default and the time it is taken. ``""`` for an ask
-    without both — a default with no time is never taken by itself."""
+    """What the-loop states below a question that has a default and a deadline:
+    the default and the time it is taken. ``""`` for an ask without both — a
+    default with no time is never taken by itself."""
     from ..core.sessionstate import parse_ts  # core imports the channels
 
     detail = event.detail or {}
@@ -213,7 +213,7 @@ def default_block(event: Event) -> str:
     )
     requested = _wait_words(detail.get("default_requested"))
     if requested:
-        # R6.5: the question says the operator's minimum replaced the wait.
+        # The question says the operator's minimum replaced the wait.
         block += strings.t("channels.bodies.ask.wait-raised", requested=requested)
     return block
 
@@ -224,8 +224,8 @@ def _wait_words(seconds: object) -> str:
 
 
 def ask_body(event: Event) -> str:
-    """The ask's record is the question itself, marked (issue-208) and enveloped,
-    with its default and deadline stated below it when it has them."""
+    """The ask's record is the question itself, marked as the-loop's own and
+    enveloped, with its default and deadline stated below it when it has them."""
     return stamp(
         mark_self_authored(event.text + default_block(event)), _envelope(event)
     )

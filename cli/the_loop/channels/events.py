@@ -91,7 +91,7 @@ EVENTS: Dict[str, EventSpec] = {
         origin="cli",
         recorded=True,  # its record IS the question comment
     ),
-    # issue-551: what the watcher says. Each one's record IS its comment on the
+    # What the watcher says. Each one's record IS its comment on the
     # work item, marked as the-loop's own, so no gate reads it as an answer.
     # A stall that nobody was told about ends off the ledger: its publisher
     # says so (`record=False`).

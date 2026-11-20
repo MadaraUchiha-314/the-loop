@@ -29,7 +29,7 @@ The rules, in the order they are consulted (:func:`decide`):
   the channel still runs the status reactor on it (R10.2, R10.3).
 * **operator-docs** — an event a caller stamped as operator documentation
   (``is_operator_doc``) is for the ticket, never the room.
-* **stall-notice** (issue-551) — a stall notice always posts, once per stall id,
+* **stall-notice** — a stall notice always posts, once per stall id,
   and is remembered so it can be resolved in place.
 * **dedupe** — the identical event for the same node was already delivered → drop.
 * **gate-collapse** — a ``phase.progress`` line or a mirrored "ready for review"
@@ -189,7 +189,7 @@ def decide(
     if is_operator_doc:
         return Decision(DROP, rule="operator-docs")
 
-    # stall-notice (issue-551) — one per stall, and the watcher's own record is
+    # stall-notice — one per stall, and the watcher's own record is
     # what keeps it to one. It is exempt from dedupe: a second stall at the same
     # node is a new notice. Its ts is remembered under the stall's id, so the
     # message can be resolved in place when the stall ends.
@@ -266,7 +266,7 @@ def decide(
     # Anything else: a new top-level message, remembered as the last thing said.
     remember: Dict[str, Any] = {"lastEvent": event_type, "lastNode": node}
     if event_type == "session.awaiting_input" and detail.get("ask_id"):
-        # The question's message is found again by its ask (issue-551): the
+        # The question's message is found again by its ask: the
         # reminder threads under it, and "default taken" edits it.
         remember["gateTs"] = {f"ask:{detail['ask_id']}": "@ts"}
     return Decision(POST, rule="post", remember=remember)

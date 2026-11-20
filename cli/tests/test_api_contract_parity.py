@@ -238,7 +238,7 @@ def test_a_manager_answers_every_operation_the_routes_call():
 
     called = set()
     for module in (routes, mcp):
-        source = pathlib.Path(module.__file__).read_text()
+        source = pathlib.Path(str(module.__file__)).read_text()
         called |= set(re.findall(r"\bfacade\.([a-z_]+)\(", source))
     assert called, "the routes call the facade"
     assert sorted(name for name in called if not hasattr(ManagerFacade, name)) == []

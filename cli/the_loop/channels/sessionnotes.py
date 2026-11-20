@@ -1,17 +1,15 @@
-"""What the-loop says when a session stalls or an ask's deadline passes (issue-551).
+"""What the-loop says when a session stalls or an ask's deadline passes.
 
 The watcher publishes four events, and this module words them: the stall notice
 and its end, "default taken", and the reminder for a question with no default.
 Each is an :class:`~.base.Event` whose ``text`` is the comment the ledger writes
 and whose ``summary`` is the Slack short form, so the two say the same thing in
-each surface's own shape. The wording contract is
-``docs/specs/issue-551/design/messages.html``; every word is in
-``strings/en.json``.
+each surface's own shape. Every word is in ``strings/en.json``.
 
 Built from the loop's own facts: the ref, a node id, counts and times. The one
 piece of session-written text, an ask's default, is quoted as inert words on
-both surfaces (abuse case 6) and is never an answer to anything: the comment
-carries the agent-comment marker, so no gate reads it (R6.8).
+both surfaces and is never an answer to anything: the comment carries the
+agent-comment marker, so no gate reads it.
 
 Pure: no Slack, no GitHub, no disk, no clock.
 """
@@ -116,9 +114,8 @@ def stalled(
     nudges: int,
     tmux_target: str,
 ) -> Event:
-    """The stall notice (R4.4, messages.html § 1): the node, how long the
-    session has been idle, how many nudges did not restart it, and how a
-    person wakes it."""
+    """The stall notice: the node, how long the session has been idle, how
+    many nudges did not restart it, and how a person wakes it."""
     at = _at(node)
     return Event(
         event_type=STALLED,
@@ -158,7 +155,7 @@ def stall_ended(
     ended: Optional[datetime],
     notified: bool,
 ) -> Event:
-    """The resolved form of the stall notice (R4.5, messages.html § 2).
+    """The resolved form of the stall notice.
 
     ``notified`` says a notice was posted for this stall. Without one there is
     nothing to resolve: Slack edits only a message it remembers, and the
@@ -203,9 +200,8 @@ def default_taken(
     deadline: Optional[datetime],
     question_url: str = "",
 ) -> Event:
-    """ "Default taken" (R6.2, messages.html § 4): nobody answered by the
-    deadline, the session goes ahead with its own default, and that is not an
-    approval of anything.
+    """ "Default taken": nobody answered by the deadline, the session goes
+    ahead with its own default, and that is not an approval of anything.
 
     The default is quoted as inert words on both surfaces, and is not carried
     in ``detail``: nothing draws it a second time without that.
@@ -235,8 +231,7 @@ def default_taken(
 def reminded(
     ref: str, *, ask_id: str, waited_seconds: int, question_url: str = ""
 ) -> Event:
-    """The one reminder for a question with no default (R6.7,
-    messages.html § 5)."""
+    """The one reminder for a question with no default."""
     return Event(
         event_type=ASK_REMINDED,
         work_item=ref,

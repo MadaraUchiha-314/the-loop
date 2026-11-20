@@ -168,10 +168,10 @@ def list_sessions(
     or ``None``. Nothing is projected away — the CLI, the API and the MCP tools
     all read one shape, and a field added to a session shows up in all three.
 
-    Each entry also carries ``session``, what the session is doing (issue-551,
-    R7): the object `the-loop check` reports, `not-watched` for a session with
-    no turn record. The event log is read once for the whole listing; a
-    caller that has read it already passes its ``states``.
+    Each entry also carries ``session``, what the session is doing: the
+    object `the-loop check` reports, `not-watched` for a session with no turn
+    record. The event log is read once for the whole listing; a caller that
+    has read it already passes its ``states``.
     """
     registry = SessionRegistry(_registry_dir(config, registry_dir))
     control = _control_store(config, portable_dir)
@@ -759,7 +759,7 @@ def close_session(
 # -- ask & reply (issue-208) -----------------------------------------------------
 
 #: A default answer is posted on the thread and pasted back into the session, so
-#: it is capped (issue-551, design § Security design).
+#: it is capped.
 MAX_DEFAULT_LENGTH = 600
 
 #: The longest wait before a default is taken: 7 days. A longer one is a typing
@@ -844,7 +844,7 @@ def ask_session(
 ) -> Dict[str, Any]:
     """Post an agent's question on its work item and record the wait.
 
-    ``default_after_seconds`` (issue-551, R6) is how long a person has before
+    ``default_after_seconds`` is how long a person has before
     ``default_answer`` is taken. It needs a default, and a wait under the
     operator's ``routing.asks.minDefaultWaitSeconds`` is raised to it: the
     question, the record and this call's answer all state the time that is used.
@@ -937,8 +937,8 @@ def ask_session(
     question, summary = asked.question or question, asked.summary
     channel_results = []
     ok, error, url = False, "", ""
-    # What closes this ask names it (issue-551): an answer to an earlier
-    # question must not cancel this one's default.
+    # The ask's own id: a default being taken closes the ask it names and
+    # no other.
     ask_id = uuid.uuid4().hex
     default_at = ""
     detail = {"actor": actor, "ask_id": ask_id}

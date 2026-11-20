@@ -1,5 +1,4 @@
-"""Core capability: a session's derived state, as the status surfaces show it
-(issue-551, R7).
+"""Core capability: a session's derived state, as the status surfaces show it.
 
 `the-loop check`, `the-loop sessions list` and the attention list all read
 :mod:`sessionstate` through here: one read of the event log per call, and one
@@ -7,8 +6,6 @@ wording of the state. No rule lives in this module — what "idle" or "an open
 ask" means is :func:`sessionstate.derive`'s alone.
 
 Read-only: it reads the machine's event log, writes nothing and emits nothing.
-
-Spec: docs/specs/issue-551/design/messages.html § 6.
 """
 
 from __future__ import annotations

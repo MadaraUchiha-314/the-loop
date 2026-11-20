@@ -141,7 +141,9 @@ def _ask(ref, config):
 
 
 def _due_after_deadline(log_path, ref, asked):
-    late = sessionstate.parse_ts(asked["default_at"]) + timedelta(minutes=1)
+    deadline = sessionstate.parse_ts(asked["default_at"])
+    assert deadline is not None
+    late = deadline + timedelta(minutes=1)
     state = sessionstate.derive(
         sessionstate.load(log_path).get(ref, []),
         now=late,

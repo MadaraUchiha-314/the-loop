@@ -534,7 +534,9 @@ def test_a_stalled_pull_request_session_is_listed(tmp_path):
     registry = SessionRegistry(layout_from_config(config).local_dir)
     for ref in (pr, linked):
         registry.link_pull_request(REF, ref)
-    endpoint = registry.find_by_work_item(REF).endpoint_for(pr)
+    owner = registry.find_by_work_item(REF)
+    endpoint = owner.endpoint_for(pr) if owner is not None else None
+    assert endpoint is not None
     endpoint.tmux_target = "loop-github-octo-other-20"
     registry.save_endpoint(REF, endpoint)
     _log(
