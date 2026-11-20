@@ -27,7 +27,7 @@ from the_loop.graph.chain import ChainOutcome
 from the_loop.graph.contract import HookResult
 from the_loop.graph.integrations.base import IntegrationError
 from the_loop.graph.integrations.github import _split_ref
-from the_loop.graph.refs import derive_ref, ref_for
+from the_loop.graph.refs import derive_ref, identity_key, ref_for
 from the_loop.graph.runtime import _degradations
 from the_loop.graphlink import spec_id_for
 from the_loop.sessions import WorkItemRef
@@ -256,3 +256,42 @@ def test_the_host_is_never_read_out_of_the_slug():
     refused, and the host arrives as its own argument or not at all."""
     assert ref_for(f"{GHE}/octo/repo", 7) == ""
     assert ref_for(f"{GHE}/octo/repo", 7, host=GHE) == ""
+
+
+# -- identity_key: one work item, whatever the owner/repo casing (issue-549 R11.2) --
+
+
+def test_identity_key_casefold_owner_and_repo():
+    """The registered spelling and the remote's lowercased slug are one item."""
+    assert identity_key("github:MadaraUchiha-314/The-Loop#549") == identity_key(
+        "github:madarauchiha-314/the-loop#549"
+    )
+
+
+def test_identity_key_casefold_keeps_a_hosted_ref_hosted():
+    key = identity_key("github:ghe.example/Octo/Repo#7")
+    assert key == identity_key("github:ghe.example/octo/repo#7")
+    assert key != identity_key("github:octo/repo#7")
+
+
+def test_identity_key_casefold_leaves_a_non_ref_alone():
+    assert identity_key("standing:Ops") == "standing:Ops"
+    assert identity_key("") == ""
+
+
+def test_identity_key_casefold_spells_the_default_host_once():
+    assert identity_key("github:github.com/Octo/Repo#7") == identity_key(
+        "github:octo/repo#7"
+    )
+
+
+def test_casefold_scope_number_and_host_stay_distinct():
+    """Abuse case 9: only owner and repository fold. The number, the provider
+    and the host must match exactly, so a ref on another host or another number
+    never shares a conversation with a github.com one."""
+    base = identity_key("github:Octo/Repo#7")
+    assert identity_key("github:octo/repo#8") != base
+    assert identity_key("github:ghe.example/octo/repo#7") != base
+    jira_a = identity_key("jira:acme.atlassian.net/PROJ-7")
+    assert jira_a != base
+    assert identity_key("jira:other.atlassian.net/PROJ-7") != jira_a

@@ -37,7 +37,8 @@ from the_loop.channels.slack import (
     SlackChannelConfig,
     SlackReactionConfig,
 )
-from the_loop.channels.state import THREAD_CAP, ChannelState
+from the_loop.channels.state import THREAD_CAP, ChannelState, ChannelStores
+from the_loop.graph.refs import identity_key
 from the_loop.control import ControlConfig, parse_command
 from conftest import _state_with_stores
 
@@ -286,6 +287,95 @@ def test_state_caps_threads_dropping_the_oldest(tmp_path):
     assert (
         state.work_item_for(f"1700.{THREAD_CAP + 4}") == f"github:o/r#{THREAD_CAP + 4}"
     )
+
+
+# -- one work item whatever the owner/repo casing (issue-549 R11.2, R11.3) ------
+
+REGISTERED = "github:MadaraUchiha-314/the-loop#549"
+LOWERCASED = "github:madarauchiha-314/the-loop#549"
+
+
+def test_casefold_binding_first_wins(tmp_path):
+    """Two conversations that differ only in case: the next message goes to the
+    one bound first, and the other stays readable and attributed (R11.3)."""
+    path = tmp_path / "state" / "channels" / "slack.json"
+    with ChannelState.locked(path, ChannelStores.beside(path)) as state:
+        state.bind("1700.1", REGISTERED, "C1")
+        state.save(path)
+    with ChannelState.locked(path, ChannelStores.beside(path)) as state:
+        # What the bug wrote: a second root under the lowercased spelling.
+        state.conversations[LOWERCASED] = dict(state.conversations[REGISTERED])
+        state.conversations[LOWERCASED].update(
+            thread="1800.1", opened="2999-01-01T00:00:00Z"
+        )
+        state.threads["1800.1"] = {"workItem": LOWERCASED, "channel": "C1"}
+        state._dirty_bindings.add(LOWERCASED)
+        state.save(path)
+    reloaded = _state_with_stores(path)
+    for spelling in (REGISTERED, LOWERCASED):
+        assert reloaded.conversation_for(spelling) == ("C1", "1700.1")
+        assert reloaded.thread_for(spelling) == ("C1", "1700.1")
+    # The second thread is still read and still names the same work item.
+    assert identity_key(reloaded.work_item_for("1800.1") or "") == identity_key(
+        REGISTERED
+    )
+
+
+def test_casefold_binding_rebind_keeps_the_first_spelling(tmp_path):
+    """A bind under the other casing writes the first-bound record; it never opens
+    a second conversation for the work item."""
+    state = ChannelState.load(tmp_path / "slack.json")
+    state.bind("1700.1", REGISTERED, "C1")
+    state.bind("1900.1", LOWERCASED, "C2")
+    assert list(state.conversations) == [REGISTERED]
+    assert state.conversation_for(REGISTERED) == ("C2", "1900.1")
+
+
+def test_casefold_delivery_memory_found_and_merged(tmp_path):
+    """A delivery record under another casing is found on read and merged into
+    one on the next write."""
+    state = ChannelState.load(tmp_path / "slack.json")
+    state.bind("1700.1", REGISTERED, "C1")
+    # What the bug wrote: the gate's memory under the lowercased spelling.
+    state.delivery[LOWERCASED] = {"gateTs": {"design-approval": "1800.2"}}
+    assert state.delivery_for(REGISTERED)["gateTs"] == {"design-approval": "1800.2"}
+    state.remember_delivery(REGISTERED, gateTs={"requirements-approval": "1700.3"})
+    assert list(state.delivery) == [REGISTERED]
+    assert state.delivery_for(LOWERCASED)["gateTs"] == {
+        "design-approval": "1800.2",
+        "requirements-approval": "1700.3",
+    }
+
+
+def test_casefold_declaration_found_under_the_other_spelling(tmp_path):
+    from the_loop.workchannels import CollaborationChannelStore
+
+    path = tmp_path / "state" / "channels" / "slack.json"
+    stores = ChannelStores.beside(path)
+    CollaborationChannelStore(stores.portable_dir).add(REGISTERED, "slack@C0ROOM")
+    assert stores.declared(LOWERCASED) == "C0ROOM"
+    assert stores.declared(REGISTERED) == "C0ROOM"
+
+
+def test_casefold_declarations_of_one_item_are_not_contested(tmp_path):
+    """The same room declared under both casings is one work item's room, not a
+    room two work items claim: messages there are still attributed."""
+    from the_loop.workchannels import CollaborationChannelStore
+
+    path = tmp_path / "state" / "channels" / "slack.json"
+    stores = ChannelStores.beside(path)
+    declarations = CollaborationChannelStore(stores.portable_dir)
+    declarations.add(REGISTERED, "slack@C0ROOM")
+    declarations.add(LOWERCASED, "slack@C0ROOM")
+    assert identity_key(stores.declared_work_item("C0ROOM")) == identity_key(REGISTERED)
+    assert identity_key(stores.declared_targets()["C0ROOM"]) == identity_key(REGISTERED)
+
+
+def test_casefold_binding_never_crosses_hosts_or_numbers(tmp_path):
+    state = ChannelState.load(tmp_path / "slack.json")
+    state.bind("1700.1", "github:Octo/Repo#7", "C1")
+    assert state.conversation_for("github:octo/repo#8") is None
+    assert state.conversation_for("github:ghe.example/octo/repo#7") is None
 
 
 # -- fetching replies (R4.4–R4.6) -----------------------------------------------

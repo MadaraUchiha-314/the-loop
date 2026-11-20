@@ -22,12 +22,13 @@ the form this module writes cannot drift from the parser that reads it back.
 
 from __future__ import annotations
 
+import dataclasses
 import re
 
 from ..sessions import WorkItemRef, is_github_host, is_github_name
 from ..sessions.refs import JIRA_SPEC_ID_RE
 
-__all__ = ["derive_ref", "ref_for"]
+__all__ = ["derive_ref", "identity_key", "ref_for"]
 
 #: The spec-directory id of a GitHub-ticketed work item. The ``issue-<n>``
 #: convention is GitHub's own — the same one :func:`graphlink.spec_id_for`
@@ -111,3 +112,25 @@ def _jira_ref_for(key: str, number: str, site: str) -> str:
         return WorkItemRef.parse(f"jira:{site}/{key}-{number}").ref
     except ValueError:
         return ""
+
+
+def identity_key(work_item: str) -> str:
+    """The key under which two refs name the same work item (issue-549 R11.2).
+
+    GitHub owner and repository names are case-insensitive, so
+    ``github:Octo/Repo#7`` and ``github:octo/repo#7`` are one work item: both are
+    case-folded here. Everything else stays exact (abuse case 9): the provider,
+    the host and the number, and every part of a ref from another provider.
+
+    The result is a lookup key, never a ref to write anywhere: records keep the
+    spelling they were written under. A string that is not a ref is its own key.
+    """
+    try:
+        ref = WorkItemRef.parse(work_item)
+    except ValueError:
+        return work_item
+    if ref.provider != "github":
+        return ref.ref
+    return dataclasses.replace(
+        ref, owner=ref.owner.casefold(), repo=ref.repo.casefold()
+    ).ref

@@ -40,7 +40,7 @@ Tests are named so the T8 `-k` filter in `testing-plan.md` finds the abuse cases
 
 ### Foundations
 
-- [ ] 1. Identity key for work-item refs, and graph verbs that keep the registered spelling.
+- [x] 1. Identity key for work-item refs, and graph verbs that keep the registered spelling.
   - Add an identity-key function to `graph/refs.py`: the GitHub owner and repository
     case-folded; provider, host and number exact.
   - Key channel bindings, delivery records, declarations and portable records in
