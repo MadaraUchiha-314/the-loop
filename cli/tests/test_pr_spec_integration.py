@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -215,8 +216,10 @@ def test_a_changed_chain_blocks_the_pr_at_reviewer_briefing_until_it_is_re_deriv
     assert "design.md" in " ".join(stale.messages)
 
     url = "https://github.com/octo/api/pull/12#issuecomment-9"
+    # Written after the record it moves forward, as a real declaration is.
+    said = (datetime.now(timezone.utc) + timedelta(minutes=1)).isoformat()
     still = GhComment(
-        id="c", body="still holds", author="owner", created_at="t", url=url
+        id="c", body="still holds", author="owner", created_at=said, url=url
     )
     client = FakeGitHub(comments={("octo/api", 12): [still]})
     assert _record(origin, checkout, client, still_valid=url)["recorded"]

@@ -654,10 +654,10 @@ class StubGitHub:
         return list(self.comments.get((f"{owner}/{repo}", number), []))
 
 
-def comment(url, author="owner", body="allow-disclosure octo/api"):
-    return GhComment(
-        id="x", body=body, author=author, created_at="2026-11-19T00:00:00Z", url=url
-    )
+def comment(
+    url, author="owner", body="allow-disclosure octo/api", at="2026-11-19T00:00:00Z"
+):
+    return GhComment(id="x", body=body, author=author, created_at=at, url=url)
 
 
 @pytest.mark.parametrize(
@@ -1135,13 +1135,29 @@ def test_verb_still_valid_rerecords_digest(tmp_path):
     with (req.spec_dir / "design.md").open("a") as fh:
         fh.write("\nchanged\n")
     url = PR_URL + "#issuecomment-5"
-    gh = VerbGitHub(
-        visibility=PUBLIC, comments={("octo/api", 12): [comment(url, body="still ok")]}
-    )
+    later = comment(url, body="still ok", at="2026-11-20T09:00:00Z")
+    gh = VerbGitHub(visibility=PUBLIC, comments={("octo/api", 12): [later]})
     result = record_pr_spec(verb_request(tmp_path, co, still_valid=url), gh)
     assert result.recorded
     assert rec(result).chain_digest == prspec.chain_digest(req.spec_dir)
     assert (rec(result).still_valid or {}).get("by") == "@owner"
+
+
+def test_abuse_still_valid_comment_older_than_record_refused(tmp_path):
+    co = pr_checkout(tmp_path)
+    req = verb_request(tmp_path, co)
+    write_pr_spec(co, req.spec_dir)
+    record_pr_spec(req, VerbGitHub(visibility=PUBLIC))
+    with (req.spec_dir / "design.md").open("a") as fh:
+        fh.write("\nchanged\n")
+    url = PR_URL + "#issuecomment-5"
+    earlier = comment(url, body="LGTM", at="2026-11-18T09:00:00Z")
+    gh = VerbGitHub(visibility=PUBLIC, comments={("octo/api", 12): [earlier]})
+    result = record_pr_spec(verb_request(tmp_path, co, still_valid=url), gh)
+    assert not result.recorded
+    assert any(
+        "before the PR spec was last recorded" in f.text for f in result.findings
+    )
 
 
 def test_verb_still_valid_by_unauthorized_refused(tmp_path):

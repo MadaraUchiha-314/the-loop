@@ -22,6 +22,7 @@ from __future__ import annotations
 import re
 import subprocess
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -287,6 +288,33 @@ def _authorized(
     return grant, ([Finding("--still-valid", 0, problem)] if problem else [])
 
 
+def _parse_time(value: str) -> Optional[datetime]:
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except (AttributeError, ValueError):
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def _check_declared_after(
+    grant: Mapping[str, Any], previous: PrSpecRecord
+) -> List[Finding]:
+    """A ``--still-valid`` comment must postdate the record it moves forward:
+    a comment written before the chain changed cannot speak to that change."""
+    said = _parse_time(str(grant.get("at") or ""))
+    recorded = _parse_time(previous.recorded_at)
+    if said is None or recorded is None or said <= recorded:
+        return [
+            Finding(
+                "--still-valid",
+                0,
+                f"{grant.get('comment')} was written before the PR spec was last "
+                "recorded; the declaration must come after the chain changed",
+            )
+        ]
+    return []
+
+
 def _write(req: PrSpecRequest, record: PrSpecRecord) -> str:
     path = req.record_dir / PR_SPEC_RECORD
     record.save(path)
@@ -351,6 +379,8 @@ def record_pr_spec(req: PrSpecRequest, client: Any) -> PrSpecResult:
             previous = None
         grant, problems = _authorized(req, client)
         findings += problems
+        if grant is not None and previous is not None:
+            findings += _check_declared_after(grant, previous)
         if findings or previous is None or not previous.required:
             if previous is not None and not previous.required:
                 findings.append(

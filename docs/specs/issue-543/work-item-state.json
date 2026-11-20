@@ -120,7 +120,7 @@
       "outcome": "",
       "enteredAt": "2026-11-19T21:54:27+00:00",
       "exitedAt": "",
-      "lastBlock": "",
+      "lastBlock": "`validate-artifacts` did not pass:\n- required artifact is missing (docs/specs/issue-543/evidence/self-review.md)",
       "forced": false
     }
   },

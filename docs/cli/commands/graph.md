@@ -478,7 +478,7 @@ the-loop graph pr-spec issue-543 --pr 12 --pr-repo octo/api --checkout ../api \
 | `--pr-repo` | no | Its repository, when that is not the origin. |
 | `--checkout` | yes | The pull request's working tree. Its `origin` remote and branch must be the pull request's. |
 | `--disclosure-approval` | no | A comment on the work item, by an authorized user, saying `allow-disclosure <owner>/<repo>`. Needed when the pull request's repository is more visible than the origin, or either visibility cannot be read. |
-| `--still-valid` | no | A comment on this pull request, by an authorized user, declaring that the changed chain does not affect it. Re-records the current chain digest without re-deriving. |
+| `--still-valid` | no | A comment on this pull request, by an authorized user, declaring that the changed chain does not affect it. The comment must be newer than the PR spec's last record; an older one cannot speak to the change. Re-records the current chain digest without re-deriving. |
 | `--json` | no | Print the record, or the findings, as JSON. |
 
 It checks, and reports every finding at once:
