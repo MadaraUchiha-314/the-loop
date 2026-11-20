@@ -363,8 +363,12 @@ session, and tells a person when the nudges do not restart it.
 - The turn-start hook SHALL never block or delay a prompt. Every path exits 0. Claude
   Code and Codex get no output, and Cursor is answered `{"continue": true}`. A missing
   CLI, an unknown work item and a slow service are silent no-ops.
-- Both hooks SHALL act only when `THE_LOOP_WORK_ITEM` is set, and only for a work item
-  that has a live registered session.
+- Both hooks SHALL act only when `THE_LOOP_WORK_ITEM` is set. The service answers them
+  only for a work item that has a live registered session. For any other work item the
+  turn-start hook does nothing. The Stop hook does not stop there: it falls back to
+  `the-loop check --recompute`, which still judges the work item and can refuse the
+  stop. That path records nothing. See
+  [process-graph](process-graph.md#the-stop-gate-issue-429-issue-551).
 
 #### The states
 
@@ -388,10 +392,11 @@ stateDiagram-v2
 - **Working**: the last turn record is a start.
 - **Waiting**: the last turn ended for a reason that is still in effect.
   - `human-gate`, `complete` and `graph-wait` have no time limit.
-  - `open-ask` lasts until every open ask is closed. A session can have several asks
-    open at once. A reply, or an authorized person's delivered comment or review,
-    closes all of them. A default being taken closes the one ask it names. The status
-    surfaces show this state as `asked`.
+  - `open-ask` lasts until every open ask that carries an ask id is closed. A session
+    can have several asks open at once. A reply, or an authorized person's delivered
+    comment or review, closes all of them. A default being taken closes the one ask it
+    names. The status surfaces show this state as `asked`. An ask recorded by an older
+    version, with no id, holds no wait, as it excuses no stop.
   - `declared-wait` lasts until the wait's stated end.
   - `background-work` lasts `routing.watchdog.maxWaitSeconds` from the turn's end.
 - **Idle**: the turn ended and no reason is in effect. Idle starts at the moment the
@@ -403,8 +408,15 @@ stateDiagram-v2
   session stays idle, and the surfaces say that the-loop cannot tell where it stands.
 - WHEN the pointer moves after the last turn record, and no turn has started since,
   THEN the state SHALL follow the pointer. The session is idle at the new node from
-  the moment of the move (reason `pointer-moved`), or waiting when the new node is a
-  person's.
+  the moment of the move (reason `pointer-moved`), unless the graph parked that node
+  for this visit. A parked node is waited on with no time limit:
+  - reason `human-gate` when the node is a person's. The graph parks a human-owned
+    node as it is entered, and records that park just before the move.
+  - reason `graph-wait` when the node's exit reported a wait. The graph parks an
+    agent's node that way too, so this park does not say that a person owns the node.
+
+  A park belongs to one visit. WHEN the pointer moves to another node THEN the park
+  SHALL be forgotten, so a later return to that node is idle and can be nudged.
 - **Not watched**: the session has no turn record. Its harness hooks are not
   installed, so the watcher leaves it alone and every surface says `not watched`.
 
@@ -428,7 +440,9 @@ stateDiagram-v2
   minutes, the node, the command that resumes it, the work item's ref and the three
   ways out the Stop gate names. It SHALL carry no ticket text and no comment text.
   WHEN the turn ended with `exit-met` THEN the nudge SHALL tell the session to claim
-  the node instead.
+  the node instead. WHEN the session's last default was taken while it could not be
+  told THEN the nudge SHALL also carry that default, quoted in a fence as the
+  session's own earlier words (see § Ask deadlines).
 - WHEN the nudges are spent AND the session is still idle one threshold later THEN the
   watcher SHALL record `session.stalled` and publish it once. See
   [channels](channels.md) for the notice.
@@ -437,8 +451,10 @@ stateDiagram-v2
   turn would otherwise be nudged forever. The budget SHALL reset only when the pointer
   moves, or when an authorized person's reply, comment or review is delivered to the
   session.
-- A nudge that cannot be pasted SHALL be recorded with `delivered: false` and SHALL
-  count toward the budget.
+- Each nudge SHALL be recorded before it is pasted, and that record has no `delivered`
+  field. WHEN the paste fails THEN a second `session.nudged` record SHALL follow, with
+  the same `stall_id` and `nudge` and with `delivered: false`. The two records are one
+  nudge of the budget.
 - **Only a turn start ends a stall.** WHEN a session that was nudged or notified starts
   a turn THEN the watcher SHALL record `session.stall_ended` with how long the session
   was idle. An inbound event that is refused before delivery starts no turn, so it does
@@ -447,15 +463,24 @@ stateDiagram-v2
   turn record. It SHALL send neither a nudge nor a notice to a session that is paused
   or has no tmux target on record, and none when the recorded node is a human-owned,
   code or terminal node.
-- WHEN the stalled session's node cannot be resolved, or its tmux session is gone, THEN
-  the watcher SHALL send the notice without a nudge.
+- WHEN the stalled session's node cannot be resolved (no node is on record, or the
+  graph does not have it) THEN the watcher SHALL send the notice with no nudge.
+- WHEN a nudge finds the session's tmux session gone THEN that one attempt SHALL be
+  recorded as any failed nudge is, so it counts toward the budget, and the notice
+  SHALL follow in the same cycle.
 - A pull request's own session SHALL be judged on its own turn records. The watcher
   SHALL send it no nudge, because the node facts it reads are the outer loop's. The
-  Stop gate cannot place such a session on a node, so its turns end `inconclusive`
-  with no node, and a stop the-loop cannot place owes no notice either. The ask
-  deadlines and the end of a stall apply to it as to any session. **Known limit:** the
-  node of a pull request's inner loop is not judged, so a pull request's own session
-  that goes idle with inner-loop work owed is not nudged and no person is told.
+  Stop gate cannot place such a session on a node, so its turns record no node.
+  - WHEN such a turn ended `inconclusive` THEN the session SHALL never become a stall,
+    and no notice is owed.
+  - WHEN such a turn ended for another reason (for example `open-ask`) and the session
+    is then idle past the threshold THEN the watcher SHALL send the notice, and still
+    no nudge.
+
+  The ask deadlines and the end of a stall apply to it as to any session. **Known
+  limit:** the node of a pull request's inner loop is not judged. A pull request's own
+  session whose stop ended `inconclusive` with inner-loop work owed is not nudged, and
+  no person is told.
 - IF `routing.watchdog.enabled` is `false` THEN the watcher SHALL send no nudge and no
   notice. The Stop gate, the turn records, the end of a stall and the ask deadlines
   below SHALL still work.
@@ -467,10 +492,22 @@ stateDiagram-v2
   `session.ask_default_taken` and publish it. The message quotes the default inside a
   fence, as the session's own earlier words, and says that it is not an approval. No
   gate reads the record, so a default never answers a human gate.
-- The ask SHALL close exactly once. WHEN the session cannot be told (it is paused, or the
-  paste fails) THEN the record SHALL still be written, with `delivered: false`.
-- A session MAY have several asks open at once. Each has its own id, its own deadline
-  and its own reminder. A default being taken SHALL close the one ask it names.
+- The ask SHALL close exactly once. The record is written before the session is told,
+  and has no `delivered` field. WHEN the session cannot be told THEN the record SHALL
+  still be written, with `delivered: false`: on the record itself for a session that is
+  paused or has no tmux target, and on a second record for a paste that failed.
+- WHEN the session could not be told THEN the published note SHALL say that the default
+  applies and that the session has not been told. It SHALL NOT say that the session
+  went ahead. The next nudge the watcher pastes into that session SHALL carry the
+  "proceed with your default" text, once, and its record names the ask in
+  `default_of`. A `session.reply_sent` or `session.ask_answered` record before that
+  nudge cancels it.
+- A session MAY have several asks open at once, and at most one of them with a
+  deadline. `the-loop ask --after` SHALL be refused while another ask with a deadline
+  is open for the work item, and at a step where a default was already taken with
+  nobody answering. An ask without `--after` is never refused for either reason. Each
+  ask has its own id and its own reminder. A default being taken SHALL close the one
+  ask it names.
 - WHEN an authorized person's comment or review is delivered THEN the dispatcher SHALL
   record `session.ask_answered` for the work item and for each of its pull requests
   that the delivery belongs to and that has an open ask: the session's own work item,

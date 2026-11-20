@@ -135,7 +135,8 @@ self-learning/ML capabilities.
   question SHALL say so. A duration is a whole number and one unit: `45s`, `30m`, `2h`.
   A `--default` over 600 characters and an `--after` over 7 days SHALL exit 2 and post
   nothing. So SHALL an ask with `--after` at a step where a default was already taken
-  with nobody answering: the output says to ask without `--after` and wait for a
+  with nobody answering, and one made while another ask with a deadline is still open
+  for the work item: the output says to ask without `--after` and wait for a
   person. WHEN the question reached nobody THEN no default SHALL be taken, and the
   output SHALL say so.
   What happens at the deadline, and the one reminder for an ask with no deadline, are
@@ -150,7 +151,9 @@ self-learning/ML capabilities.
   both exit 0, and only a check that could not be made exits non-zero. `--gave-up`
   records a stop the hook allowed after its attempts ran out. `turn-start` records the
   turn's start, prints nothing and always exits 0. Both SHALL refuse a ref that differs
-  from the session's `THE_LOOP_WORK_ITEM`. The verdict's rules are in
+  from `THE_LOOP_WORK_ITEM`, and a shell that carries `THE_LOOP_INSTANCE` and no
+  `THE_LOOP_WORK_ITEM`: `stop-check` exits 2, and `turn-start` does nothing. The
+  verdict's rules, and what this refusal does not guarantee, are in
   [process-graph](process-graph.md#the-stop-gate-issue-429-issue-551).
 - `the-loop check <work item>` SHALL print one `session:` line WHEN a live session on
   this machine works the item (issue-551): `working`, `idle`, `STALLED`, `asked`,

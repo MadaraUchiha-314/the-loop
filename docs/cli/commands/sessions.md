@@ -426,7 +426,9 @@ Stop hook and turn-start hook run them; a person has no reason to.
 ```
 
 - `verdict` is `allow` or `refuse`. Both exit 0. Only a check that could not be made
-  exits non-zero: a ref that is not the session's own, or no live session for it.
+  exits non-zero: a ref other than `THE_LOOP_WORK_ITEM` (exit 2), a shell that carries
+  the daemon's instance variable (`THE_LOOP_INSTANCE`) and no `THE_LOOP_WORK_ITEM`
+  (exit 2), or no live session for the ref.
 - An `allow` carries the reason and records `session.turn_ended`. A `refuse` records
   nothing, and adds the unmet checks' `messages`, the `command` that resumes the node
   and the `text` the hook hands back to the session.
@@ -434,7 +436,12 @@ Stop hook and turn-start hook run them; a person has no reason to.
   [process-graph](/capabilities/process-graph#the-stop-gate-issue-429-issue-551).
 
 `turn-start` records `session.turn_started`. It prints nothing and always exits 0, so
-it can never block or delay a prompt.
+it can never block or delay a prompt. Where `stop-check` would exit 2 for the caller's
+environment, `turn-start` records nothing.
+
+These refusals bind a session to its work item and authenticate nobody. What they do
+not guarantee is in
+[process-graph](/capabilities/process-graph#the-stop-gate-issue-429-issue-551).
 
 ## `cleanup`
 

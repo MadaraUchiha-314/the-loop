@@ -308,13 +308,15 @@ package — there are no install extras (owner decision, PR #162).
   `POST /api/v1/sessions/turn-start` (the turn's start) and
   `POST /api/v1/sessions/wait` (a declared wait). `POST /api/v1/sessions/ask` SHALL
   accept an optional `defaultAfterSeconds`. Each of the three new operations SHALL
-  answer only for a ref that has a live registered session, and 404 otherwise. The service authenticates no caller
-  ([decision-059](../decisions/decision-059.md)), so this is a binding check and not a
-  per-session credential. The rules are in
+  answer only for a ref that has a live registered session, and 404 otherwise. That
+  binds a call to a session and authenticates nobody: what it does not guarantee is in
+  [process-graph](process-graph.md#the-stop-gate-issue-429-issue-551). The rules are in
   [process-graph](process-graph.md#the-stop-gate-issue-429-issue-551) and
   [interactive-sessions](interactive-sessions.md#session-states-and-the-watcher-issue-551).
 - The service SHALL run the watcher for as long as it runs, whichever ingress it
-  hosts ([decision-155](../decisions/decision-155.md)).
+  hosts ([decision-155](../decisions/decision-155.md)). A process SHALL run at most one
+  watcher. A second service started in the same process gets none while the first
+  one's watcher runs, and a watcher is started for it when that one stops.
 - A session's **transcript** SHALL be served by `GET /api/v1/sessions/transcript`
   (issue-209): the harness runs as a CLI in tmux, so the record of a session's
   turns and tool calls is the harness's own file — for Claude Code,

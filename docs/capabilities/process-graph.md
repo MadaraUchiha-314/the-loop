@@ -1275,18 +1275,23 @@ flowchart TD
   V -->|allow| R[Record session.turn_ended with the reason]
   V -->|refuse: work-owed| C{Attempts left?}
   F -->|a block at or before the pointer| C
-  F -->|otherwise| E[Turn ends, nothing recorded]
+  F -->|otherwise| Q{Service answers a second, short ask?}
+  Q -->|yes| V
+  Q -->|no| E[Turn ends, nothing recorded]
   C -->|yes| B[Stop refused: node, unmet checks, command, three ways out]
   C -->|no| G[Stop allowed, recorded as gate-gave-up]
 ```
 
 - WHEN a session tries to end its turn THEN the Stop hook SHALL run
   `the-loop sessions stop-check --work-item <ref>` for the work item named by
-  `THE_LOOP_WORK_ITEM`, forwarding the harness's own hook payload. Without that variable
-  the hook SHALL do nothing.
+  `THE_LOOP_WORK_ITEM`. Without that variable the hook SHALL do nothing. It SHALL
+  forward the harness's hook payload for Claude Code only, the one harness whose
+  payload lists background tasks. No other harness's stdin is read.
 - The service SHALL decide in this order, taking every verdict from the recomputed
   report of the outer loop and every node's owner from the graph definition:
-  1. The pointer cannot be resolved: **allow**, reason `inconclusive`.
+  1. The pointer cannot be resolved: **allow**. The reason is `open-ask`,
+     `declared-wait` or `background-work` when the session waits on one of them (the
+     three excuses of rule 6, in that order), and `inconclusive` otherwise.
   2. The pointer is on a human-owned node: **allow**, reason `human-gate`. It is on a
      code node or a terminal node: **allow**, reason `complete`.
   3. An agent-owned node before the pointer reports `block`: **refuse**, naming that
@@ -1322,17 +1327,37 @@ flowchart TD
   before the pointer, SHALL count a `wait` before the pointer as passed, and SHALL end
   the turn on a report that cannot say where the work item is. This path knows nothing
   of asks or waits and records no turn end.
-- `stop-check` SHALL answer only for a work item that has a live registered session,
-  and the CLI SHALL refuse a ref that differs from the session's own
-  `THE_LOOP_WORK_ITEM`. The service authenticates no caller
-  ([decision-059](../decisions/decision-059.md)), so this is a binding check, not a
-  per-session credential.
+- WHEN that fallback would end the turn THEN the hook SHALL ask the service once more,
+  with a 5-second timeout, because the service may have been away for a moment only.
+  WHEN the service answers THEN its verdict SHALL stand: an allow records the turn's
+  end, and a refusal is handed to the session. WHEN it does not answer THEN the turn
+  ends and nothing is recorded.
+- **Whose work item.** `stop-check`, `turn-start` and `the-loop wait` SHALL act on the
+  caller's own work item only. Two checks say so:
+  - The CLI SHALL refuse a ref that differs from `THE_LOOP_WORK_ITEM`. It SHALL also
+    refuse a shell that carries the daemon's instance variable (`THE_LOOP_INSTANCE`)
+    and no `THE_LOOP_WORK_ITEM`, because the name was lost and every ref would pass.
+    `stop-check` and `wait` exit 2 and send nothing. `turn-start` does nothing and
+    exits 0.
+  - The service SHALL answer only for a ref that has a live registered session.
+
+  **What this does not guarantee.** The service authenticates no caller
+  ([decision-059](../decisions/decision-059.md)), and the CLI's check reads only the
+  caller's own environment. A shell with neither variable is let through, so that an
+  operator can run the verbs by hand. So is a session of a daemon whose instance has
+  no name, should it lose `THE_LOOP_WORK_ITEM`: such a daemon sets no instance
+  variable. A local process that can reach the service can therefore name any work
+  item that has a live session. This is a binding check, not a per-session credential.
 - For a pull request's own session the service SHALL read the outer loop under the id
   that the pull request's ref names, in that session's checkout. It does not read the
   pull request's inner loop. That id has no outer loop there, so the pointer cannot be
-  resolved and the stop is allowed as `inconclusive` (rule 1), with no node on record.
-  **Known limit:** the inner loop's node is not judged, and the watcher sends such a
-  session neither a nudge nor a notice.
+  resolved and the stop is allowed by rule 1, with no node on record: as
+  `inconclusive`, or as `open-ask`, `declared-wait` or `background-work` when the
+  session waits on one. **Known limit:** the inner loop's node is not judged. The
+  watcher never nudges such a session. A stop that ended `inconclusive` owes no notice
+  either. A stop that ended for another reason, followed by an idle period past the
+  threshold, gets the notice
+  ([interactive-sessions](interactive-sessions.md#session-states-and-the-watcher-issue-551)).
 - A manager-role service SHALL serve `stop-check`, `turn-start`, `wait` and `ask` as a
   worker does: for its own sessions itself, and for a member's by forwarding the call.
 - CI's `check --recompute`, which reads no pointer, stays the backstop.

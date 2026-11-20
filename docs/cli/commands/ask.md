@@ -55,7 +55,10 @@ the-loop ask --work-item github:OWNER/REPO#N --question "Rename the flag to --un
 - **At the deadline** the daemon tells the session to proceed with its default, posts
   "default taken" where the question was asked, and closes the ask
   (`session.ask_default_taken`). This is not an approval: no human gate accepts a
-  default as its answer.
+  default as its answer. If the session cannot be told just then (it is paused, or its
+  terminal did not take the message), the ask still closes, and "default taken" says
+  that the default applies and that the session has not been told. The next nudge the
+  daemon sends that session tells it.
 - **An answer after the deadline** still reaches the session, as a comment, so it can
   correct course.
 - **The minimum wait** is the operator's
@@ -66,6 +69,9 @@ the-loop ask --work-item github:OWNER/REPO#N --question "Rename the flag to --un
 - **One default per step.** After a default was taken with nobody answering, another ask
   with `--after` is refused until the work item moves to its next step or an authorized
   person answers. Ask again without `--after` and wait for a person.
+- **One question with a deadline at a time.** While an ask with `--after` is still
+  open for the work item, another ask with `--after` is refused. An ask without
+  `--after` is accepted.
 - **A question that reached nobody has no default.** If the comment could not be posted
   and no channel took the question, the ask is recorded without a deadline and the
   output says the default will not be taken.

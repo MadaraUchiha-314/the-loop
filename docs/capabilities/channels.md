@@ -1052,8 +1052,14 @@ rules for when each fires are in [interactive-sessions](interactive-sessions.md)
 | `session.stall_ended` | The stall notice is edited in place to its resolved line. Status reaction returns to ⚙️. Nothing is posted. | A short follow-up comment with the idle period. GitHub cannot edit the notice in place. |
 | `session.awaiting_input` with a deadline | The short form gains a line: the time the default is taken, the minutes left and the default. | The question gains a block: the default, the time it is taken, and that an authorized answer before then wins. |
 | `session.ask_default_taken` | The question's message is edited: it keeps its words, loses its default button and gains the outcome line. Status reaction returns to ⚙️. Nothing is posted. | "default taken": the time, the default, a link to the question, and that it is not an approval. |
+| `session.ask_default_taken` for a session that could not be told | The same edit. The outcome line says that the default applies and that the session has not been told. | The same comment, saying that the default applies and that the session has not been told, with how to tell it. |
 | `session.ask_reminded` | One message under the question, mentioning who must answer. | "still waiting": how long, a link to the question, and that the work item does not move until an authorized user answers. |
 
+- Each open question SHALL keep its own Slack message. "Default taken" edits the
+  message of the ask it names, and a reminder goes under the question it names, however
+  many questions were asked after it. The edit forgets that message. A question that a
+  person answered is not edited and keeps its words. The Slack channel SHALL remember
+  at most 8 questions per work item, and forget the oldest past that.
 - A stall that ended before any notice was posted SHALL leave no trace on a channel:
   Slack has no message to edit, and the event is kept off the ledger.
 - Each of the four messages SHALL be its short form only. No long form follows it in a

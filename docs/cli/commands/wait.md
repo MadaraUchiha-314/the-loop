@@ -40,8 +40,15 @@ Each refusal exits non-zero, says why, and records nothing.
 - An empty condition, or one over 200 characters.
 - A work item whose pointer is on a human-owned node. the-loop already waits for a person
   there. Use [`ask`](/cli/commands/ask) to ask a question.
-- A work item that is not the session's own: a ref other than `THE_LOOP_WORK_ITEM` in a
-  session the daemon spawned, or a ref with no live session in the registry.
+- A work item that is not the session's own: a ref other than `THE_LOOP_WORK_ITEM`
+  where that variable is set (exit 2), or a ref with no live session in the registry.
+- A shell that carries the daemon's instance variable (`THE_LOOP_INSTANCE`) and no
+  `THE_LOOP_WORK_ITEM` (exit 2). The session lost the name of its work item, so no ref
+  can be checked against it.
+
+The last two bind a session to its work item and authenticate nobody. What they do not
+guarantee is in
+[process-graph](/capabilities/process-graph#the-stop-gate-issue-429-issue-551).
 
 ## Notes
 
