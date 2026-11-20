@@ -306,7 +306,10 @@ class TestTheServiceDecidesTheStop:
         """
         config, _, log = bound
         eventlog.emit(
-            "session.awaiting_input", work_item=REF, question="OAuth or keys?"
+            "session.awaiting_input",
+            work_item=REF,
+            question="OAuth or keys?",
+            ask_id="ask-1",
         )
 
         answer = stopcheck.stop_check(REF, config=config)
