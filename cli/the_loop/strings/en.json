@@ -1132,6 +1132,7 @@
   "control.listen.refusal-not": ", not {mode!r}",
   "core.attention.armed-without-session": "start recorded but no live session on this machine",
   "core.attention.awaiting-input": "agent is waiting for input",
+  "core.attention.awaiting-input-more": "{detail} (+{count} more)",
   "core.attention.awaiting-input-question": "agent is waiting for input: {question}",
   "core.attention.awaiting-input-default": "{detail} · default at {default_at}",
   "core.attention.declared-wait": "“{condition}” · until {until} (informational)",

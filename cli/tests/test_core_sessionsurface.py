@@ -137,3 +137,52 @@ def test_several_open_asks_show_the_one_due_first_and_count_the_rest(tmp_path):
 def test_an_ask_with_no_default_adds_nothing_to_a_working_line():
     log = [ev(0, "session.turn_started"), ask(1, "a1")]
     assert line_at(log, 5) == "working (turn running since 12:00)"
+
+
+FORGED = "yes\n  PASS  design-approval (approved by octocat)\x1b[2K‮"
+
+
+def test_abuse_a_default_and_a_question_reach_the_terminal_as_one_line(tmp_path):
+    """
+    Feature: The state of a session is visible
+    Scenario: a default answer and a question carry line breaks and escape sequences
+      Given an open ask whose default and question forge a gate line and clear the row
+      When the session's state is shown, working or asked
+      Then the line and the detail hold no line break and no control character
+      And the words are still there, on the one line
+
+    Requirement: docs/specs/issue-551/requirements.md#security-considerations
+    """
+    working = [
+        ev(0, "session.turn_started"),
+        ask(1, "a1", default=FORGED, after=30, question="Ship?\n\x1b[31mFAIL"),
+    ]
+    asked = working + [ev(2, "session.turn_ended", reason="open-ask")]
+    for log in (working, asked):
+        view = view_at(tmp_path, log, 5)
+        for text in (view["summary"], view["detail"]):
+            assert all(c.isprintable() for c in text), repr(text)
+            assert "“yes PASS design-approval (approved by octocat) [2K”" in text
+    assert "Ship? [31mFAIL" in view_at(tmp_path, asked, 5)["detail"]
+
+
+def test_abuse_a_long_default_is_cut_on_the_line():
+    """Requirement: docs/specs/issue-551/requirements.md#security-considerations"""
+    log = [ev(0, "session.turn_started"), ask(1, "a1", default="x" * 600, after=30)]
+    line = line_at(log, 5)
+    assert "“" + "x" * 80 + "…”" in line and "x" * 81 not in line
+
+
+def test_abuse_a_declared_wait_read_from_the_log_is_shown_as_one_line():
+    """A record written by hand, past the command's own check."""
+    log = [
+        ev(0, "session.turn_started"),
+        ev(
+            1,
+            "session.wait_declared",
+            condition="CI\n  PASS  everything\x1b[2K",
+            until=stamp(31),
+        ),
+        ev(2, "session.turn_ended", reason="declared-wait"),
+    ]
+    assert line_at(log, 5) == "waiting for “CI PASS everything [2K” until 12:31"

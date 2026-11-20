@@ -13,6 +13,7 @@ Spec: docs/specs/issue-551/design/messages.html § 6.
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -29,9 +30,52 @@ __all__ = [
     "elapsed",
     "log_path",
     "nudges",
+    "one_line",
     "shown_ask",
     "summary",
 ]
+
+
+#: How much of a question or a default one line of a terminal shows.
+MAX_SHOWN = 80
+#: A declared wait's condition is at most this long when the command wrote it.
+MAX_CONDITION_SHOWN = 200
+
+
+def one_line(text: Optional[str], limit: int = MAX_SHOWN) -> str:
+    """``text`` as one line of printable words, cut to ``limit`` characters.
+
+    A question and a default are a session's own words, and a status line is
+    drawn by a terminal: a line break in them would start a line that looks like
+    the-loop's, and an escape sequence would be obeyed. Every run of whitespace
+    and of characters that do not print becomes one space.
+    """
+    flat = " ".join("".join(c if c.isprintable() else " " for c in text or "").split())
+    return flat if len(flat) <= limit else flat[:limit].rstrip() + "…"
+
+
+def _shown(state: SessionState) -> SessionState:
+    """``state`` with the session's own words made safe to print."""
+
+    def ask_shown(ask: OpenAsk) -> OpenAsk:
+        default = None if ask.default is None else one_line(ask.default)
+        return dataclasses.replace(
+            ask, question=one_line(ask.question), default=default
+        )
+
+    wait = state.declared_wait
+    return dataclasses.replace(
+        state,
+        open_asks=tuple(ask_shown(ask) for ask in state.open_asks),
+        open_ask=None if state.open_ask is None else ask_shown(state.open_ask),
+        declared_wait=(
+            None
+            if wait is None
+            else dataclasses.replace(
+                wait, condition=one_line(wait.condition, MAX_CONDITION_SHOWN)
+            )
+        ),
+    )
 
 
 def log_path(config: Optional[dict]) -> str:
@@ -77,7 +121,7 @@ class Reader:
 
     def view(self, ref: str) -> Dict[str, Any]:
         """The contract's `session` object, with the state as one line."""
-        state = self(ref)
+        state = _shown(self(ref))
         view = sessionstate.session_view(state)
         clause = default_clause(state, self.now)
         if clause and view["state"] != "asked":
@@ -157,7 +201,7 @@ def default_clause(state: SessionState, now: datetime) -> str:
     Said in every state: a session that asked with a default carries on
     working, and the default is taken whatever it is doing by then.
     """
-    ask, more = shown_ask(state)
+    ask, more = shown_ask(_shown(state))
     if ask is None or not _timed(ask):
         return ""
     return _and_more(
@@ -173,6 +217,7 @@ def default_clause(state: SessionState, now: datetime) -> str:
 
 def summary(state: SessionState, now: datetime) -> str:
     """The state as the one line `the-loop check` prints after `session:`."""
+    state = _shown(state)
     ask, more = shown_ask(state)
     if state.state == "waiting" and state.reason == "open-ask" and ask is not None:
         asked = clock(ask.asked_at, now)

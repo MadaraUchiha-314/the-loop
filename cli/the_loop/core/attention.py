@@ -104,27 +104,37 @@ def list_attention(config: Optional[dict] = None) -> List[Dict[str, Any]]:
         if ref in ended:
             continue  # the item ended; nobody is waiting for the answer
         state = states(ref)
-        ask = state.open_ask
+        # One row for a work item, however many asks it has open: the one whose
+        # default is due first, and a count of the others.
+        ask, more = sessionsurface.shown_ask(state)
         if ask is not None:
+            # The question and the default are the session's own words: shown
+            # as one printable line, the question cut to fit a row.
+            question = sessionsurface.one_line(ask.question)
             detail = (
-                strings.t(
-                    "core.attention.awaiting-input-question", question=ask.question
-                )
-                if ask.question
+                strings.t("core.attention.awaiting-input-question", question=question)
+                if question
                 else strings.t("core.attention.awaiting-input")
             )
+            if more:
+                detail = strings.t(
+                    "core.attention.awaiting-input-more", detail=detail, count=more
+                )
             row: Dict[str, Any] = {
                 "workItem": ref,
                 "kind": "awaiting-input",
                 "detail": detail,
             }
-            if ask.default_at is not None:
+            # An ask recorded without an id has no default the watcher takes.
+            if ask.default_at is not None and not ask.legacy:
                 row["detail"] = strings.t(
                     "core.attention.awaiting-input-default",
                     detail=detail,
                     default_at=sessionsurface.clock(ask.default_at, states.now),
                 )
-                row["default"] = ask.default
+                row["default"] = sessionsurface.one_line(
+                    ask.default, core_sessions.MAX_DEFAULT_LENGTH
+                )
                 row["defaultAt"] = ask.default_at
             items.append(row)
         # A turn record outlives its session, so only a live session stalls or
@@ -153,7 +163,9 @@ def list_attention(config: Optional[dict] = None) -> List[Dict[str, Any]]:
                     "kind": "declared-wait",
                     "detail": strings.t(
                         "core.attention.declared-wait",
-                        condition=wait.condition,
+                        condition=sessionsurface.one_line(
+                            wait.condition, sessionsurface.MAX_CONDITION_SHOWN
+                        ),
                         until=sessionsurface.clock(wait.until, states.now),
                     ),
                 }

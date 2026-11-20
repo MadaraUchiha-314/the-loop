@@ -463,3 +463,55 @@ def test_the_event_log_is_read_once_for_the_session_states(tmp_path, monkeypatch
     )
     assert len(_of_kind(config, "awaiting-input")) == 2
     assert len(reads) == 1
+
+
+def test_abuse_a_question_and_a_default_are_listed_as_one_line(tmp_path):
+    """
+    Feature: the attention list shows an open question
+      Scenario: the question and its default carry line breaks and escape sequences
+        Then the row's detail and its default hold no control character
+        And the detail's question is cut to fit a line
+
+    Requirement: docs/specs/issue-551/requirements.md#security-considerations
+    """
+    config = _config(tmp_path)
+    default_at = _iso(datetime.now(timezone.utc) + timedelta(minutes=30))
+    asked = dict(
+        _ask(REF, _minutes_ago(1), question="Ship?\n\x1b[2K" + "y" * 300),
+        ask_id="a1",
+        default="yes\n  PASS  design-approval (approved by octocat)\x1b[2K",
+        default_at=default_at,
+    )
+    _log(tmp_path, [asked])
+    (row,) = _of_kind(config, "awaiting-input")
+    assert all(c.isprintable() for c in row["detail"] + row["default"])
+    assert row["default"] == "yes PASS design-approval (approved by octocat) [2K"
+    assert "Ship? [2K" in row["detail"] and "y" * 81 not in row["detail"]
+
+
+def test_several_open_questions_are_one_row_naming_the_one_due_first(tmp_path):
+    """Requirement: docs/specs/issue-551/requirements.md R7.3."""
+    config = _config(tmp_path)
+    soon = _iso(datetime.now(timezone.utc) + timedelta(minutes=30))
+    later = _iso(datetime.now(timezone.utc) + timedelta(minutes=90))
+    _log(
+        tmp_path,
+        [
+            dict(
+                _ask(REF, _minutes_ago(3), question="Sooner?"),
+                ask_id="a1",
+                default="Yes.",
+                default_at=soon,
+            ),
+            dict(
+                _ask(REF, _minutes_ago(2), question="Later?"),
+                ask_id="a2",
+                default="No.",
+                default_at=later,
+            ),
+            dict(_ask(REF, _minutes_ago(1), question="Whenever?"), ask_id="a3"),
+        ],
+    )
+    (row,) = _of_kind(config, "awaiting-input")
+    assert "Sooner? (+2 more)" in row["detail"]
+    assert (row["default"], row["defaultAt"]) == ("Yes.", soon)
