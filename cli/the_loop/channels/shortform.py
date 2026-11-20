@@ -249,7 +249,7 @@ def build_short_form(
         is_session_authored(event) if session_authored is None else session_authored
     )
     if not authored:
-        lead = _draw(room_lead(event))
+        lead = _draw(_human_lead(event) or room_lead(event))
         return ShortForm(_with_preamble(preamble, lead, limit), url, "lead")
     eventlog.emit(
         "channels.short_form_missing",
@@ -264,6 +264,31 @@ def build_short_form(
         return ShortForm(_with_preamble(preamble, line, limit), url, "built")
     body = _with_preamble(preamble, line, limit - len(link) - 1)
     return ShortForm(f"{body} {link}".strip(), url, "built")
+
+
+#: What a GitHub author handle may hold when it is drawn: anything else (markup,
+#: a broadcast someone set as a display name) is dropped from it.
+_NOT_LOGIN_RE = re.compile(r"[^A-Za-z0-9_.\[\]-]")
+
+#: A person's comment up to this long is its own short form, whole; a longer one
+#: is led by its first question or sentence.
+HUMAN_WHOLE_CHARS = 280
+
+
+def _human_lead(event: Any) -> str:
+    """The lead of a person's comment mirrored from GitHub: who wrote it, then
+    the comment itself when it is short, else its first question or sentence
+    (markdown, defused by the caller); ``""`` for any other event. A short form
+    that drops its author leaves a Slack reader unable to tell who spoke."""
+    if str(getattr(event, "event_type", "") or "") != "comment.human":
+        return ""
+    detail = getattr(event, "detail", None) or {}
+    author = _NOT_LOGIN_RE.sub("", str(detail.get("author") or ""))
+    if not author:
+        return ""
+    text = outside_code(str(getattr(event, "text", "") or ""), unfold).strip()
+    line = text if len(text) <= HUMAN_WHOLE_CHARS else _first_line(text)
+    return strings.t("channels.shortform.human-lead", author=author, line=line)
 
 
 def _normalise(text: str) -> str:

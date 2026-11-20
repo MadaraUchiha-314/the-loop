@@ -231,3 +231,39 @@ def test_abuse_built_link_is_the_event_url(log):
 def test_defuse_summary_broadcast_and_mention(summary):
     short = build_short_form(_comment(text="body", summary=summary))
     assert "<!" not in short.text and "<@" not in short.text
+
+
+def test_a_human_comment_names_its_author():
+    """issue-549 regression (task 9): a person's comment mirrored from GitHub
+    leads with who wrote it, then its first sentence — defused, author too."""
+    event = Event(
+        event_type="comment.human",
+        work_item=REF,
+        text="Ship it. The tests look fine to me <!here>.",
+        detail={"author": "octocat"},
+        source="github",
+    )
+    short = build_short_form(event)
+    assert short.source == "lead"
+    assert short.text == (
+        "💬 *@octocat* commented: Ship it. The tests look fine to me &lt;!here>."
+    )
+
+    long = Event(
+        event_type="comment.human",
+        work_item=REF,
+        text="Ship it. " + "The tests look fine to me, and the docs read well. " * 8,
+        detail={"author": "octocat"},
+        source="github",
+    )
+    assert build_short_form(long).text == "💬 *@octocat* commented: Ship it."
+
+    hostile = Event(
+        event_type="comment.human",
+        work_item=REF,
+        text="Look <!channel>!",
+        detail={"author": "<!here>"},
+        source="github",
+    )
+    text = build_short_form(hostile).text
+    assert "<!" not in text and "commented:" in text

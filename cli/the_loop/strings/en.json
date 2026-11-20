@@ -14,6 +14,7 @@
   "bodies.mirror.context.added": "📎 context from {who} on the **{source}** channel — {count} message(s) from {thread}, recorded here and appended to `context.md` by the session",
   "bodies.mirror.decision.recorded": "📌 decision from {who} on the **{source}** channel{kind} — recorded here and written up as a decision record by the session",
   "bodies.mirror.work-item.reply": "reply from {who} on the **{source}** channel, recorded here as the answer of record",
+  "channels.shortform.human-lead": "💬 **@{author}** commented: {line}",
   "channels.slack.deprecated-key": "channels.slack.{key} is deprecated and ignored (issue-549). Remove it; see the migration note in docs/config/cli/channels-options.md#removed-maxchars-and-longmessages-issue-549.",
   "channels.attachments.record.not-fetched": " (not fetched: {reason})",
   "channels.attachments.record.transcript": "> Slack's transcript: {line}",

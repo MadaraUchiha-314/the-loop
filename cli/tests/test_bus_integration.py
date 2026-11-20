@@ -202,9 +202,12 @@ def test_an_agents_comment_reaches_slack_and_a_humans_only_when_subscribed(
     )
     assert router.route("issue_comment", comment("ship it"), "d3") is not None
     assert len(slack.posted) == 4 and "ship it" in slack.posted[3]["text"]
-    # issue-549 R3: the short form (a lead) replaced the header that named the
-    # author; the comment itself leads the message
-    assert slack.posted[3]["blocks"][0]["text"]["text"].endswith("ship it")
+    # issue-549 R3: the short form is a lead that names the author, then the
+    # comment's first sentence
+    assert (
+        slack.posted[3]["blocks"][0]["text"]["text"]
+        == f"💬 *@{OPERATOR}* commented: ship it"
+    )
 
     record = env.stamp(
         mark_self_authored("> yes"), env.Envelope("work-item.reply", "slack")
