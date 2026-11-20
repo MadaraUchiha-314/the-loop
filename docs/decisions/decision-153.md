@@ -49,11 +49,14 @@ checkout, the PR's checkout is somewhere else, and validation hooks must stay of
    every evaluation, at three places: leaving the inner `pr-spec` node, leaving
    `reviewer-briefing`, and leaving the outer `implementation`.
 5. **Stale means blocked.** A changed chain blocks the PR at `reviewer-briefing` until
-   the PR spec is re-derived, or an authorized person declares on the PR that it still
-   holds (`--still-valid`). Front-matter edits by the gates do not count as changes.
+   the PR spec is re-derived, or an authorized person declares on the PR, after the
+   change, that it still holds: a comment with the line `pr-spec still-valid`, newer than
+   both the record and the chain's last commit (`--still-valid`). Front-matter edits by
+   the gates do not count as changes.
 6. **No wider audience without consent.** When the PR's repository is more visible than
    the origin, or either visibility is unknown, recording needs a comment on the work
-   item by an authorized user that says `allow-disclosure <owner>/<repo>`.
+   item by an authorized user with the line `allow-disclosure <owner>/<repo>` on its own.
+   The agent commits the PR spec but pushes nothing until it is recorded.
 7. **Feedback routing.** Feedback within the PR's scope changes the PR spec on that PR.
    Feedback that would change the work item is raised on the work item. Nothing in the
    inner loop writes the chain.

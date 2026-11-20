@@ -550,6 +550,14 @@ def _secret_patterns() -> Tuple[Tuple[str, "re.Pattern[str]"], ...]:
         ("bearer token", re.compile(r"\bBearer\s+[A-Za-z0-9._~+/=-]{8,}")),
         ("cookie header", re.compile(r"(?i)\b(?:Set-)?Cookie\s*:\s*\S+")),
         ("email address", _EMAIL_RE),
+        (
+            "credential assignment",
+            re.compile(
+                r"(?i)\b[\w.-]*(?:token|secret|password|passwd|api[_-]?key|"
+                r"access[_-]?key|private[_-]?key|credential)[\w.-]*[\"']?"
+                r"\s*[:=]\s*[\"']?[A-Za-z0-9_+/.~=-]{8,}"
+            ),
+        ),
     )
 
 

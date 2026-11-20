@@ -405,6 +405,9 @@ def test_record_not_required_reasons_load():
         "Cookie: session=abc",
         "Set-Cookie: id=1",
         "someone@example.com",
+        "api_key: Abcd1234Efgh5678Ijkl9012",
+        "DB_PASSWORD=hunter2hunter2",
+        'client_secret = "s3cr3tValue99"',
     ],
 )
 def test_abuse_seeded_token_is_finding(secret):
@@ -555,6 +558,58 @@ def test_forged_spec_only_outside_the_origin_still_blocks(tmp_path):
 def test_hook_spec_only_origin_pr_passes(tmp_path):
     ctx = hook_ctx(tmp_path, TWO, pr_ref="github:octo/origin#2")
     put_record(ctx.work_item.spec_dir, ORIGIN, 2, required=False, reason="spec-only")
+    assert pr_spec_current(ctx).status == "pass"
+
+
+def _inner_implementation(spec, repo, number, **node):
+    from the_loop.graph.hooks.loops import inner_loop_state_dir
+
+    state = inner_loop_state_dir(spec, number, repo) / "work-item-state.json"
+    state.parent.mkdir(parents=True, exist_ok=True)
+    state.write_text(json.dumps({"nodes": {"implementation": node}}), encoding="utf-8")
+
+
+def test_hook_spec_only_recorded_before_implementation_blocks(tmp_path):
+    ctx = hook_ctx(tmp_path, TWO, pr_ref="github:octo/origin#2")
+    spec = ctx.work_item.spec_dir
+    put_record(
+        spec,
+        ORIGIN,
+        2,
+        required=False,
+        reason="spec-only",
+        recordedAt="2026-11-19T00:00:00+00:00",
+    )
+    _inner_implementation(
+        spec,
+        ORIGIN,
+        2,
+        enteredAt="2026-11-19T01:00:00+00:00",
+        exitedAt="2026-11-19T05:00:00+00:00",
+    )
+    result = pr_spec_current(ctx)
+    assert result.status == "block"
+    assert "spec-only before implementation ran" in result.render()
+
+
+def test_hook_spec_only_recorded_after_implementation_passes(tmp_path):
+    ctx = hook_ctx(tmp_path, TWO, pr_ref="github:octo/origin#2")
+    spec = ctx.work_item.spec_dir
+    put_record(
+        spec,
+        ORIGIN,
+        2,
+        required=False,
+        reason="spec-only",
+        recordedAt="2026-11-19T06:00:00+00:00",
+    )
+    _inner_implementation(
+        spec,
+        ORIGIN,
+        2,
+        enteredAt="2026-11-19T01:00:00+00:00",
+        exitedAt="2026-11-19T05:00:00+00:00",
+    )
     assert pr_spec_current(ctx).status == "pass"
 
 
@@ -775,6 +830,43 @@ def test_abuse_disclosure_grant_naming_another_repo_refused():
     assert verdict is None and "allow-disclosure octo/api" in str(problem)
 
 
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Do not `allow-disclosure octo/api`",
+        "Do not allow-disclosure octo/api, it is private.",
+        "> allow-disclosure octo/api",
+        "allow-disclosure octo/api? not yet",
+    ],
+)
+def test_abuse_negated_or_quoted_disclosure_grant_refused(body):
+    url = WI_URL + "#issuecomment-1"
+    gh = StubGitHub(
+        visibility={"octo/origin": "private", "octo/api": "public"},
+        comments={("octo/origin", 15): [comment(url, body=body)]},
+    )
+    verdict, problem = disclosure(gh, url)
+    assert verdict is None and "on a line of its own" in str(problem)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "allow-disclosure octo/api",
+        "Fine by me.\n\n`allow-disclosure octo/api`",
+        "ALLOW-DISCLOSURE octo/api.",
+    ],
+)
+def test_disclosure_grant_on_its_own_line_accepted(body):
+    url = WI_URL + "#issuecomment-1"
+    gh = StubGitHub(
+        visibility={"octo/origin": "private", "octo/api": "public"},
+        comments={("octo/origin", 15): [comment(url, body=body)]},
+    )
+    verdict, problem = disclosure(gh, url)
+    assert problem is None and verdict is not None
+
+
 def test_abuse_comment_on_another_issue_refused():
     url = "https://github.com/octo/origin/issues/16#issuecomment-1"
     gh = StubGitHub(
@@ -855,7 +947,7 @@ def pr_checkout(tmp_path, repo="octo/api", branch="feature"):
     return co
 
 
-def pr_spec_text(name, kind, digest, pr_ref=API_PR, cite="[wi:R1]"):
+def pr_spec_text(name, kind, digest, pr_ref=API_PR, cite="[wi:R1]", rev="abc1234"):
     extra = {
         "requirements.md": f"## Requirements\n\n### PR-R1 — the API part\n\nDelivers {cite}.\n",
         "design.md": f"## Design\n\nBuilt as in {cite} and [wi:design#security-design].\n",
@@ -867,7 +959,7 @@ def pr_spec_text(name, kind, digest, pr_ref=API_PR, cite="[wi:R1]"):
     }[name]
     return (
         f'---\ntype: {kind}\nworkItem: "{WI_REF}"\npullRequest: "{pr_ref}"\n'
-        f'sourceRevision: "abc1234"\nchainDigest: "{digest}"\n---\n\n'
+        f'sourceRevision: "{rev}"\nchainDigest: "{digest}"\n---\n\n'
         f"# PR spec\n\n## Context\n\nPart of {WI_REF}; sibling github:octo/origin#2.\n\n{extra}"
     )
 
@@ -876,11 +968,51 @@ def write_pr_spec(co, spec, key="octo__origin__issue-15", number=12, **kw):
     target = co / "docs" / "specs" / key / f"pr-{number}"
     target.mkdir(parents=True, exist_ok=True)
     digest = prspec.chain_digest(spec)
+    kw.setdefault("rev", origin_head(spec))
     for name, kind in prspec.PR_SPEC_FILES:
         (target / name).write_text(
             pr_spec_text(name, kind, digest, **kw), encoding="utf-8"
         )
+    git(co, "add", "-A")
+    git(co, "commit", "-q", "-m", "pr spec")
     return target
+
+
+def origin_repo(spec):
+    """Make the origin checkout above ``spec`` a git repo with the chain committed."""
+    root = spec.parents[2]
+    if not (root / ".git").exists():
+        git(root, "init", "-q", "-b", "main")
+        git(root, "config", "user.email", "t@example.invalid")
+        git(root, "config", "user.name", "t")
+    commit_chain(spec)
+    return root
+
+
+def commit_chain(spec, when=None):
+    root = spec.parents[2]
+    git(root, "add", "-A")
+    env = None
+    if when:
+        import os
+
+        env = {**os.environ, "GIT_COMMITTER_DATE": when, "GIT_AUTHOR_DATE": when}
+    subprocess.run(
+        ["git", "-C", str(root), "commit", "-q", "--allow-empty", "-m", "chain"],
+        check=True,
+        capture_output=True,
+        env=env,
+    )
+
+
+def origin_head(spec):
+    root = spec.parents[2]
+    if not (root / ".git").exists():
+        return "abc1234"
+    done = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True, text=True
+    )
+    return done.stdout.strip() or "abc1234"
 
 
 class VerbGitHub(StubGitHub):
@@ -896,6 +1028,7 @@ def verb_request(tmp_path, co, **over):
     spec = tmp_path / "origin" / "docs" / "specs" / "issue-15"
     if not spec.exists():
         write_chain(spec)
+        origin_repo(spec)
     fields: Dict[str, Any] = dict(
         work_item_id="issue-15",
         work_item_ref=WI_REF,
@@ -933,7 +1066,7 @@ def test_verb_records_a_complete_pr_spec(tmp_path):
     assert data["required"] is True and data["reason"] == "multi-pr"
     assert data["chainDigest"] == prspec.chain_digest(req.spec_dir)
     assert data["path"] == "docs/specs/octo__origin__issue-15/pr-12"
-    assert data["sourceRevision"] == "abc1234"
+    assert data["sourceRevision"] == origin_head(req.spec_dir)
     assert data["citations"] == 7
     assert data["disclosure"]["verdict"] == "same-or-narrower"
 
@@ -1127,47 +1260,113 @@ def test_abuse_writes_only_record(tmp_path):
     assert files() - before == {req.record_dir / "pr-spec.json"}
 
 
-def test_verb_still_valid_rerecords_digest(tmp_path):
+STILL = "pr-spec still-valid"
+
+
+def recorded_then_changed(tmp_path, changed_at="2026-11-20T08:00:00Z"):
+    """A recorded PR spec (at 2026-11-19T00:00Z), then a chain change committed
+    at ``changed_at``."""
     co = pr_checkout(tmp_path)
     req = verb_request(tmp_path, co)
     write_pr_spec(co, req.spec_dir)
-    record_pr_spec(req, VerbGitHub(visibility=PUBLIC))
+    assert record_pr_spec(req, VerbGitHub(visibility=PUBLIC)).recorded
     with (req.spec_dir / "design.md").open("a") as fh:
         fh.write("\nchanged\n")
+    commit_chain(req.spec_dir, when=changed_at)
+    return co, req
+
+
+def still_valid(tmp_path, co, body=STILL, at="2026-11-20T09:00:00Z", author="owner"):
     url = PR_URL + "#issuecomment-5"
-    later = comment(url, body="still ok", at="2026-11-20T09:00:00Z")
-    gh = VerbGitHub(visibility=PUBLIC, comments={("octo/api", 12): [later]})
-    result = record_pr_spec(verb_request(tmp_path, co, still_valid=url), gh)
-    assert result.recorded
+    said = comment(url, body=body, at=at, author=author)
+    gh = VerbGitHub(visibility=PUBLIC, comments={("octo/api", 12): [said]})
+    return record_pr_spec(verb_request(tmp_path, co, still_valid=url), gh)
+
+
+def test_verb_still_valid_rerecords_digest(tmp_path):
+    co, req = recorded_then_changed(tmp_path)
+    result = still_valid(tmp_path, co, body="Checked it.\n\n`pr-spec still-valid`")
+    assert result.recorded, result.findings
     assert rec(result).chain_digest == prspec.chain_digest(req.spec_dir)
     assert (rec(result).still_valid or {}).get("by") == "@owner"
 
 
 def test_abuse_still_valid_comment_older_than_record_refused(tmp_path):
-    co = pr_checkout(tmp_path)
-    req = verb_request(tmp_path, co)
-    write_pr_spec(co, req.spec_dir)
-    record_pr_spec(req, VerbGitHub(visibility=PUBLIC))
-    with (req.spec_dir / "design.md").open("a") as fh:
-        fh.write("\nchanged\n")
-    url = PR_URL + "#issuecomment-5"
-    earlier = comment(url, body="LGTM", at="2026-11-18T09:00:00Z")
-    gh = VerbGitHub(visibility=PUBLIC, comments={("octo/api", 12): [earlier]})
-    result = record_pr_spec(verb_request(tmp_path, co, still_valid=url), gh)
+    co, _ = recorded_then_changed(tmp_path)
+    result = still_valid(tmp_path, co, at="2026-11-18T09:00:00Z")
     assert not result.recorded
     assert any(
         "before the PR spec was last recorded" in f.text for f in result.findings
     )
 
 
+def test_abuse_still_valid_comment_before_the_chain_change_refused(tmp_path):
+    # Recorded at T0, declared at T1, chain changed at T2: T1 is not about T2.
+    co, _ = recorded_then_changed(tmp_path, changed_at="2026-11-21T08:00:00Z")
+    result = still_valid(tmp_path, co, at="2026-11-20T09:00:00Z")
+    assert not result.recorded
+    assert any("before the chain last changed" in f.text for f in result.findings)
+
+
+def test_abuse_still_valid_with_uncommitted_chain_change_refused(tmp_path):
+    co, req = recorded_then_changed(tmp_path)
+    with (req.spec_dir / "design.md").open("a") as fh:
+        fh.write("\nmore\n")
+    result = still_valid(tmp_path, co)
+    assert not result.recorded
+    assert any("commit the chain change first" in f.text for f in result.findings)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Do not merge; the scope needs revision.",
+        "Is the pr-spec still-valid after this?",
+        "> pr-spec still-valid",
+    ],
+)
+def test_abuse_still_valid_comment_that_does_not_declare_refused(tmp_path, body):
+    co, _ = recorded_then_changed(tmp_path)
+    result = still_valid(tmp_path, co, body=body)
+    assert not result.recorded
+    assert any("on a line of its own" in f.text for f in result.findings)
+
+
 def test_verb_still_valid_by_unauthorized_refused(tmp_path):
+    co, _ = recorded_then_changed(tmp_path)
+    assert not still_valid(tmp_path, co, author="mallory").recorded
+
+
+def test_abuse_uncommitted_pr_spec_refused(tmp_path):
     co = pr_checkout(tmp_path)
     req = verb_request(tmp_path, co)
-    write_pr_spec(co, req.spec_dir)
-    record_pr_spec(req, VerbGitHub(visibility=PUBLIC))
-    url = PR_URL + "#issuecomment-5"
-    gh = VerbGitHub(comments={("octo/api", 12): [comment(url, author="mallory")]})
-    assert not record_pr_spec(verb_request(tmp_path, co, still_valid=url), gh).recorded
+    target = write_pr_spec(co, req.spec_dir)
+    git(co, "reset", "-q", "--soft", "HEAD~1")
+    git(co, "rm", "-q", "--cached", "-r", str(target))
+    result = record_pr_spec(req, VerbGitHub(visibility=PUBLIC))
+    assert not result.recorded
+    assert any("commit the PR spec" in f.text for f in result.findings)
+
+
+def test_abuse_edited_after_commit_pr_spec_refused(tmp_path):
+    co = pr_checkout(tmp_path)
+    req = verb_request(tmp_path, co)
+    target = write_pr_spec(co, req.spec_dir)
+    with (target / "tasks.md").open("a") as fh:
+        fh.write("\n- [ ] 2. More [wi:task-1]\n")
+    result = record_pr_spec(req, VerbGitHub(visibility=PUBLIC))
+    assert not result.recorded
+    assert any("commit the PR spec" in f.text for f in result.findings)
+
+
+@pytest.mark.parametrize("rev", ["deadbeef", "--output=x", "HEAD"])
+def test_abuse_unresolvable_source_revision_refused(tmp_path, rev):
+    co = pr_checkout(tmp_path)
+    req = verb_request(tmp_path, co)
+    write_pr_spec(co, req.spec_dir, rev=rev)
+    result = record_pr_spec(req, VerbGitHub(visibility=PUBLIC))
+    assert not result.recorded
+    assert any("not a commit of the origin" in f.text for f in result.findings)
 
 
 def test_required_sections_match_the_templates():

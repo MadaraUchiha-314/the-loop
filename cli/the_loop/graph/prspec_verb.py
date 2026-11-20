@@ -45,7 +45,13 @@ from .prspec import (
 )
 from .prspec_github import authorize_comment, check_disclosure
 
-__all__ = ["REQUIRED_SECTIONS", "PrSpecRequest", "PrSpecResult", "record_pr_spec"]
+__all__ = [
+    "REQUIRED_SECTIONS",
+    "STILL_VALID_PHRASE",
+    "PrSpecRequest",
+    "PrSpecResult",
+    "record_pr_spec",
+]
 
 #: The sections each PR-spec file must have, non-empty (R2.2–R2.6, R4.2). The
 #: templates under ``skills/the-loop/templates/pr-spec/`` carry exactly these
@@ -64,6 +70,20 @@ _CHAIN_GATES: Tuple[Tuple[Tuple[str, ...], str], ...] = (
     (("design.md",), "design-approval"),
     (("testing-plan.md",), "design-approval"),
 )
+
+#: The line an authorized person writes on the PR to say a chain change does
+#: not affect it (R5.2).
+STILL_VALID_PHRASE = "pr-spec still-valid"
+
+_CHAIN_FILES = (
+    "requirements.md",
+    "bugfix.md",
+    "design.md",
+    "testing-plan.md",
+    "tasks.md",
+)
+
+_REV_RE = re.compile(r"[0-9a-fA-F]{7,64}")
 
 _REMOTE_RE = re.compile(
     r"(?:https?://[^/]+/|ssh://git@[^/]+/|git@[^:]+:)(?P<repo>[^/]+/[^/]+?)(?:\.git)?/?$"
@@ -283,7 +303,11 @@ def _authorized(
     req: PrSpecRequest, client: Any
 ) -> Tuple[Optional[Dict[str, Any]], List[Finding]]:
     grant, problem = authorize_comment(
-        client, req.still_valid, expected=req.pr_ref, authorized=req.authorized
+        client,
+        req.still_valid,
+        expected=req.pr_ref,
+        authorized=req.authorized,
+        must_contain=STILL_VALID_PHRASE,
     )
     return grant, ([Finding("--still-valid", 0, problem)] if problem else [])
 
@@ -296,23 +320,95 @@ def _parse_time(value: str) -> Optional[datetime]:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
+def _chain_changed_at(spec_dir: Path) -> Tuple[Optional[datetime], str]:
+    """When the chain last changed: its newest commit touching a chain file.
+
+    ``(None, reason)`` when that cannot be told: an uncommitted change to the
+    chain, or no git history to read.
+    """
+    names = [n for n in _CHAIN_FILES if (spec_dir / n).is_file()]
+    if not names:
+        return None, "the work-item chain has no files"
+    dirty = _git(spec_dir, "status", "--porcelain", "--", *names)
+    if dirty is None:
+        return None, "the work-item chain's git history cannot be read"
+    if dirty:
+        return None, "commit the chain change first, so its time is known"
+    stamp = _git(spec_dir, "log", "-1", "--format=%cI", "--", *names) or ""
+    when = _parse_time(stamp)
+    if when is None:
+        return None, "the work-item chain's last change cannot be dated"
+    return when, ""
+
+
 def _check_declared_after(
-    grant: Mapping[str, Any], previous: PrSpecRecord
+    req: PrSpecRequest, grant: Mapping[str, Any], previous: PrSpecRecord
 ) -> List[Finding]:
-    """A ``--still-valid`` comment must postdate the record it moves forward:
-    a comment written before the chain changed cannot speak to that change."""
+    """A ``--still-valid`` comment must postdate both the record it moves
+    forward and the chain change it speaks to: a comment written before the
+    change cannot be about it."""
     said = _parse_time(str(grant.get("at") or ""))
     recorded = _parse_time(previous.recorded_at)
-    if said is None or recorded is None or said <= recorded:
+    changed, why = _chain_changed_at(req.spec_dir)
+    if changed is None:
+        return [Finding("--still-valid", 0, why)]
+    if said is None or recorded is None or said <= max(recorded, changed):
         return [
             Finding(
                 "--still-valid",
                 0,
                 f"{grant.get('comment')} was written before the PR spec was last "
-                "recorded; the declaration must come after the chain changed",
+                "recorded or before the chain last changed; the declaration must "
+                "come after the change it speaks to",
             )
         ]
     return []
+
+
+def _check_committed(req: PrSpecRequest, rel: str) -> List[Finding]:
+    """The four files are committed on the checkout's branch, as they are:
+    a reviewer sees the branch, never the working tree."""
+    tracked = _git(req.checkout, "ls-files", "--", rel)
+    dirty = _git(req.checkout, "status", "--porcelain", "--", rel)
+    if tracked is None or dirty is None:
+        return [Finding(rel, 0, "the PR checkout's git state cannot be read")]
+    have = {Path(line).name for line in tracked.splitlines() if line.strip()}
+    missing = [n for n, _ in PR_SPEC_FILES if n not in have]
+    if missing or dirty:
+        return [
+            Finding(
+                rel,
+                0,
+                "commit the PR spec in the PR's branch before recording it "
+                "(uncommitted or untracked files)",
+            )
+        ]
+    return []
+
+
+def _check_source_revisions(
+    req: PrSpecRequest, texts: Mapping[str, str]
+) -> List[Finding]:
+    """Each file's ``sourceRevision`` names a commit of the origin repository."""
+    found: List[Finding] = []
+    seen: Dict[str, bool] = {}
+    for name, text in texts.items():
+        rev = str(split_front_matter(text)[0].get("sourceRevision") or "").strip()
+        if not rev:
+            continue  # reported by the front-matter check
+        if rev not in seen:
+            seen[rev] = bool(_REV_RE.fullmatch(rev)) and (
+                _git(req.spec_dir, "cat-file", "-e", f"{rev}^{{commit}}") is not None
+            )
+        if not seen[rev]:
+            found.append(
+                Finding(
+                    name,
+                    1,
+                    f"`sourceRevision` {rev!r} is not a commit of the origin repository",
+                )
+            )
+    return found
 
 
 def _write(req: PrSpecRequest, record: PrSpecRecord) -> str:
@@ -380,7 +476,7 @@ def record_pr_spec(req: PrSpecRequest, client: Any) -> PrSpecResult:
         grant, problems = _authorized(req, client)
         findings += problems
         if grant is not None and previous is not None:
-            findings += _check_declared_after(grant, previous)
+            findings += _check_declared_after(req, grant, previous)
         if findings or previous is None or not previous.required:
             if previous is not None and not previous.required:
                 findings.append(
@@ -398,6 +494,8 @@ def record_pr_spec(req: PrSpecRequest, client: Any) -> PrSpecResult:
 
     texts, front, problems = _check_files(req, target, digest)
     findings += problems
+    findings += _check_committed(req, rel)
+    findings += _check_source_revisions(req, texts)
     index = ChainIndex.load(req.spec_dir)
     findings += unresolved_citations(texts, index)
     findings += missing_citations(texts)

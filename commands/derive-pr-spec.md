@@ -48,22 +48,26 @@ chain and never approved on its own.
    - `[wi:TP-T2]` for a testing-plan row;
    - `[wi:task-4]` for a task.
 
-6. **Commit, push, record.** Commit the files in the PR's branch and push. Then, from the
-   **origin** checkout, run:
+6. **Commit, record, then push.** Commit the files in the PR's branch, but **do not push
+   yet**: the verb checks the disclosure first, and pushing publishes. The verb refuses
+   uncommitted or edited files, and a `sourceRevision` that is not a commit of the origin.
+   From the **origin** checkout, run:
 
    ```bash
    the-loop graph pr-spec <id> --pr <n> [--pr-repo <owner>/<repo>] --checkout <PR checkout>
    ```
 
-   It reports every finding at once. Fix them and run it again. It writes
-   `pr-spec.json` into the PR's inner-loop directory: commit that in the origin repository
-   with the work item.
+   It reports every finding at once. Fix them, commit, and run it again. Once it records,
+   push the PR's branch. It writes `pr-spec.json` into the PR's inner-loop directory:
+   commit that in the origin repository with the work item.
 
 7. **A refused disclosure.** When the PR's repository is more visible than the origin (for
    example, private to public), the verb refuses until an authorized person agrees. Ask
    on the **work item** with `the-loop ask`, and name both visibilities and the repository.
-   Wait for a reply that says `allow-disclosure <owner>/<repo>`, then re-run with
-   `--disclosure-approval <that comment's URL>`. Never write the grant yourself.
+   Push nothing to that repository meanwhile. Wait for a reply that says
+   `allow-disclosure <owner>/<repo>` on a line of its own, then re-run with
+   `--disclosure-approval <that comment's URL>`. Never write the grant yourself. If the
+   answer is no, delete the local commit and say so on the work item.
 
 8. **Report back:** `the-loop graph complete <id> --pr <n> [--pr-repo …]`.
 
@@ -73,8 +77,9 @@ The PR's `reviewer-briefing` gate blocks with *stale: chain changed since `<rev>
 either:
 
 - re-derive the affected files (steps 2–6); the old revision stays in the PR's history; or
-- if a person with authority says on the PR that the change does not affect it, re-run the
-  verb with `--still-valid <that comment's URL>`.
+- if a person with authority comments on the PR, after the chain change was committed,
+  with the line `pr-spec still-valid`, re-run the verb with
+  `--still-valid <that comment's URL>`.
 
 ## Feedback on a PR spec
 

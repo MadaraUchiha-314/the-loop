@@ -515,15 +515,16 @@ outer surface's spec-only PR.
   covers PRs that walk no inner loop. `pr-spec` is the inner loop's one skippable node:
   `the-loop graph skip <id> --pr <n> --node pr-spec`.
 - **Stale.** When the chain changes, `reviewer-briefing` blocks with *stale: chain changed
-  since `<rev>`*. Re-derive the PR spec, or, when an authorized person says on the PR,
-  after the change, that it still holds, re-run the verb with `--still-valid <comment
-  URL>`. A comment older than the last record is refused. A lock (front matter only) does
-  not make a PR spec stale.
+  since `<rev>`*. Re-derive the PR spec, or, when an authorized person comments on the
+  PR, after the change was committed, with the line `pr-spec still-valid`, re-run the
+  verb with `--still-valid <comment URL>`. A lock (front matter only) does not make a PR
+  spec stale.
 - **Disclosure.** Recording into a repository more visible than the origin, or one whose
   visibility cannot be read, needs `--disclosure-approval <URL>`. The URL must point to a
-  comment on the **work item** by an authorized user saying `allow-disclosure
-  <owner>/<repo>`. Ask for it with `the-loop ask`, naming both visibilities. Never write
-  the grant yourself.
+  comment on the **work item** by an authorized user with the line `allow-disclosure
+  <owner>/<repo>` on its own. Ask for it with `the-loop ask`, naming both visibilities,
+  and push nothing to that repository until it is recorded. Never write the grant
+  yourself.
 - **Feedback on a PR spec.** Within the PR's scope: fix the PR spec on that PR, replying
   first. If it would change the work item: raise it on the work item with `the-loop
   comment`, say so on the PR, and let the chain change through its own gates. Nothing in

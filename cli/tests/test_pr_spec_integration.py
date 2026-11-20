@@ -84,7 +84,19 @@ def origin(tmp_path) -> Path:
     spec.mkdir(parents=True)
     for name, text in CHAIN.items():
         (spec / name).write_text(text, encoding="utf-8")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "chain")
     return root
+
+
+def _head(repo: Path) -> str:
+    done = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return done.stdout.strip()
 
 
 def _spec(origin: Path) -> Path:
@@ -118,10 +130,12 @@ def _write_pr_spec(
     for name, kind in prspec.PR_SPEC_FILES:
         (target / name).write_text(
             f'---\ntype: {kind}\nworkItem: "{WI_REF}"\npullRequest: "{pr_ref}"\n'
-            f'sourceRevision: "abc1234"\nchainDigest: "{digest}"\n---\n\n# PR spec\n\n'
+            f'sourceRevision: "{_head(origin)}"\nchainDigest: "{digest}"\n---\n\n# PR spec\n\n'
             f"## Context\n\nOne part of {WI_REF}.\n\n{bodies[name]}",
             encoding="utf-8",
         )
+    _git(checkout, "add", "-A")
+    _git(checkout, "commit", "-q", "-m", "pr spec")
 
 
 class FakeGitHub:
@@ -210,6 +224,7 @@ def test_a_changed_chain_blocks_the_pr_at_reviewer_briefing_until_it_is_re_deriv
 
     with (_spec(origin) / "design.md").open("a", encoding="utf-8") as fh:
         fh.write("\nA new decision.\n")
+    _git(origin, "commit", "-q", "-am", "design change")
     stale = inner.advance(ID, API_PR)
     assert (stale.node, stale.status) == ("reviewer-briefing", "block")
     assert "stale: chain changed since" in " ".join(stale.messages)
@@ -219,7 +234,7 @@ def test_a_changed_chain_blocks_the_pr_at_reviewer_briefing_until_it_is_re_deriv
     # Written after the record it moves forward, as a real declaration is.
     said = (datetime.now(timezone.utc) + timedelta(minutes=1)).isoformat()
     still = GhComment(
-        id="c", body="still holds", author="owner", created_at=said, url=url
+        id="c", body="pr-spec still-valid", author="owner", created_at=said, url=url
     )
     client = FakeGitHub(comments={("octo/api", 12): [still]})
     assert _record(origin, checkout, client, still_valid=url)["recorded"]

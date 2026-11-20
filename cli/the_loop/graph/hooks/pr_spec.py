@@ -23,6 +23,7 @@ recomputes the chain digest rather than reading one.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, List, Optional, Tuple
 
@@ -96,6 +97,37 @@ def _skipped(dirs: List[Path]) -> bool:
     return False
 
 
+def _implementation_since(dirs: List[Path]) -> str:
+    """When the PR's inner ``implementation`` last ran: its exit time, else its
+    entry time, else ``""`` (not reached, or no inner loop)."""
+    for directory in dirs:
+        try:
+            data = json.loads((directory / STATE_FILENAME).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        nodes = data.get("nodes") if isinstance(data, dict) else None
+        node = nodes.get("implementation") if isinstance(nodes, dict) else None
+        if isinstance(node, dict):
+            stamp = str(node.get("exitedAt") or node.get("enteredAt") or "")
+            if stamp:
+                return stamp
+    return ""
+
+
+def _after(recorded: str, since: str) -> bool:
+    """Is ISO time ``recorded`` later than ``since``? Unparsable is "no"."""
+    try:
+        a = datetime.fromisoformat(recorded.strip().replace("Z", "+00:00"))
+        b = datetime.fromisoformat(since.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if a.tzinfo is None:
+        a = a.replace(tzinfo=timezone.utc)
+    if b.tzinfo is None:
+        b = b.replace(tzinfo=timezone.utc)
+    return a > b
+
+
 def _command(item_id: str, repo: str, number: int, origin: str) -> str:
     flag = "" if _same(repo, origin) else f" --pr-repo {repo}"
     return f"`the-loop graph pr-spec {item_id} --pr {number}{flag} --checkout <PR checkout>`"
@@ -126,6 +158,16 @@ def _check_one(
         return f"{ref}: the PR-spec record is not usable ({exc}); re-run {redo}", ""
     if not record.required:
         if record.reason == "spec-only" and origin and _same(repo, origin):
+            # "Only spec files" is a fact about the PR's diff when it was
+            # recorded. Implementation adds code, so a spec-only record made
+            # before it last ran says nothing about the PR now.
+            since = _implementation_since(dirs)
+            if since and not _after(record.recorded_at, since):
+                return (
+                    f"{ref}: recorded as spec-only before implementation ran; "
+                    f"re-run {redo} to check the PR's diff again",
+                    "",
+                )
             return None, "spec-only"
         return (
             f"{ref}: recorded as not required ({record.reason}), but this work item "

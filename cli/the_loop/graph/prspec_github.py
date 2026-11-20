@@ -28,6 +28,7 @@ __all__ = [
     "check_disclosure",
     "narrows",
     "repository_visibility",
+    "says",
 ]
 
 VISIBILITY_RANK = {"private": 0, "internal": 1, "public": 2}
@@ -70,6 +71,17 @@ def _parse_ref(ref: str) -> Tuple[str, int]:
     except ValueError:
         return "", 0
     return (f"{parsed.owner}/{parsed.repo}" if parsed.repo else ""), parsed.number
+
+
+def says(body: str, phrase: str) -> bool:
+    """Does ``body`` carry ``phrase`` as a line of its own?
+
+    A line, not a substring: "do not allow-disclosure octo/api" or a quoted
+    ``> allow-disclosure octo/api`` must not read as the grant itself. The
+    phrase may be wrapped in backticks and end with a full stop.
+    """
+    pattern = rf"(?im)^[ \t]*(`?){re.escape(phrase)}\1[ \t]*\.?[ \t]*$"
+    return re.search(pattern, body or "") is not None
 
 
 def authorize_comment(
@@ -120,10 +132,8 @@ def authorize_comment(
             None,
             f"{url} is by @{author or '?'}, who is not authorized (routing.authorizedUsers)",
         )
-    if must_contain and not re.search(
-        rf"(?i)(?<![\w-]){re.escape(must_contain)}(?![\w./-])", found.body or ""
-    ):
-        return None, f"{url} does not say `{must_contain}`"
+    if must_contain and not says(found.body or "", must_contain):
+        return None, f"{url} does not say `{must_contain}` on a line of its own"
     return {"by": f"@{author}", "comment": url.strip(), "at": found.created_at}, None
 
 
