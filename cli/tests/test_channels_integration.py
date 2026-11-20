@@ -1802,12 +1802,41 @@ def test_a_press_whose_record_was_refused_keeps_its_button(tmp_path, monkeypatch
     ]
 
 
-# -- long text is digested, never truncated (issue-338) ---------------------------
+# -- long text reaches the central channel as its short form (issue-549) ----------
+
+#: A progress comment with everything Slack's mrkdwn cannot draw, and the
+#: question last (was the issue-338 digest's fixture).
+REPORT = """## Verification failed on task 3
+
+I ran the suite from `/home/user/the-loop/cli/tests/test_channels.py` and one case is red.
+
+```text
+$ uv run --project cli python -m pytest -q cli/tests/test_channels.py
+F.......
+```
+
+The failure:
+
+Traceback (most recent call last):
+  File "/home/user/the-loop/cli/the_loop/channels/slack.py", line 480, in _cap
+    return text[:max_chars].rstrip()
+TypeError: slice indices must be integers
+
+| case | expected | got |
+|------|----------|-----|
+| cap  | 400      | 401 |
+| link | kept     | kept |
+
+The cause is a string `maxChars` in the fixture. Two ways out: coerce in the renderer, or refuse at parse time (see [decision-094](https://github.com/o/r/blob/main/docs/decisions/decision-094.md)).
+
+1. Coerce in the renderer — one line, hides a config error.
+2. Refuse at parse time — the fail-closed direction, one more warning.
+
+Which one should I take?
+"""
 
 
 def _long_agent_comment():
-    from test_channels_digest import REPORT
-
     return REPORT
 
 

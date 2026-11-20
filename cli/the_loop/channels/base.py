@@ -87,8 +87,8 @@ class Event:
     it decided and what it is least sure of — what a reviewer on a phone actually
     wants from a gate, in place of the document's first 1,500 characters. It is
     optional and untrusted-adjacent (the session writes it): a renderer treats it
-    as text, capped and with mentions neutralised, and falls back to the digest
-    excerpt when it is absent. No consumer requires it.
+    as text, capped and with mentions neutralised, and builds a short form from
+    the text when it is absent (issue-549 R3). No consumer requires it.
 
     ``event_id`` (issue-549) names this one occurrence. :func:`~the_loop.channels.bus.publish`
     mints it when the publisher left it empty, and the outbox keeps it across a

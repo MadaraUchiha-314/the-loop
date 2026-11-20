@@ -14,7 +14,6 @@ from __future__ import annotations
 import pytest
 
 from the_loop import eventlog
-from the_loop.channels import digest
 from the_loop.channels.base import Event
 from the_loop.channels.shortform import (
     SUMMARY_MAX_CHARS,
@@ -172,11 +171,6 @@ def test_cap_never_leaves_a_link_open():
     capped = cap_short_form(text, 100)
     assert len(capped) <= 100
     assert capped.count("<") == capped.count(">")
-
-
-def test_digest_shares_the_cap():
-    # one constant: the digest's summary cap is the short form's
-    assert digest.SUMMARY_MAX_CHARS is SUMMARY_MAX_CHARS
 
 
 def test_preamble_counts_toward_the_cap():

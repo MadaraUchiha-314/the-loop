@@ -49,12 +49,6 @@ from .base import (
     InboundReply,
     PostResult,
 )
-from .digest import (
-    DEFAULT_DIGEST_MODE,
-    fit,
-    sanitize_summary,
-    truncate,
-)
 from .events import (
     APPROVAL_EVENTS,
     GATE_ANSWERED,
@@ -75,7 +69,6 @@ from .delivery import (
 from .render import LongForm, render_long_form
 from .shortform import build_short_form, long_form_adds
 from .state import ROOM_MODE, ChannelState, ChannelStores
-from .voice import room_lead
 from . import attachments
 
 logger = logging.getLogger("the-loop.channels")
@@ -123,7 +116,6 @@ __all__ = [
     "OPTION_LIMIT",
     "DEFAULT_APP_TOKEN_ENV",
     "DEFAULT_BOT_TOKEN_ENV",
-    "DEFAULT_MAX_CHARS",
     "DEFAULT_REACTIONS",
     "PHASE_SELECTION_MARKER",
     "CHECKBOX_LIMIT",
@@ -176,7 +168,6 @@ __all__ = [
     "expected_commands",
     "is_kickoff_repo_action",
     "kickoff_cursor_key",
-    "render_blocks",
     "render_short_blocks",
     "render_kickoff_question",
     "render_reply_blocks",
@@ -188,7 +179,6 @@ __all__ = [
 
 DEFAULT_BOT_TOKEN_ENV = "THE_LOOP_SLACK_BOT_TOKEN"
 DEFAULT_APP_TOKEN_ENV = "THE_LOOP_SLACK_APP_TOKEN"
-DEFAULT_MAX_CHARS = 1500
 #: Slack refuses a section over 3000 characters; the cap never exceeds this.
 _SECTION_LIMIT = 2900
 _HEADER_LIMIT = 150
@@ -1370,11 +1360,6 @@ class SlackChannelConfig:
     subscribe: Tuple[str, ...] = DEFAULT_EVENTS
     publish: Tuple[str, ...] = DEFAULT_PUBLISH
     verbosity: str = "normal"
-    max_chars: int = DEFAULT_MAX_CHARS
-    #: What happens to a text section longer than ``max_chars`` (issue-338):
-    #: ``digest`` (the default — the ask first, choices numbered, code and
-    #: traces as pointers, cut at a sentence) or ``truncate`` (13.10.0's cut).
-    long_messages: str = DEFAULT_DIGEST_MODE
     #: How a work item's own room reads (issue-393 B8): ``agentic`` (the default
     #: — one message per moment, first-person voice, no machine header, gates
     #: collapsed, progress edited in place) or ``classic`` (16.x's rendering,
@@ -1554,8 +1539,6 @@ class SlackChannelConfig:
             # Slack whole, so neither key limits anything any more. A config that
             # still sets one loads, and is told once per process.
             _warn_deprecated(section)
-            long_messages = DEFAULT_DIGEST_MODE
-            max_chars = DEFAULT_MAX_CHARS
             kickoff = section.get("kickoff") or {}
             if not isinstance(kickoff, Mapping):
                 logger.warning("channels.slack.kickoff is not a mapping — ignored")
@@ -1580,8 +1563,6 @@ class SlackChannelConfig:
                 subscribe=subscribe,
                 publish=publish,
                 verbosity=verbosity,
-                max_chars=min(max_chars, _SECTION_LIMIT),
-                long_messages=long_messages,
                 room_style=room_style,
                 kickoff_repo=str(kickoff.get("repo") or "").strip(),
                 kickoff_labels=tuple(
@@ -1770,128 +1751,10 @@ def _publish_list(raw: Any) -> Tuple[str, ...]:
 _TITLES: Dict[str, str] = strings.section("slack.title")
 
 
-#: 13.10.0's cut, kept for the verbose context lines (a detail value is a label,
-#: not prose) and for `longMessages: truncate`; the text sections go through
-#: :func:`fit` (issue-338).
-_cap = truncate
-
-
-def render_blocks(
-    event: Event,
-    verbosity: str,
-    *,
-    interactive: bool = False,
-    max_chars: int = DEFAULT_MAX_CHARS,
-    commands: Optional[Mapping[str, str]] = None,
-    long_messages: str = DEFAULT_DIGEST_MODE,
-    agentic: bool = False,
-    execute_keyword: str = "",
-) -> List[Dict[str, Any]]:
-    """``event`` as Block Kit: header, text, context, and the buttons it earns.
-
-    Strict supersets by verbosity, as :func:`render`: ``quiet`` is the header and
-    the link; ``normal`` adds the text; ``verbose`` adds the detail. Buttons: a
-    link button whenever the event carries a URL; one **command button** per
-    entry of ``commands`` (``command → keyword``, issue-337 — the caller decides
-    which message earns which, see :func:`expected_commands` and
-    :meth:`SlackChannelConfig.command_buttons_for`); Approve / Request changes
-    only for an approval-shaped event **and** only when ``interactive`` (Socket
-    Mode with the ``gate.feedback`` grant) — decision-103 D5. Every text section
-    — the text, the artifact excerpt — is drawn as mrkdwn and, above
-    ``max_chars``, digested or truncated per ``long_messages`` (issue-338,
-    :func:`fit`).
-
-    The phase-selection checklist (issue-393 R9) is the one message drawn as a
-    **control** rather than a digest: where its Execute button can be pressed
-    (``commands`` names ``execute``), its phases and its outer-loop question are
-    checkboxes (:func:`selection_control_blocks`) in place of the text; where it
-    cannot, the digest stands and a line says the checklist is edited on GitHub
-    (R9.4) — ``execute_keyword`` is the configured keyword that line names.
-    """
-    cap = min(max_chars, _SECTION_LIMIT)
-
-    def section(text: str) -> Dict[str, Any]:
-        return {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": fit(text, cap, long_messages, event.url),
-            },
-        }
-
-    def header() -> Dict[str, Any]:
-        title = _TITLES.get(event.event_type, event.event_type)
-        who = f" · {event.actor.label}" if event.actor and event.actor.label else ""
-        author = event.detail.get("author") if event.detail else ""
-        if author and not who:
-            who = f" · @{author}"
-        text = f"{title}{who} · {event.work_item}"[:_HEADER_LIMIT]
-        return {"type": "header", "text": {"type": "plain_text", "text": text}}
-
-    selection = selection_rows(event.text) if is_phase_selection(event) else None
-    control_keyword = str((commands or {}).get("execute") or "")
-    blocks: List[Dict[str, Any]] = []
-    if selection is not None and control_keyword:
-        # The control (R9.1, R9.2): the header keeps its place outside a room;
-        # the checklist's prose gives way to the boxes, at every verbosity — the
-        # boxes are the point of the message, as the summary is of a gate's.
-        if not agentic:
-            blocks.append(header())
-        blocks.extend(selection_control_blocks(selection, control_keyword))
-    elif agentic:
-        # issue-393 B4/R7, R11: no machine header — the room's binding already
-        # says which item this is. One state emoji and the event's own
-        # first-person sentence lead instead (voice.room_lead). The text section
-        # below is skipped: the lead IS the text, drawn as mrkdwn.
-        lead = room_lead(event)
-        blocks.append(section(lead))
-    else:
-        blocks.append(header())
-        if verbosity != "quiet" and event.text.strip():
-            blocks.append(section(event.text))
-    # issue-393 B1/R8: the agent's own summary leads the message when it wrote
-    # one — what a reviewer on a phone wants from a gate, in place of the
-    # document's first N characters. Rendered at any verbosity (it is the point
-    # of a gate message), sanitized (a summary pings no one), and it stands in
-    # for the excerpt below; absent, the excerpt is the fallback exactly as before.
-    summary = sanitize_summary(getattr(event, "summary", "") or "")
-    if summary:
-        blocks.append(section(summary))
-    if verbosity == "verbose" and event.detail:
-        lines = [
-            f"*{key}:* {_cap(str(value), 300)}"
-            for key, value in event.detail.items()
-            if key not in ("excerpt",) and str(value).strip()
-        ]
-        excerpt = str(event.detail.get("excerpt") or "").strip()
-        if excerpt and not summary:
-            blocks.append(section(excerpt))
-        if lines:
-            blocks.append(
-                {
-                    "type": "context",
-                    "elements": [
-                        {"type": "mrkdwn", "text": "\n".join(lines)[:_SECTION_LIMIT]}
-                    ],
-                }
-            )
-    elif verbosity == "normal" and event.detail.get("excerpt"):
-        blocks.append(section(str(event.detail["excerpt"])))
-    if selection is not None and not control_keyword:
-        # No control can be posted here (R9.4): never "untick right here" where
-        # nothing can be unticked — say where the boxes are, and link them.
-        blocks.append(
-            {
-                "type": "context",
-                "elements": [
-                    _mrkdwn(github_checklist_line(event.url, execute_keyword))
-                ],
-            }
-        )
-    actions = _message_actions(event, interactive=interactive, commands=commands)
-    if actions:
-        blocks.append({"type": "actions", "elements": actions})
-    return blocks
+def _label(value: str, limit: int = 300) -> str:
+    """A verbose detail value drawn as a label: one line's worth, never a body."""
+    value = value.strip()
+    return value if len(value) <= limit else value[:limit].rstrip() + "…"
 
 
 def _message_actions(
@@ -1999,7 +1862,7 @@ def render_short_blocks(
         )
     if verbosity == "verbose" and event.detail:
         lines = [
-            f"*{key}:* {_cap(str(value), 300)}"
+            f"*{key}:* {_label(str(value))}"
             for key, value in event.detail.items()
             if key not in ("excerpt",) and str(value).strip()
         ]

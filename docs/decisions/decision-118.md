@@ -1,6 +1,8 @@
 # Decision 118: long text reaches Slack as a structural digest the channel computes — never a model's summary — above `maxChars`, under one enum key
 
-- **Status:** proposed
+- **Status:** superseded by [decision-154](decision-154.md) (issue-549): Slack gets
+  a short form the agent writes and, in a declared room, the whole text; nothing is
+  condensed or cut, and `maxChars` / `longMessages` are deprecated and ignored
 - **Date:** 2026-09-11
 - **Work item:** [issue-338](https://github.com/MadaraUchiha-314/the-loop/issues/338)
 - **Deciders:** jc1993 (the ask), the-loop (design); MadaraUchiha-314 (owner, at the PR)

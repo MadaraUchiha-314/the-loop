@@ -482,8 +482,7 @@ def test_deprecated_slack_keys_warn_once(tmp_path, caplog, monkeypatch):
     """R1.3: the config loads, the values are ignored, and one warning per
     process names each key present and the migration note."""
     from the_loop.channels import slack as slack_module
-    from the_loop.channels.digest import DEFAULT_DIGEST_MODE
-    from the_loop.channels.slack import DEFAULT_MAX_CHARS, SlackChannelConfig
+    from the_loop.channels.slack import SlackChannelConfig
 
     monkeypatch.setattr(slack_module, "_DEPRECATED_WARNED", set())
     config = {
@@ -501,8 +500,7 @@ def test_deprecated_slack_keys_warn_once(tmp_path, caplog, monkeypatch):
         first = SlackChannelConfig.from_mapping(config)
         SlackChannelConfig.from_mapping(config)
     assert first.enabled
-    assert first.max_chars == DEFAULT_MAX_CHARS
-    assert first.long_messages == DEFAULT_DIGEST_MODE
+    assert not hasattr(first, "max_chars") and not hasattr(first, "long_messages")
     warned = [r.getMessage() for r in caplog.records if "deprecated" in r.getMessage()]
     assert len(warned) == 2  # one per key present, once per process
     assert any("channels.slack.maxChars" in line for line in warned)

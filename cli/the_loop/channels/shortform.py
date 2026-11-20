@@ -49,7 +49,7 @@ __all__ = [
 #: How long a short form may be (issue-393 R8, issue-549 R3.6). A short form is
 #: meant to be 2–3 sentences; a generous ceiling keeps a runaway one from taking
 #: over the message while never clipping a real one. The one constant: the
-#: digest and the ``--summary`` verbs read it from here.
+#: short-form builder and the ``--summary`` verbs read it from here.
 SUMMARY_MAX_CHARS = 600
 
 #: Event types a session writes: its comment and its question. Without a

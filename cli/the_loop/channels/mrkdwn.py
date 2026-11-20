@@ -3,13 +3,12 @@
 Lossless on the words: ``**bold**`` becomes ``*bold*``, headings and task boxes
 are drawn with the marks Slack has, links become ``<url|label>``, HTML comments
 go and broadcast sequences are neutralised. Code fences and code spans are left
-exactly as written. The digest used it for every message; since issue-549 the
-short form, the ``text`` fallback and the context lines use it, and the long
-form uses :func:`unfold` before it goes to Slack as standard markdown.
+exactly as written. The short form, the ``text`` fallback and the context
+lines use it; the long form uses :func:`unfold` before it goes to Slack as
+standard markdown (issue-549).
 
 Every pattern is linear in its input (a character class that excludes its own
 delimiter, or a line anchor), so a crafted 64 KB comment costs what prose costs.
-:mod:`the_loop.channels.digest` re-exports these names for its callers.
 """
 
 from __future__ import annotations
@@ -137,7 +136,7 @@ def to_mrkdwn(text: str) -> str:
 
 
 # Public names for the modules that build on this one (the renderer, the
-# short-form builder); the private ones stay for the digest's own use.
+# short-form builder).
 CODE_SPAN_RE = _CODE_SPAN
 FENCE_RE = _FENCE
 outside_code = _outside_code

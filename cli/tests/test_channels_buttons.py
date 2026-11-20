@@ -24,9 +24,19 @@ from the_loop.channels.slack import (
     SlackBotChannel,
     SlackChannelConfig,
     expected_commands,
-    render_blocks,
+    render_short_blocks,
     render_reply_blocks,
 )
+from the_loop.channels.shortform import build_short_form
+
+
+def short_blocks(event, verbosity="normal", **kw):
+    """The short message's blocks as the channel draws them (issue-549): the
+    event's own short form, then the controls — what replaced ``render_blocks``."""
+    return render_short_blocks(
+        event, build_short_form(event).text, verbosity=verbosity, **kw
+    )
+
 
 CHECKLIST = (
     "🤖 _the-loop_ — **which phases does this work item need?**\n\n"
@@ -146,7 +156,7 @@ def a_press(
             "ts": ts,
             "thread_ts": thread,
             "text": "the-loop: comment.agent on github:o/r#7",
-            "blocks": render_blocks(
+            "blocks": short_blocks(
                 checklist_event(),
                 "normal",
                 commands={"execute": "the-loop execute"},
@@ -272,11 +282,11 @@ def test_a_disabled_keyword_renders_no_button(tmp_path, monkeypatch):
     )
 
 
-def test_render_blocks_puts_command_buttons_before_the_approval_pair():
+def test_the_short_message_puts_command_buttons_before_the_approval_pair():
     """A command button is the message's call to action; the Approve pair stays
     where issue-309 put it, after."""
     event = checklist_event(event_type="phase-approval-pending")
-    blocks = render_blocks(
+    blocks = short_blocks(
         event, "normal", interactive=True, commands={"execute": "the-loop execute"}
     )
     assert [a for a, _ in buttons(blocks)] == [
@@ -285,7 +295,7 @@ def test_render_blocks_puts_command_buttons_before_the_approval_pair():
         f"{ACTION_PREFIX}approve",
         f"{ACTION_PREFIX}changes",
     ]
-    assert render_blocks(event, "normal", commands={}) == render_blocks(event, "normal")
+    assert short_blocks(event, "normal", commands={}) == short_blocks(event, "normal")
 
 
 def test_a_session_question_with_a_default_earns_a_defaults_are_fine_button():
@@ -303,14 +313,14 @@ def test_a_session_question_with_a_default_earns_a_defaults_are_fine_button():
         text="Two small calls — per-line or per-file findings?",
         detail={"default": "Defaults are fine — go ahead"},
     )
-    interactive = render_blocks(event, "normal", interactive=True)
+    interactive = short_blocks(event, "normal", interactive=True)
     assert (f"{ACTION_PREFIX}default", "Defaults are fine — go ahead") in buttons(
         interactive
     )
     # Without interactivity there is no button nobody could press.
     assert not any(
         a == f"{ACTION_PREFIX}default"
-        for a, _ in buttons(render_blocks(event, "normal"))
+        for a, _ in buttons(short_blocks(event, "normal"))
     )
 
 
@@ -323,7 +333,7 @@ def test_no_defaults_button_without_a_stated_default():
     )
     assert not any(
         a == f"{ACTION_PREFIX}default"
-        for a, _ in buttons(render_blocks(event, "normal", interactive=True))
+        for a, _ in buttons(short_blocks(event, "normal", interactive=True))
     )
 
 
@@ -500,7 +510,7 @@ def test_an_approve_press_is_reported_too(tmp_path, monkeypatch):
     message = {
         "ts": "1750.5",
         "text": "Approval needed",
-        "blocks": render_blocks(
+        "blocks": short_blocks(
             checklist_event(event_type="phase-approval-pending"),
             "normal",
             interactive=True,

@@ -2,7 +2,7 @@
 
 # Decision 154: Slack gets a short form the agent writes, and a declared room gets the whole text in its thread as Slack markdown
 
-- **Status:** proposed (the owner decides at the PR)
+- **Status:** accepted
 - **Date:** 2026-11-19
 - **Deciders:** MadaraUchiha-314 (the answers on PR #550, the approvals), the-loop
   (the mechanism)

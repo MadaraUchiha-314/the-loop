@@ -15,8 +15,8 @@ breaks:
   table too large for a part becomes an aligned code block first (R2.3);
 * when there is more than one part, each carries an ``(n/m)`` mark (R2.6).
 
-The block boundaries come from the line-based parser the digest used
-(:func:`block_spans`, moved here from ``digest.py``, which still uses it). One
+The block boundaries come from a line-based parser (:func:`block_spans`, which
+issue-549 moved here from the retired digest). One
 pass over the lines; every pattern is linear, so a crafted 64 KB comment costs
 what prose costs (abuse case 3). Pure: no Slack, no disk.
 """

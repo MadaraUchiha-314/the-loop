@@ -208,7 +208,7 @@ Tests are named so the T8 `-k` filter in `testing-plan.md` finds the abuse cases
 
 ### Finish
 
-- [ ] 17. Retire the digest.
+- [x] 17. Retire the digest.
   - Remove condensing and truncation from `channels/digest.py` (the block parser moves
     to the renderer in task 6), its config readers and its tests; mark decision-118
     superseded and decision-154 accepted.

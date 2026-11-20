@@ -250,8 +250,8 @@ def _recipients(ctx: HookContext, event: str) -> List[str]:
     return [str(r) for r in (ctx.params.get("roles") or [])]
 
 
-#: How much of an artifact a notification carries (issue-309 R4.4). The channel
-#: caps it again at its own `maxChars`; this keeps the event itself bounded.
+#: How much of an artifact a notification carries (issue-309 R4.4). This keeps
+#: the event itself bounded.
 EXCERPT_MAX_CHARS = 4_000
 
 

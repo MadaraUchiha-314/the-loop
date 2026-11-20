@@ -1,16 +1,14 @@
 """The room's voice: emoji + first-person lead, no machine header (issue-393 B4).
 
-Pure table and formatter tests, plus render_blocks in agentic mode.
+Pure table and formatter tests.
 
 Spec: docs/specs/issue-393/{requirements,design}.md (R7, R11).
 """
 
 from __future__ import annotations
 
-import json
 
 from the_loop.channels.base import Event
-from the_loop.channels.slack import render_blocks
 from the_loop.channels.voice import channel_header, emoji_for, room_lead
 
 REF = "github:octo/repo#1"
@@ -56,31 +54,3 @@ def test_a_shared_channel_header_is_a_short_id_and_title_not_the_raw_ref():
     )
     assert header == "📋 #1 Add a repository health check"
     assert "github:octo/repo" not in header
-
-
-# -- render_blocks in agentic mode ----------------------------------------------
-
-
-def test_agentic_render_drops_the_machine_header():
-    event = _event(
-        "phase.started",
-        text="🔨 On to the design.",
-        detail={"node": "design"},
-    )
-    blocks = render_blocks(event, "normal", agentic=True)
-    rendered = json.dumps(blocks)
-    # no header block, no raw event type, no full ref
-    assert not any(b.get("type") == "header" for b in blocks)
-    assert "phase.started" not in rendered
-    assert "github:octo/repo#1" not in rendered
-    assert "On to the design." in rendered
-
-
-def test_classic_render_keeps_the_header():
-    event = _event(
-        "phase-approval-pending",
-        text="ready",
-        detail={"node": "requirements-approval"},
-    )
-    blocks = render_blocks(event, "normal", agentic=False)
-    assert any(b.get("type") == "header" for b in blocks)

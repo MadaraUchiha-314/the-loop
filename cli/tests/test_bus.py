@@ -39,10 +39,20 @@ from the_loop.channels.slack import (
     APPROVE_VALUE,
     CHANGES_VALUE,
     SlackChannelConfig,
-    render_blocks,
+    render_short_blocks,
 )
+from the_loop.channels.shortform import build_short_form
 from the_loop.control import ControlConfig, parse_command
 from the_loop.identity import Principal
+
+
+def short_blocks(event, verbosity="normal", **kw):
+    """The short message's blocks as the channel draws them (issue-549): the
+    event's own short form, then the controls — what replaced ``render_blocks``."""
+    return render_short_blocks(
+        event, build_short_form(event).text, verbosity=verbosity, **kw
+    )
+
 
 PERSON = Principal(ids={"github": "octocat", "slack": "U1"}, name="Octo")
 
@@ -484,55 +494,32 @@ def _buttons(blocks):
     return [e["action_id"] for b in actions for e in b["elements"]]
 
 
-def test_render_blocks_is_header_text_and_a_link_button():
-    event = an_event(url="https://gh/o/r/issues/7", actor=PERSON)
-    blocks = render_blocks(event, "normal")
-    assert _types(blocks) == ["header", "section", "actions"]
-    assert "Question from the agent" in blocks[0]["text"]["text"]
-    assert "Octo" in blocks[0]["text"]["text"]
-    assert blocks[1]["text"]["text"] == "A or B?"
-    assert _buttons(blocks) == ["the-loop:open"]
-    assert blocks[2]["elements"][0]["url"] == "https://gh/o/r/issues/7"
-
-
-def test_render_blocks_verbosity_levels_are_strict_supersets():
+def test_verbose_adds_the_detail_lines():
+    """The verbose detail survives the digest's retirement (issue-549): a
+    context block under the short form, one ``*key:* value`` line each."""
     event = an_event(url="https://x", detail={"actor": "agent", "excerpt": "## R1"})
-    quiet = render_blocks(event, "quiet")
-    normal = render_blocks(event, "normal")
-    verbose = render_blocks(event, "verbose")
-    assert _types(quiet) == ["header", "actions"]
-    assert _types(normal) == ["header", "section", "section", "actions"]  # + excerpt
-    assert _types(verbose) == ["header", "section", "section", "context", "actions"]
-    assert "*actor:* agent" in verbose[3]["elements"][0]["text"]
-
-
-def test_render_blocks_caps_text_and_points_at_the_link():
-    """13.10.0's cut, kept behind `longMessages: truncate` (issue-338 R1.4); the
-    default above the cap is the digest — `test_channels_digest.py`."""
-    event = an_event(text="x" * 5000, url="https://x")
-    blocks = render_blocks(event, "normal", max_chars=400, long_messages="truncate")
-    text = blocks[1]["text"]["text"]
-    assert text.startswith("x" * 400) and "more characters — see the link" in text
-    digested = render_blocks(event, "normal", max_chars=400)[1]["text"]["text"]
-    assert len(digested) <= 400 and digested.endswith(
-        "_… full text: <https://x|GitHub>_"
-    )
+    normal = short_blocks(event, "normal")
+    verbose = short_blocks(event, "verbose")
+    assert _types(normal) == ["section", "actions"]
+    assert _types(verbose) == ["section", "context", "actions"]
+    assert "*actor:* agent" in verbose[1]["elements"][0]["text"]
+    assert "excerpt" not in verbose[1]["elements"][0]["text"]
 
 
 @pytest.mark.parametrize("event_type", APPROVAL_EVENTS)
 def test_approve_buttons_only_when_interactive(event_type):
     event = an_event(event_type, source="loop", url="https://x")
-    assert _buttons(render_blocks(event, "normal", interactive=False)) == [
+    assert _buttons(short_blocks(event, "normal", interactive=False)) == [
         "the-loop:open"
     ]
-    blocks = render_blocks(event, "normal", interactive=True)
+    blocks = short_blocks(event, "normal", interactive=True)
     assert _buttons(blocks) == ["the-loop:open", "the-loop:approve", "the-loop:changes"]
     values = [e.get("value") for e in blocks[-1]["elements"]]
     assert values == [None, APPROVE_VALUE, CHANGES_VALUE]
 
 
 def test_a_non_approval_event_never_carries_approve_buttons():
-    blocks = render_blocks(
+    blocks = short_blocks(
         an_event("comment.human", source="github"), "normal", interactive=True
     )
     assert "the-loop:approve" not in _buttons(blocks)
