@@ -17,7 +17,9 @@ Every Slack message from the-loop becomes **two parts**:
 - **Short form.** The top-level message, written by the agent for a phone: what
   happened and what is needed from you.
 - **Long form.** The whole text, as a reply in that message's thread, drawn with
-  Slack's own blocks, with tables as real tables. Nothing is cut.
+  Slack's own blocks, with tables as real tables. Nothing is cut. This applies in a
+  declared room. The central channel, where each work item already lives in one
+  thread, gets the short form only and links to GitHub for the rest.
 
 The `maxChars` and `longMessages` keys are removed, and with them the digest and the
 truncation. Link previews are switched off. Six smaller changes ship with this:
@@ -33,9 +35,8 @@ truncation. Link previews are switched off. Six smaller changes ship with this:
 own Slack conversation. On this work item the gate messages went to a second thread,
 because their ref was lowercased.
 
-Read R1–R3 closely: they replace the issue-338 digest. R4 has the one open question:
-where the long form goes in the central channel, which already uses one thread per
-work item.
+Read R1–R4 closely: they replace the issue-338 digest, and R4 says where each form
+goes. There are no open questions.
 
 ```mermaid
 flowchart LR
@@ -59,6 +60,7 @@ author settled them on PR #550:
 | Who writes the short form | the agent | [r4637606698](https://github.com/MadaraUchiha-314/the-loop/pull/550#discussion_r4637606698) |
 | Keep `maxChars` / `longMessages` | no, remove them now | [r4637607269](https://github.com/MadaraUchiha-314/the-loop/pull/550#discussion_r4637607269) |
 | Same shape in declared rooms | yes | [r4637609992](https://github.com/MadaraUchiha-314/the-loop/pull/550#discussion_r4637609992) |
+| The long form in the central channel | Slack has no collapsible section we control, so post none there | [7029208160](https://github.com/MadaraUchiha-314/the-loop/pull/550#issuecomment-7029208160) |
 | Other improvements in scope | all six | [r4637738970](https://github.com/MadaraUchiha-314/the-loop/pull/550#discussion_r4637738970) |
 | Jira out of scope | yes | [r4637740172](https://github.com/MadaraUchiha-314/the-loop/pull/550#discussion_r4637740172) |
 
@@ -83,9 +85,9 @@ never have to open GitHub just to read what was cut off.
 
 #### Acceptance criteria (EARS)
 
-1. WHEN the-loop posts an event whose long form is non-empty to Slack THEN the system
-   SHALL deliver every word of the long form to Slack. It SHALL NOT digest, truncate
-   or replace any part of it with a pointer.
+1. WHEN the-loop posts the long form of an event to Slack (R4.1, R4.3) THEN the system
+   SHALL deliver every word of it. It SHALL NOT digest, truncate or replace any part
+   of it with a pointer.
 2. The system SHALL NOT read the `channels.slack.maxChars` or
    `channels.slack.longMessages` keys, and it SHALL NOT offer the `digest` or
    `truncate` modes.
@@ -144,8 +146,9 @@ without reading the whole document.
    every channel.
 2. WHEN an event carries a short form THEN the Slack top-level message SHALL be that
    short form, with an *Open on GitHub* button when the event has a URL.
-3. WHEN an event carries a long form that is more than its short form THEN the system
-   SHALL post the long form as a reply in the thread of the short message, under R2.
+3. WHEN an event carries a long form that is more than its short form, in a
+   conversation where R4 posts the long form, THEN the system SHALL post the long form
+   as a reply in the thread of the short message, under R2.
    WHEN the long form adds nothing to the short form THEN the system SHALL post no
    reply.
 4. IF a session-authored event carries no short form THEN the system SHALL build one
@@ -167,21 +170,25 @@ without reading the whole document.
    long form exactly as it does today. The short form SHALL NOT change the GitHub
    comment body.
 
-### Requirement 4 — The same shape in rooms and in the central channel
+### Requirement 4 — Where each form goes
 
-**User story:** As a collaborator, I want every conversation to work the same way, so
-that I do not have to learn two layouts.
+**User story:** As a collaborator, I want a work item's own room to carry the whole
+conversation, and the shared central channel to stay scannable, so that I read
+details where I work on the item and only headlines where every item meets.
 
 #### Acceptance criteria (EARS)
 
 1. WHEN the-loop posts an event in a declared room THEN the short form SHALL be a
    top-level message in the room, and the long form SHALL be in that message's thread.
-2. WHEN the-loop posts an event in the central channel THEN the short and long forms
-   SHALL follow the same rules. Where the long form goes there is the open question
-   below (Q1).
-3. WHEN the-loop is answering a mention in a thread (issue-507) THEN the short form
-   SHALL be the reply in that thread, and the long form SHALL follow it in the same
-   thread.
+2. WHEN the-loop posts an event in the central channel THEN the system SHALL post only
+   the short form, as a reply in the work item's thread, with an _Open on GitHub_
+   button when the event has a URL. It SHALL NOT post the long form there. Slack
+   offers no collapsible section whose fold the-loop controls, and a thread reply
+   cannot have a thread of its own (decided on PR #550).
+3. WHEN the-loop is answering a mention in a thread of a declared room (issue-507)
+   THEN the short form SHALL be the reply in that thread, and the long form SHALL
+   follow it in the same thread. In the central channel, the answer to a mention SHALL
+   follow R4.2.
 4. Gate messages and their Approve / Request changes buttons, command buttons and the
    phase-selection control (issue-393 R9) SHALL be part of the short message, so that
    a decision is taken from the top-level message.
@@ -404,15 +411,8 @@ and the channel keyed them apart from `github:MadaraUchiha-314/the-loop#549`
 
 ## Open questions
 
-1. **Where the long form goes in the central channel.** Each work item already lives
-   in one thread there, and Slack does not nest threads. The short message is a reply
-   in that thread, so it has no thread of its own. I recommend this: in the central
-   channel, the long form is posted as the reply directly after its short form, in the
-   work item's thread, and declared rooms keep the short-message-plus-thread shape
-   exactly. The alternative is to drop the per-item thread in the central channel and
-   post each short form top-level, with its own thread. That turns the central channel
-   into a room shared by every work item, and a busy instance would flood it. Asked
-   on PR #550.
+None. Where the long form goes in the central channel was settled on PR #550: nowhere
+(R4.2).
 
 ## Review comments
 
