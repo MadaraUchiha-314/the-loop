@@ -21,3 +21,9 @@ workItem: issue-543
 **Run with the daemon's variables set,** 22 tests in `test_poll_status.py` and
 `test_poll_command.py` failed: they read this machine's live instance. With the variables
 unset, as in CI, they pass. None of them touches code this change edits.
+
+## Re-run after the reviews
+
+At `4372de01`, after the self-review, critic and security fixes: `make check` exits 0,
+with 7200 passed, pyright at 0 errors and ruff clean. It was run with
+`THE_LOOP_INSTANCE`, `THE_LOOP_WORK_ITEM` and `THE_LOOP_CLI_CONFIG` unset, as before.
