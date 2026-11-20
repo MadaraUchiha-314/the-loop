@@ -219,3 +219,26 @@ def test_stored_envelopes_match_the_contracts_envelope_schema(tmp_path):
             assert set(delivery["event"]) == set(schema["required"]) | {"workItem"}
     finally:
         gw.close()
+
+
+def test_a_manager_answers_every_operation_the_routes_call():
+    """
+    Feature: one surface, two roles
+      Scenario: a route calls an operation only the worker implements
+        Given every `facade.<operation>(` call in the REST routes and the MCP tools
+        When each is looked up on the manager's facade
+        Then all of them are there, so no route answers 500 on a manager
+
+    Requirement: docs/specs/issue-374/requirements.md R2.1
+    """
+    import re
+
+    from the_loop.api import mcp, routes
+    from the_loop.manager.facade import ManagerFacade
+
+    called = set()
+    for module in (routes, mcp):
+        source = pathlib.Path(module.__file__).read_text()
+        called |= set(re.findall(r"\bfacade\.([a-z_]+)\(", source))
+    assert called, "the routes call the facade"
+    assert sorted(name for name in called if not hasattr(ManagerFacade, name)) == []
