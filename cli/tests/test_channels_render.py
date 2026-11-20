@@ -287,3 +287,14 @@ def test_a_code_block_with_an_oversized_info_string_splits_and_keeps_every_word(
     assert long_form.parts
     assert all(len(part) <= LONG_FORM_PART_CHARS for part in long_form.parts)
     assert sum(part.count("a") for part in long_form.parts) >= text.count("a")
+
+
+def test_a_fence_marker_longer_than_a_part_never_floods_the_conversation():
+    """Abuse case 3 (self-review round 2): a fence of thousands of backticks is
+    split as plain lines, within the budget, in a handful of parts."""
+    fence = "`" * 5510
+    text = fence + "\n" + ("word " * 2000) + "\n" + fence
+    long_form = render_long_form(text)
+    assert len(long_form.parts) <= 4
+    assert all(len(part) <= LONG_FORM_PART_CHARS for part in long_form.parts)
+    assert sum(part.count("word") for part in long_form.parts) == 2000

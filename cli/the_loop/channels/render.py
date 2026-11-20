@@ -282,6 +282,10 @@ def _oversized(
     """One block too large for a part, split at lines: the first piece within
     ``first_room`` (or ``""`` when nothing fits there), the rest within ``room``.
     A code block's pieces each reopen the fence and close it."""
+    if kind == "code" and len(_fence_of(lines[0])) * 4 > room:
+        # a fence marker too long to repeat on every piece: the block is split
+        # as plain lines, every character kept, each part within the budget
+        kind = ""
     if kind != "code":
         chunks = _chunk_lines(lines, first_room, room, 0)
         return ["\n".join(chunk) for chunk in chunks]

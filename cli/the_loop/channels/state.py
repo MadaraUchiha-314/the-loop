@@ -1201,7 +1201,7 @@ def _posted_map(value: Any, live: Any = ()) -> Dict[str, Dict[str, Any]]:
     is a duplicate message on a replay, never a crash.
 
     ``live`` names the messages still edited in place (the progress messages):
-    the newest record of each is kept past the cap, because a later edit reads
+    the newest two records of each are kept past the cap, because a later edit reads
     it to find the message's replies (R6.2)."""
     if not isinstance(value, dict):
         return {}
@@ -1218,11 +1218,13 @@ def _posted_map(value: Any, live: Any = ()) -> Dict[str, Dict[str, Any]]:
             ],
         }
     live_tops = {str(ts) for ts in live if ts}
-    newest: Dict[str, str] = {}
+    newest: Dict[str, List[str]] = {}
     for event_id, entry in out.items():
         if entry["top"] in live_tops:
-            newest[entry["top"]] = event_id
-    pinned = set(newest.values())
+            newest.setdefault(entry["top"], []).append(event_id)
+    # the newest two per message: an edit in flight is the newest, and the one
+    # before it is what that edit reads to find the replies
+    pinned = {event_id for ids in newest.values() for event_id in ids[-2:]}
     for event_id in list(out):
         if len(out) <= POSTED_CAP + len(pinned):
             break

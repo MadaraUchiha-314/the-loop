@@ -2772,7 +2772,7 @@ class SlackBotChannel:
             ),
             short_source=short.source,
             tables_as_code=long_form.tables_as_code,
-            parts_text=(build_short_form(event).fallback if preamble.strip() else ""),
+            parts_text=_without_preamble(short.fallback, preamble),
         )
 
     def _parts_under(self, event: Event, channel_id: str, ts: str) -> Tuple[str, ...]:
@@ -3105,8 +3105,8 @@ class SlackBotChannel:
                 }
             )
         error = ""
-        client = self._client()
         try:
+            client = self._client()
             with_retry(
                 lambda: client.chat_update(
                     channel=channel_id,
@@ -4378,3 +4378,16 @@ def run_socket_listener(
         client.close()
         logger.info("slack: Socket Mode listener stopped")
     return 0
+
+
+def _without_preamble(text: str, preamble: str) -> str:
+    """``text`` with the ``preamble`` it opens with removed: what a long-form
+    part's ``text`` fallback carries, so a mention reaches only the top message
+    (issue-549 R7.4). ``""`` when there is no preamble (the part uses the short
+    form itself)."""
+    preamble = preamble.strip()
+    if not preamble:
+        return ""
+    if text.startswith(preamble):
+        return text[len(preamble) :].lstrip("\n") or text
+    return text

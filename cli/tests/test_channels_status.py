@@ -198,3 +198,24 @@ def test_failure_does_not_fail_delivery(tmp_path, caplog):
     assert result.ok and len(client.posted) == 2  # root + the question
     assert _status(tmp_path) == {}
     assert "status reaction" in caplog.text
+
+
+def test_closing_a_gate_without_a_client_is_recorded_not_raised(tmp_path):
+    """Self-review round 2: a client that cannot be built when a gate closes is
+    logged and recorded like a refused edit; the delivery does not raise."""
+    client = FakeSlackClient()
+    bot = make_channel(tmp_path, client)
+    bot.post(_event("phase-approval-pending", detail={"node": "design-approval"}))
+
+    def no_client():
+        raise RuntimeError("THE_LOOP_SLACK_BOT_TOKEN is not set")
+
+    bot._client = no_client  # type: ignore[method-assign]
+    result = bot.post(
+        _event(
+            "gate.answered",
+            detail={"node": "design-approval", "outcome": "approved", "by": "x"},
+        )
+    )
+    assert result is not None
+    assert not client.updates  # nothing edited, nothing raised

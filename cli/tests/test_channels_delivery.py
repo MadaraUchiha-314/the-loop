@@ -331,7 +331,9 @@ def test_the_posted_memory_keeps_a_live_progress_message_s_record():
     }
     for n in range(POSTED_CAP + 5):
         records[f"other-{n}"] = {"channel": "C1", "top": f"1800.{n + 1}", "parts": []}
+    records["progress-3"] = {"channel": "C1", "top": "1700.1", "parts": ["1700.2"]}
     kept = _posted_map(records, live=["1700.1"])
-    assert "progress-2" in kept and "progress-1" not in kept
-    assert len(kept) == POSTED_CAP + 1
+    # the edit in flight (3) and the one before it (2), which it reads
+    assert {"progress-2", "progress-3"} <= set(kept) and "progress-1" not in kept
+    assert len(kept) == POSTED_CAP + 2
     assert len(_posted_map(records)) == POSTED_CAP
