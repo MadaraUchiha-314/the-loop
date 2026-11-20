@@ -250,7 +250,7 @@ class _Cycle:
         self._notified = state.notified
 
     def perform(self, due: Due) -> None:
-        if due.act in ("nudge", "notify") and not self._still_owed(due):
+        if not self._still_owed(due):
             return
         if due.act == "end-stall":
             self._end_stall(due)

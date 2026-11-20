@@ -813,6 +813,39 @@ def test_a_nudge_is_charged_to_the_budget_the_log_holds_now(world):
     assert [r["nudge"] for r in world.records("session.nudged")] == [1, 1]
 
 
+def test_an_answer_recorded_after_the_snapshot_stops_the_default(world):
+    """An authorized person's answer was recorded while the watcher served an
+    earlier session: the default is not taken over their words."""
+    ask(world)
+    world.after_the_snapshot(
+        lambda: world.emit(30.9, "session.ask_answered", ask_id="ask-1", actor="octo")
+    )
+    world.cycle(31)
+    assert world.pasted() == [] and world.published == []
+    assert world.records("session.ask_default_taken") == []
+
+
+def test_an_answer_recorded_after_the_snapshot_stops_the_reminder(world):
+    ask(world, default="")
+    world.after_the_snapshot(
+        lambda: world.emit(120.9, "session.ask_answered", ask_id="ask-1", actor="octo")
+    )
+    world.cycle(121)
+    assert world.published == [] and world.records("session.ask_reminded") == []
+
+
+def test_a_stall_ended_after_the_snapshot_is_not_ended_twice(world):
+    idle(world)
+    world.cycle(10)
+    world.started(11)
+    stall_id = world.records("session.nudged")[0]["stall_id"]
+    world.after_the_snapshot(
+        lambda: world.emit(11.4, "session.stall_ended", stall_id=stall_id)
+    )
+    world.cycle(11.5)
+    assert len(world.records("session.stall_ended")) == 1 and world.published == []
+
+
 def test_an_unchanged_log_gets_every_act_it_owed(world):
     owes_everything(world)
     world.after_the_snapshot(lambda: None)
