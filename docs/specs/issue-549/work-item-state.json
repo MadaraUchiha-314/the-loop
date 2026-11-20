@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-549",
-  "currentNode": "requirements-definition",
+  "currentNode": "requirements-approval",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -37,10 +37,18 @@
     },
     "requirements-definition": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-11-20T02:26:02+00:00",
-      "exitedAt": "",
+      "exitedAt": "2026-11-20T02:29:48+00:00",
       "lastBlock": "`validate-artifacts` did not pass:\n- required artifact is missing \u2014 write one of: requirements.md, bugfix.md (docs/specs/issue-549)",
+      "forced": false
+    },
+    "requirements-approval": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-11-20T02:29:48+00:00",
+      "exitedAt": "",
+      "lastBlock": "",
       "forced": false
     }
   },
@@ -259,10 +267,18 @@
     }
   },
   "forced": [],
-  "parked": null,
+  "parked": {
+    "node": "requirements-approval",
+    "reason": "awaiting a human",
+    "since": "2026-11-20T02:29:48+00:00"
+  },
   "completions": {
     "brainstorming": {
       "at": "2026-11-20T01:54:05+00:00",
+      "by": "cli"
+    },
+    "requirements-definition": {
+      "at": "2026-11-20T02:29:48+00:00",
       "by": "cli"
     }
   },
