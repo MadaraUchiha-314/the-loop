@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-547",
-  "currentNode": "brainstorming",
+  "currentNode": "brainstorm-approval",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -21,8 +21,16 @@
     },
     "brainstorming": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-11-20T01:32:03+00:00",
+      "exitedAt": "2026-11-20T01:36:44+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "brainstorm-approval": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-11-20T01:36:44+00:00",
       "exitedAt": "",
       "lastBlock": "",
       "forced": false
@@ -243,8 +251,17 @@
     }
   },
   "forced": [],
-  "parked": null,
-  "completions": {},
+  "parked": {
+    "node": "brainstorm-approval",
+    "reason": "awaiting a human",
+    "since": "2026-11-20T01:36:44+00:00"
+  },
+  "completions": {
+    "brainstorming": {
+      "at": "2026-11-20T01:36:44+00:00",
+      "by": "cli"
+    }
+  },
   "skips": {},
   "optIns": {},
   "surface": "pull-request",
@@ -254,7 +271,18 @@
   "effort": "high",
   "claudeArtifact": false,
   "repos": [],
-  "pullRequests": [],
+  "pullRequests": [
+    {
+      "ref": "github:MadaraUchiha-314/the-loop#548",
+      "repository": "MadaraUchiha-314/the-loop",
+      "number": 548,
+      "url": "https://github.com/MadaraUchiha-314/the-loop/issues/548",
+      "stateDir": "pr-loops/MadaraUchiha-314__the-loop/pr-548",
+      "state": "open",
+      "linkedAt": "2026-11-20T01:34:35+00:00",
+      "linkedBy": "session"
+    }
+  ],
   "loop": "pdlc-work-item-loop",
   "phase": "brainstorming",
   "claudeDoc": true
