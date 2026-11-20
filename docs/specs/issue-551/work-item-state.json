@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-551",
-  "currentNode": "requirements-definition",
+  "currentNode": "requirements-approval",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -29,8 +29,16 @@
     },
     "requirements-definition": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-11-20T18:45:29+00:00",
+      "exitedAt": "2026-11-20T18:50:33+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "requirements-approval": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-11-20T18:50:33+00:00",
       "exitedAt": "",
       "lastBlock": "",
       "forced": false
@@ -251,8 +259,17 @@
     }
   },
   "forced": [],
-  "parked": null,
-  "completions": {},
+  "parked": {
+    "node": "requirements-approval",
+    "reason": "awaiting a human",
+    "since": "2026-11-20T18:50:33+00:00"
+  },
+  "completions": {
+    "requirements-definition": {
+      "at": "2026-11-20T18:50:33+00:00",
+      "by": "cli"
+    }
+  },
   "skips": {
     "brainstorming": {
       "via": "selection",
@@ -305,7 +322,18 @@
   "effort": "medium",
   "claudeArtifact": false,
   "repos": [],
-  "pullRequests": [],
+  "pullRequests": [
+    {
+      "ref": "github:MadaraUchiha-314/the-loop#552",
+      "repository": "MadaraUchiha-314/the-loop",
+      "number": 552,
+      "url": "https://github.com/MadaraUchiha-314/the-loop/issues/552",
+      "stateDir": "pr-loops/MadaraUchiha-314__the-loop/pr-552",
+      "state": "open",
+      "linkedAt": "2026-11-20T18:49:09+00:00",
+      "linkedBy": "session"
+    }
+  ],
   "loop": "pdlc-work-item-loop",
   "phase": "requirements-definition",
   "claudeDoc": true
