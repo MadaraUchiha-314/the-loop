@@ -686,6 +686,13 @@ paths:
         unknown, `detail`: recorded | unavailable, the closure's facts and the
         `terminal` record), `nodes` is empty, and `ok` is true only for a
         completed item. A found state file always wins.
+
+        A work item with a daemon-driven session also carries `session`
+        (issue-551): `state` (working | idle | stalled | waiting | asked |
+        not-watched), `node`, `since` (when that state began) and `detail`
+        (what a waiting session waits for and until when, the question of an
+        asked one). `not-watched` is a session with no turn record. The field
+        is **absent** when the work item has no such session.
       operationId: graphCheck
       requestBody:
         content:
@@ -711,6 +718,17 @@ paths:
   /api/v1/graph/complete:
     post:
       summary: Graph Complete
+      description: |-
+        Claim the node a work item's pointer is on, as `the-loop graph complete`
+        does.
+
+        When the claim moved the pointer and the daemon did not deliver the
+        entered node's assignment itself, the answer also carries (issue-551)
+        `assignment`, a string with the entered node's assignment text, and
+        `next`, an object with `node`, `actor`, `command` and `continue`.
+        `continue` is `true` for an agent-owned node, which the session starts
+        in the same turn, and `false` for a human-owned one. Both are **absent**
+        on every other answer.
       operationId: graphComplete
       requestBody:
         content:
@@ -1023,7 +1041,10 @@ paths:
         subscribes to `session.awaiting_input`, and the `session.awaiting_input`
         event emitted. Served so that a session the daemon spawned, which holds no
         credential, can ask through the service that does (issue-482). 400 on a
-        malformed ref or an empty question.
+        malformed ref or an empty question. With `defaultAfterSeconds` (issue-551)
+        the posted question states the default and the time it is taken, and
+        `session.awaiting_input` carries both; an authorized answer before that
+        time cancels it.
       requestBody:
         content:
           application/json:
@@ -1685,6 +1706,17 @@ paths:
   /api/v1/attention:
     get:
       summary: List Attention
+      description: |-
+        The work items that need a person, or that a person should know about.
+        Each row carries `workItem`, `kind` and `detail`. `kind` is one of
+        `session-paused`, `armed-without-session`, `awaiting-input`,
+        `recent-error` and, since issue-551, `stalled` (a session that stayed
+        idle with work owed after its nudges were spent) and `declared-wait`
+        (informational: what a session waits for and until when).
+
+        An `awaiting-input` row whose question was asked with a deadline also
+        carries `default`, the answer that is taken, and `defaultAt`, when
+        (issue-551). Both are **absent** on a question with no deadline.
       operationId: listAttention
       responses:
         '200':
@@ -2608,6 +2640,16 @@ components:
           description: The affirmative answer to take if the human does not object
             (issue-393 R12.1); offered as a one-tap reply.
           default: ''
+        defaultAfterSeconds:
+          anyOf:
+          - type: integer
+            minimum: 1
+          - type: 'null'
+          title: Defaultafterseconds
+          description: How long to wait for an answer before `default` is taken
+            (issue-551). It needs `default`. A value under the operator's minimum
+            (`routing.asks.minDefaultWaitSeconds`) is raised to it, and the answer
+            says so. null/omitted means the default is never taken by itself.
         actor:
           type: string
           title: Actor

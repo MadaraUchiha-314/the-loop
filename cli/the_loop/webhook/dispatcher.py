@@ -140,6 +140,7 @@ from ..harness_plugins import PluginConfig
 from ..identity import github_logins, parse_authorized_users
 from ..linkage import WorkItemVerifier
 from ..trust import TrustConfig, TrustResult, is_too_broad
+from ..watchconfig import AsksConfig, WatchdogConfig
 from ..workspace import RepoTarget, Workspace, WorkspaceError, repo_target_from_payload
 from .cimonitor import (
     REASON_EXHAUSTED,
@@ -485,6 +486,10 @@ class RoutingConfig:
     # Which CI events wake a session, and how many failing commits a check gets
     # before the session is told to stop and escalate (issue-462).
     ci: CiConfig = field(default_factory=CiConfig)
+    # When an idle session is nudged and a person is told, and the deadline of
+    # an ask's default (issue-551).
+    watchdog: WatchdogConfig = field(default_factory=WatchdogConfig)
+    asks: AsksConfig = field(default_factory=AsksConfig)
 
     @classmethod
     def from_mapping(
@@ -547,6 +552,8 @@ class RoutingConfig:
             interaction=InteractionConfig.from_mapping(data.get("interaction") or {}),
             instance=InstanceConfig.from_mapping(data.get("_instance") or {}),
             ci=CiConfig.from_mapping(data.get("ci") or {}),
+            watchdog=WatchdogConfig.from_mapping(data.get("watchdog") or {}),
+            asks=AsksConfig.from_mapping(data.get("asks") or {}),
         )
 
 

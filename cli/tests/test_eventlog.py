@@ -155,6 +155,35 @@ def test_every_emitted_event_type_is_documented():
     assert not undocumented, f"emitted but not in EVENT_TYPES: {sorted(undocumented)}"
 
 
+#: The turn, wait, stall and ask-deadline records of issue-551.
+SESSION_WATCH_EVENTS = (
+    "session.turn_started",
+    "session.turn_ended",
+    "session.wait_declared",
+    "session.nudged",
+    "session.stalled",
+    "session.stall_ended",
+    "session.ask_default_taken",
+    "session.ask_reminded",
+    "session.ask_answered",
+)
+
+
+def test_the_session_watch_events_are_registered_and_described():
+    """
+    Feature: a session's turns, waits and stalls are on the event log
+      Scenario: the catalog is listed
+        Given the nine event types issue-551 adds
+        When `the-loop events --types` reads the catalog
+        Then each is registered, with a description from strings/en.json
+
+    Requirement: docs/specs/issue-551/requirements.md NFR events
+    """
+    for name in SESSION_WATCH_EVENTS:
+        assert name in eventlog.EVENT_TYPES, name
+        assert eventlog.EVENT_TYPES[name].strip(), name
+
+
 # -- `the-loop events` command ---------------------------------------------------
 
 

@@ -55,6 +55,19 @@ VALID = [
     {"polling": {"intervalSeconds": 30, "sources": []}},
     {"routing": {"tmux": {"sessionPerPr": True}}},
     {"routing": {"tmux": {"sessionPerPr": "always"}}},
+    # issue-551: the watchdog and the ask deadline, whole and partial.
+    {
+        "routing": {
+            "watchdog": {
+                "enabled": False,
+                "idleSeconds": 1,
+                "maxNudges": 0,
+                "maxWaitSeconds": 60,
+            },
+            "asks": {"minDefaultWaitSeconds": 1, "reminderSeconds": 0},
+        }
+    },
+    {"routing": {"watchdog": {}, "asks": {}}},
     {
         "service": {
             "port": 8080,
@@ -114,6 +127,20 @@ INVALID = [
         {"routing": {"tmux": {"sessionPerPr": 1}}},
         "a number where a mode or a boolean belongs",
     ),
+    ({"routing": {"watchdog": {"idleSeconds": 0}}}, "an idle threshold of zero"),
+    ({"routing": {"watchdog": {"idleSeconds": -600}}}, "a negative idle threshold"),
+    ({"routing": {"watchdog": {"idleSeconds": 1.5}}}, "a fractional idle threshold"),
+    ({"routing": {"watchdog": {"idleSeconds": "10m"}}}, "a duration, not seconds"),
+    ({"routing": {"watchdog": {"maxNudges": -1}}}, "a negative nudge limit"),
+    ({"routing": {"watchdog": {"maxWaitSeconds": 0}}}, "a wait limit of zero"),
+    ({"routing": {"watchdog": {"enabled": "no"}}}, "a watchdog switch not a boolean"),
+    ({"routing": {"watchdog": {"tickSeconds": 30}}}, "an unknown watchdog key"),
+    (
+        {"routing": {"asks": {"minDefaultWaitSeconds": 0}}},
+        "a default taken with no wait at all",
+    ),
+    ({"routing": {"asks": {"reminderSeconds": -1}}}, "a negative reminder interval"),
+    ({"routing": {"asks": {"reminderSeconds": 0.5}}}, "a fractional reminder"),
     (
         {"collaborators": [{"handle": "@octocat", "roles": ["engineer"]}]},
         "a block retired in issue-304 — nothing ever read it",

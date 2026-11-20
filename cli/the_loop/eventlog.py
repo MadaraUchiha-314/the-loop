@@ -128,6 +128,17 @@ _EVENT_NAMES: Tuple[str, ...] = (
     "session.announce_failed",
     "session.awaiting_input",
     "session.reply_sent",
+    # -- turns, waits, stalls and ask deadlines (issue-551; source: the session's
+    #    hooks and verbs, the dispatcher, and the control-plane service's watcher)
+    "session.turn_started",
+    "session.turn_ended",
+    "session.wait_declared",
+    "session.nudged",
+    "session.stalled",
+    "session.stall_ended",
+    "session.ask_default_taken",
+    "session.ask_reminded",
+    "session.ask_answered",
     # -- channels (source: ask | channels | poll | gh-webhook) ----------------
     "channel.posted",
     "channel.post_failed",

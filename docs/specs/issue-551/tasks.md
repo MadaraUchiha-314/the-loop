@@ -42,7 +42,7 @@ green.
   - _Depends on:_ none
   - _Requirements:_ R1.6, R3, R4.7, R6.1, R7
   - _Test:_ T3 — `tests/test_api_contract_parity.py` (red until tasks 4–13 add the routes)
-- [ ] 2. Register the events, the config blocks and the duration parser
+- [x] 2. Register the events, the config blocks and the duration parser
   - Nine event names with their descriptions in `strings/en.json`.
   - `routing.watchdog` and `routing.asks` in the CLI config schema (both copies),
     their defaults, and the page under `docs/config/cli/`.
@@ -95,7 +95,7 @@ green.
   - _Depends on:_ 1, 3, 5
   - _Requirements:_ R3.2.3, R4.7, R4.8
   - _Test:_ T1 — `tests/test_stop_check.py -k declared_wait`; T8 — abuse case 4
-- [ ] 9. Evaluate an agent-owned node read-only on an inbound event
+- [x] 9. Evaluate an agent-owned node read-only on an inbound event
   - A hook declares, where it is registered, that it reads the inbound event. The
     dispatcher advances as today for a human-owned node or such a hook. Otherwise it
     evaluates without an event and advances only on a pass. Same rule for a pull
