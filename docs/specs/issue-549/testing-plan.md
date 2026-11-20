@@ -133,25 +133,59 @@ cannot be redacted:
 
 ## Verification activities
 
-- [ ] T1 — `cd cli && uv run python -m pytest -q tests/test_channels_*.py tests/test_room_policy.py tests/test_voice.py tests/test_graph_refs.py`
-- [ ] T2 — `cd cli && uv run python -m pytest -q tests/test_channels_integration.py tests/test_channels_declared_integration.py tests/test_channels_outbox_integration.py tests/test_bus_integration.py tests/test_gateway_slack_integration.py`
-- [ ] T2 — `uv run the-loop scenarios --glob 'cli/tests/test_*_integration.py' --format markdown` (the trace above appears)
-- [ ] T3 — `cd cli && uv run python -m pytest -q tests/test_api_contract_parity.py`
-- [ ] T4 — `cd cli && THE_LOOP_LIVE_SLACK=1 uv run python -m pytest -q -m live_slack tests/test_slack_live.py`
+- [x] T1 — `cd cli && uv run python -m pytest -q tests/test_channels_*.py tests/test_room_policy.py tests/test_voice.py tests/test_graph_refs.py`
+- [x] T2 — `cd cli && uv run python -m pytest -q tests/test_channels_integration.py tests/test_channels_declared_integration.py tests/test_channels_outbox_integration.py tests/test_bus_integration.py tests/test_gateway_slack_integration.py`
+- [x] T2 — `uv run the-loop scenarios --root "$PWD" --glob 'cli/tests/test_*_integration.py' --format markdown` (the trace above appears)
+- [x] T3 — `cd cli && uv run python -m pytest -q tests/test_api_contract_parity.py`
+- [x] T4 — `cd cli && THE_LOOP_LIVE_SLACK=1 uv run python -m pytest -q -m live_slack tests/test_slack_live.py`
 - [ ] T5 — mock-up screenshot (headless Chromium) and Slack client screenshots of the four shapes
-- [ ] T8 — `cd cli && uv run python -m pytest -q -k "abuse or defuse or unauthorized or stale_press or casefold"`
-- [ ] T10 — migration cases pass within T1/T2 (named in `unit.md`)
-- [ ] T12 — `uv run pre-commit run --all-files`
+- [x] T8 — `cd cli && uv run python -m pytest -q -k "abuse or defuse or unauthorized or stale_press or casefold"`
+- [x] T10 — migration cases pass within T1/T2 (named in `unit.md`)
+- [x] T12 — `uv run pre-commit run --all-files`
 
 ## Verification results
 
-_Not yet executed._
+Run on 2026-11-20 at the PR branch (`93ba24e5` and its parent). Offline runs had
+`THE_LOOP_CLI_CONFIG`, `THE_LOOP_INSTANCE` and `THE_LOOP_WORK_ITEM` unset, because
+they point at the operator's own config, which some unrelated tests read.
 
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
-| | | | |
+| T1 | channels, room-policy, voice and refs unit tests | 824 passed | [`unit.md`](evidence/unit.md) |
+| T2 | the five integration files | 111 passed | [`integration.md`](evidence/integration.md) |
+| T2 | `the-loop scenarios --root "$PWD" …` | all 12 trace titles present (16 issue-549 scenarios) | [`integration.md`](evidence/integration.md) |
+| T3 | `tests/test_api_contract_parity.py` | 7 passed | [`contract.md`](evidence/contract.md) |
+| T4 | live Slack test in a dedicated test channel | 1 passed: table drawn as a `table` block, parts in order `(1/2)`, `(2/2)`, no previews after post **and** edit, defused sequences inert, reaction ⏳ → ⚙️ → none | [`live-slack.md`](evidence/live-slack.md) |
+| T5 | mock-up rendered with headless Chromium | captured | [`ui/mockup.png`](evidence/ui/mockup.png) |
+| T5 | Slack client screenshots of the four shapes | **not executed**, see below | — |
+| T7 | 64 KB body within the time bound and part count (in T8) | passed | [`unit.md`](evidence/unit.md) |
+| T8 | `-k "abuse or defuse or unauthorized or stale_press or casefold"` | 334 passed | [`unit.md`](evidence/unit.md) |
+| T9 | `text` fallback is the short form (in T1) | passed | [`unit.md`](evidence/unit.md) |
+| T10 | config schema, channel state, outbox migration cases | 195 passed | [`unit.md`](evidence/unit.md) |
+| T12 | `uv run pre-commit run --all-files` | exit 0: ruff, format, pyright, full pytest, markdownlint, config schema | [`ci-parity.md`](evidence/ci-parity.md) |
 
-**Not executed:** —
+The first T4 run failed on two assumptions in the test, not in the feature:
+
+- Slack stores a `markdown` block as the `rich_text`, `header` and `table` blocks it
+  drew from it.
+- `reactions.get` needs a scope the bot does not have.
+
+The test was corrected (`93ba24e5`), and the second run passed. Details are in
+`live-slack.md`.
+
+**Not executed:** T5's Slack client screenshots. No browser logged in to the
+workspace could be reached from the verifying session: the browser tool timed out
+connecting. What stands in for them:
+
+- the shapes are asserted structurally in T2;
+- T4 read back the room shape (short message and long-form thread) from a real
+  workspace;
+- the live messages are kept in the test channel, so the author can open them in
+  the Slack client.
+
+The central reply, the gate before and after a press, and the recap were not posted
+live. A real press needs the daemon running this code, so it waits until after
+merge (T11).
 
 ## Review comments
 
