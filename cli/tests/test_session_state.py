@@ -597,6 +597,19 @@ def test_legacy_ask_without_an_id_is_named_by_its_time_and_closed_by_a_reply():
     assert state_at(log, 7).open_ask is None
 
 
+def test_legacy_ask_without_an_id_is_shown_and_owes_nothing():
+    """Requirement: R6.10 — an ask recorded before asks had ids may have been
+    answered on the ticket with nothing recording it. It is still listed, and
+    the-loop neither reminds anyone of it nor takes a default for it."""
+    plain = state_at([ask(0)], 60 * 24)
+    assert plain.open_ask is not None and plain.open_ask.legacy is True
+    assert plain.due == ()
+    timed = state_at([ask(0, default="Yes.", default_at=stamp(30))], 60 * 24)
+    assert timed.open_ask is not None and timed.open_ask.legacy is True
+    assert timed.due == ()
+    assert state_at([ask(0, ask_id="a1")], 5).open_ask.legacy is False
+
+
 def test_a_reminder_is_owed_once_for_an_ask_without_a_default():
     """Requirement: R6.7."""
     log = [ask(0, ask_id="a1")]
@@ -705,9 +718,8 @@ def _record_of(due: Due, minutes: float) -> dict:
         ),
         ([ask(0, ask_id="a1", default="Yes.", default_at=stamp(30))], 30),
         ([ask(0, ask_id="a1")], 120),
-        ([ask(0)], 120),
     ],
-    ids=["nudge", "notify", "end-stall", "take-default", "remind", "remind-legacy"],
+    ids=["nudge", "notify", "end-stall", "take-default", "remind"],
 )
 def test_an_act_on_record_is_never_owed_again(log, minutes):
     """

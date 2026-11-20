@@ -97,6 +97,11 @@ class OpenAsk:
     #: default and a readable time: anything less is never taken.
     default_at: Optional[str]
     reminded: bool
+    #: The record carries no `ask_id`: it was written when nothing recorded an
+    #: answer given on the ticket, so it may have been answered long ago. Such
+    #: an ask is listed, and nothing is done for it: no reminder, no default,
+    #: and it does not excuse a stop.
+    legacy: bool = False
 
 
 @dataclass(frozen=True)
@@ -214,6 +219,7 @@ class _Ask:
             default=default,
             default_at=default_at if timed else None,
             reminded=self.reminded,
+            legacy=not self.explicit,
         )
 
 
@@ -396,7 +402,7 @@ def derive(
                 elif not notified:
                     due.append(Due("notify", stall_id=stall_id_now))
 
-    if open_ask is not None:
+    if open_ask is not None and not open_ask.legacy:
         deadline = parse_ts(open_ask.default_at)
         asked_at = parse_ts(open_ask.asked_at)
         if deadline is not None:

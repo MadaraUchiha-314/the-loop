@@ -178,15 +178,27 @@ def test_an_open_ask_allows_the_stop():
     decision = decide(
         report("build", build="block"),
         ev(0, "session.turn_started"),
-        ev(1, "session.awaiting_input", question="Which one?"),
+        ev(1, "session.awaiting_input", question="Which one?", ask_id="a1"),
     )
     assert (decision.verdict, decision.reason) == ("allow", "open-ask")
+
+
+def test_an_ask_recorded_without_an_id_does_not_allow_the_stop():
+    """Requirement: R6.10 — an ask from before asks had ids may have been
+    answered with no record of it; it cannot excuse a stop forever."""
+    decision = decide(
+        report("build", build="block"),
+        ev(0, "session.turn_started"),
+        ev(1, "session.awaiting_input", question="Which one?"),
+    )
+    assert decision.verdict == "refuse"
+    assert decide(None, ev(1, "session.awaiting_input")).reason == "inconclusive"
 
 
 def test_an_answered_ask_no_longer_allows_the_stop():
     decision = decide(
         report("build", build="block"),
-        ev(1, "session.awaiting_input", question="Which one?"),
+        ev(1, "session.awaiting_input", question="Which one?", ask_id="a1"),
         ev(2, "session.reply_sent"),
         ev(3, "session.turn_started"),
     )
@@ -321,7 +333,9 @@ def test_gave_up_is_recorded_without_judging(bound, monkeypatch):
 
 def test_the_open_ask_is_read_from_the_event_log(bound, monkeypatch):
     standing(monkeypatch, report("build", build="block"))
-    eventlog.emit("session.awaiting_input", work_item=REF, question="Which one?")
+    eventlog.emit(
+        "session.awaiting_input", work_item=REF, question="Which one?", ask_id="a1"
+    )
     assert stopcheck.stop_check(REF, config=bound)["reason"] == "open-ask"
 
 
