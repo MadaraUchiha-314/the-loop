@@ -1243,6 +1243,7 @@
   "core.sessions.ask.asked": "asked on {ref}",
   "core.sessions.ask.channel-refused": "note: the {channel} channel did not take the question ({error}); another channel did, and the work item has it",
   "core.sessions.ask.default-at": "the default is taken at {default_at} (in {wait}) unless an authorized user answers first; any answer after that still reaches this session",
+  "core.sessions.ask.default-spent": "a default was already taken at this step with nobody answering, so another one is not accepted here: ask again without --after and wait for a person. A wait is accepted again once a person has answered or the work item has moved to its next step",
   "core.sessions.ask.default-too-long": "the default answer is {length} characters; the limit is {limit}. Say it in a sentence or two",
   "core.sessions.ask.default-unheard": "note: the question reached nobody (no comment was posted and no channel took it), so its default will not be taken — a default stands in for an answer, and nobody was asked. Ask again once the tracker is reachable, or wait for an operator's reply",
   "core.sessions.ask.github-only": "note: this question reached GitHub only — the resolved config subscribes no channel to session.awaiting_input, so no room was told the loop is waiting. Check $THE_LOOP_CLI_CONFIG / --config points at the daemon's config, and that its channels subscribe the event",

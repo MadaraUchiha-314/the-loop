@@ -52,7 +52,7 @@ from ..sessions.registry import RegistryError, Session, SessionRegistry
 from ..state import layout_from_config, legacy_layout
 from ..webhook.dispatcher import SETTLED_START_GATE, TmuxConfig
 from ..webhook.router import RoutedEvent
-from ..watchconfig import AsksConfig
+from ..watchconfig import AsksConfig, WatchdogConfig
 from ..workitem import WorkItemRef
 from . import sessionstate
 
@@ -806,6 +806,33 @@ def check_default(default_answer: str, after_seconds: Optional[int]) -> str:
     return default_answer
 
 
+def _default_spent(ref: str, config: Optional[dict]) -> bool:
+    """Whether a default was already taken for ``ref`` at the step it is on.
+
+    A default lets a session go on without a person, once. A second one at the
+    same step would let it go on without a person for as long as it keeps
+    asking, so the next question there has to wait for an answer. Read from the
+    log this process writes; a log that cannot be read spends nothing, because
+    a question must always be askable.
+    """
+    try:
+        path = eventlog.current_path()
+        if path is None:
+            return False
+        routing = _routing(config)
+        state = sessionstate.derive(
+            sessionstate.load(path).get(ref, []),
+            now=datetime.now(timezone.utc),
+            watchdog=WatchdogConfig.from_mapping(routing.get("watchdog") or {}),
+            asks=AsksConfig.from_mapping(routing.get("asks") or {}),
+            work_item=ref,
+        )
+    except Exception as exc:  # noqa: BLE001 — never a reason to refuse a question
+        logger.warning("cannot read whether a default was taken for %s: %s", ref, exc)
+        return False
+    return state.default_spent
+
+
 def ask_session(
     ref: str,
     question: str,
@@ -848,6 +875,8 @@ def ask_session(
             _routing(config).get("asks") or {}
         ).min_default_wait_seconds
         wait = durations.clamp(requested, minimum)
+        if _default_spent(work_item.ref, config):
+            raise ValueError(strings.t("core.sessions.ask.default-spent"))
     control = _control_config(config)
     actor = actor or _local_actor()
     # One event on the bus (issue-309): the ledger records it FIRST — the record

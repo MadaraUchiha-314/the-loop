@@ -819,3 +819,37 @@ def test_an_over_long_default_is_refused_before_it_is_sent(
     SessionAskBody(ref=REF, question="A or B?", default="x" * 600)
     with pytest.raises(ValidationError):
         SessionAskBody(ref=REF, question="A or B?", default="x" * 601)
+
+
+def test_abuse_a_second_default_on_the_same_step_is_refused(config, posted, log_path):
+    """
+    Feature: A question can carry a default and a deadline
+    Scenario: a session asks again with a wait after its default was taken
+      Given an ask whose default was taken with nobody answering
+      And the work item has not moved to another step since
+      When the session asks again with a default and a wait
+      Then the ask is refused, saying to ask without --after and wait for a person
+      And nothing is posted or recorded for it
+      And the same question without a wait is accepted
+      And once the work item moves on, a wait is accepted again
+
+    Requirement: docs/specs/issue-551/requirements.md#security-considerations
+    """
+    _ask(config)
+    (first,) = _records(log_path, "session.awaiting_input")
+    eventlog.emit(
+        "session.ask_default_taken", work_item=REF, ask_id=first["ask_id"], default="x"
+    )
+
+    with pytest.raises(ValueError) as refused:
+        _ask(config)
+    assert "without --after" in str(refused.value)
+    assert len(posted) == 1
+    assert len(_records(log_path, "session.awaiting_input")) == 1
+
+    plain = _ask(config, default_answer="", default_after_seconds=None)
+    assert plain["asked"] is True and plain["defaultAt"] is None
+    assert len(_records(log_path, "session.awaiting_input")) == 2
+
+    eventlog.emit("graph.advanced", work_item=REF, node="build")
+    assert _ask(config)["defaultAt"]
