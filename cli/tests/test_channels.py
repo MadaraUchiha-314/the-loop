@@ -143,8 +143,9 @@ def test_config_defaults_match_the_schema():
     assert config.verbosity == slack["verbosity"]["default"]
     assert list(config.subscribe) == slack["subscribe"]["default"]
     assert list(config.publish) == slack["publish"]["default"]
-    assert config.max_chars == slack["maxChars"]["default"]
-    assert config.long_messages == slack["longMessages"]["default"] == "digest"
+    # Deprecated and ignored since issue-549: no schema default; the digest's own.
+    assert slack["maxChars"]["deprecated"] and slack["longMessages"]["deprecated"]
+    assert config.max_chars == 1500 and config.long_messages == "digest"
     assert (
         config.room_style
         == slack["room"]["properties"]["style"]["default"]

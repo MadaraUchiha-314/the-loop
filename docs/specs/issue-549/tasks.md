@@ -73,7 +73,7 @@ Tests are named so the T8 `-k` filter in `testing-plan.md` finds the abuse cases
   - _Requirements:_ R3.1, R3.7, R3.8
   - _Test:_ T3 — `tests/test_api_contract_parity.py`; T1 — comment verb test that the
     summary reaches the event and the whole text reaches GitHub (red→green)
-- [ ] 4. Deprecate `channels.slack.maxChars` and `channels.slack.longMessages`.
+- [x] 4. Deprecate `channels.slack.maxChars` and `channels.slack.longMessages`.
   - Mark them deprecated in `schemas/cli-config.schema.json`; warn once per process with
     a link to the migration note (string in `strings/en.json`); `channels status`
     prints neither (`commands/channels_cmd.py`).

@@ -98,6 +98,8 @@ SUPPORTED = frozenset(
         "description",
         "default",
         "examples",
+        # A key kept only so an old config still validates (issue-549).
+        "deprecated",
         # The init commands' walkthrough metadata (issue-415, issue-514): the ordered config
         # groups, their ask levels and the autonomy ladder. Read by the agent running
         # them, never by validate() — its contents are data, not schema.

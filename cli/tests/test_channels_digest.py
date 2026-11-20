@@ -9,6 +9,7 @@ No Slack, no network: the SDK boundary is the injected client factory.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import re
 import time
@@ -454,26 +455,20 @@ def _config(tmp_path, **slack):
     return {"state": {"root": str(tmp_path / "state")}, "channels": {"slack": section}}
 
 
-def test_long_messages_is_parsed_and_defaults_to_digest(tmp_path):
-    assert SlackChannelConfig.from_mapping(_config(tmp_path)).long_messages == "digest"
-    assert (
-        SlackChannelConfig.from_mapping(
-            _config(tmp_path, longMessages="truncate")
-        ).long_messages
-        == "truncate"
-    )
+@pytest.mark.parametrize("value", ["truncate", "llm"])
+def test_long_messages_is_ignored_since_issue_549(tmp_path, caplog, monkeypatch, value):
+    """issue-549 R1.2 (was issue-338 R1.4): the key is deprecated, whatever it
+    says the digest's default answers, and loading it warns by name."""
+    monkeypatch.setattr("the_loop.channels.slack._DEPRECATED_WARNED", set())
+    with caplog.at_level("WARNING", logger="the-loop.channels"):
+        config = SlackChannelConfig.from_mapping(_config(tmp_path, longMessages=value))
+    assert config.long_messages == DEFAULT_DIGEST_MODE and config.enabled
+    assert "longMessages" in caplog.text
     schema = configschema.load_schema("cli-config")
     key = schema["properties"]["channels"]["properties"]["slack"]["properties"][
         "longMessages"
     ]
-    assert key["default"] == DEFAULT_DIGEST_MODE and key["enum"] == list(DIGEST_MODES)
-
-
-def test_an_unknown_long_messages_value_resolves_to_digest(tmp_path, caplog):
-    with caplog.at_level("WARNING", logger="the-loop.channels"):
-        config = SlackChannelConfig.from_mapping(_config(tmp_path, longMessages="llm"))
-    assert config.long_messages == "digest" and config.enabled
-    assert "longMessages" in caplog.text
+    assert key["deprecated"] is True
 
 
 # -- the renderer (R1.1, R1.5, R3.3) -------------------------------------------------
@@ -545,7 +540,10 @@ def test_the_fallback_text_carries_the_digest(tmp_path, monkeypatch):
     """R1.5: the phone's notification preview leads with the ask too."""
     monkeypatch.setenv("THE_LOOP_SLACK_BOT_TOKEN", "xoxb-test")
     client = _Client()
-    config = SlackChannelConfig.from_mapping(_config(tmp_path, maxChars=700))
+    # maxChars is ignored since issue-549; the digest's cap is set on the config.
+    config = dataclasses.replace(
+        SlackChannelConfig.from_mapping(_config(tmp_path)), max_chars=700
+    )
     channel = SlackBotChannel(
         config, tmp_path / "state" / "slack.json", client_factory=lambda t: client
     )
@@ -580,27 +578,23 @@ def test_nothing_but_the_renderer_reads_the_digest():
 # -- channels status (R4.3) ----------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    ("value", "expected"),
-    [
-        ("digest", "longMessages: digest — above maxChars: the ask first"),
-        ("truncate", "longMessages: truncate — above maxChars: the first maxChars"),
-    ],
-)
-def test_status_prints_the_long_messages_line(
-    tmp_path, monkeypatch, capsys, value, expected
-):
+@pytest.mark.parametrize("value", ["digest", "truncate"])
+def test_status_prints_neither_deprecated_key(tmp_path, monkeypatch, capsys, value):
+    """issue-549 R1.4 (was issue-338 R4.3): `channels status` prints no
+    `maxChars` or `longMessages` line, whatever the config still sets."""
     from the_loop.commands.channels_cmd import ChannelsCommand
 
     monkeypatch.setenv("THE_LOOP_CLI_CONFIG", str(tmp_path / "cli-config.yaml"))
     (tmp_path / "cli-config.yaml").write_text(
-        json.dumps(_config(tmp_path, longMessages=value)), encoding="utf-8"
+        json.dumps(_config(tmp_path, longMessages=value, maxChars=700)),
+        encoding="utf-8",
     )
     parser = argparse.ArgumentParser()
     ChannelsCommand().add_arguments(parser)
     assert ChannelsCommand().run(parser.parse_args(["status"])) == 0
     out = capsys.readouterr().out
-    assert expected in out and "maxChars:     1500" in out
+    assert "slack" in out
+    assert "maxChars" not in out and "longMessages" not in out
 
 
 # -- agent-authored summary (issue-393 B1/R8) -----------------------------------

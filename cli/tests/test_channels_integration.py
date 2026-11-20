@@ -1806,7 +1806,8 @@ def test_a_long_agent_comment_reaches_slack_as_a_digest(tmp_path, monkeypatch):
     """Scenario: A long agent comment reaches Slack as a digest that leads with
     the ask
 
-    Given a Slack channel subscribed to comment.agent with maxChars 600
+    Given a Slack channel subscribed to comment.agent with a 600-character cap
+      (the digest's own cap since issue-549 deprecated maxChars)
     When the ledger's ingress publishes an agent comment longer than that,
       carrying a code fence, a traceback, a table and absolute paths, and
       ending with a question
@@ -1821,7 +1822,8 @@ def test_a_long_agent_comment_reaches_slack_as_a_digest(tmp_path, monkeypatch):
     from the_loop.channels.publishers import publish_comment
 
     client = _enabled_client(monkeypatch)
-    config = cli_config(tmp_path, subscribe=["comment.agent"], maxChars=600)
+    monkeypatch.setattr("the_loop.channels.slack.DEFAULT_MAX_CHARS", 600)
+    config = cli_config(tmp_path, subscribe=["comment.agent"])
     records = []
     monkeypatch.setattr(
         "the_loop.comments.post_issue_comment_with_url",
@@ -1880,7 +1882,8 @@ def test_a_short_comment_reaches_slack_untouched(tmp_path, monkeypatch):
 def test_a_notifications_artifact_excerpt_is_digested_too(tmp_path, monkeypatch):
     """Scenario: A notification's artifact excerpt is digested too
 
-    Given a Slack channel subscribed to phase-approval-pending with maxChars 500
+    Given a Slack channel subscribed to phase-approval-pending with a 500-character
+      cap (the digest's own cap since issue-549 deprecated maxChars)
     And a work item whose requirements.md is longer than that
     When the graph's notify hook fires for the requirements approval
     Then the message's excerpt section is a digest within maxChars that closes
@@ -1902,7 +1905,8 @@ def test_a_notifications_artifact_excerpt_is_digested_too(tmp_path, monkeypatch)
         ),
         encoding="utf-8",
     )
-    config = cli_config(tmp_path, subscribe=["phase-approval-pending"], maxChars=500)
+    monkeypatch.setattr("the_loop.channels.slack.DEFAULT_MAX_CHARS", 500)
+    config = cli_config(tmp_path, subscribe=["phase-approval-pending"])
     ctx = HookContext(
         work_item=WorkItem(id="issue-338", ref="github:o/r#338", spec_dir=spec_dir),
         node={"id": "requirements-approval"},

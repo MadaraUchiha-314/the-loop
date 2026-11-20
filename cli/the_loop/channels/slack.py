@@ -34,7 +34,7 @@ import time
 import unicodedata
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 from .. import eventlog, strings
 from ..cli_config import gateway_block
@@ -52,7 +52,6 @@ from .base import (
 )
 from .digest import (
     DEFAULT_DIGEST_MODE,
-    DIGEST_MODES,
     fit,
     sanitize_summary,
     truncate,
@@ -64,6 +63,21 @@ from .voice import room_lead
 from . import attachments
 
 logger = logging.getLogger("the-loop.channels")
+
+#: The deprecated keys of ``channels.slack`` (issue-549 R1.3), and the ones this
+#: process has already warned about: each is named once, however often the
+#: config is read.
+DEPRECATED_SLACK_KEYS: Tuple[str, ...] = ("maxChars", "longMessages")
+_DEPRECATED_WARNED: Set[str] = set()
+
+
+def _warn_deprecated(section: Mapping[str, Any]) -> None:
+    """Warn once per process for each deprecated key ``section`` still sets."""
+    for key in DEPRECATED_SLACK_KEYS:
+        if key in section and key not in _DEPRECATED_WARNED:
+            _DEPRECATED_WARNED.add(key)
+            logger.warning(strings.t("channels.slack.deprecated-key", key=key))
+
 
 __all__ = [
     "ACTION_PREFIX",
@@ -1507,23 +1521,12 @@ class SlackChannelConfig:
                     )
             subscribe = _subscribe_list(section.get("subscribe"))
             publish = _publish_list(section.get("publish"))
-            long_messages = str(section.get("longMessages") or DEFAULT_DIGEST_MODE)
-            if long_messages not in DIGEST_MODES:
-                logger.warning(
-                    "channels.slack.longMessages %r is not one of %s — resolving to %r",
-                    long_messages,
-                    "/".join(DIGEST_MODES),
-                    DEFAULT_DIGEST_MODE,
-                )
-                long_messages = DEFAULT_DIGEST_MODE
-            max_chars = int(section.get("maxChars") or DEFAULT_MAX_CHARS)
-            if max_chars < 200:
-                logger.warning(
-                    "channels.slack.maxChars %d is below 200 — using %d",
-                    max_chars,
-                    DEFAULT_MAX_CHARS,
-                )
-                max_chars = DEFAULT_MAX_CHARS
+            # Deprecated and ignored (issue-549 R1.2, R1.3): the long form reaches
+            # Slack whole, so neither key limits anything any more. A config that
+            # still sets one loads, and is told once per process.
+            _warn_deprecated(section)
+            long_messages = DEFAULT_DIGEST_MODE
+            max_chars = DEFAULT_MAX_CHARS
             kickoff = section.get("kickoff") or {}
             if not isinstance(kickoff, Mapping):
                 logger.warning("channels.slack.kickoff is not a mapping — ignored")

@@ -142,16 +142,6 @@ def _status(config: dict, probe: bool = False) -> int:
         )
     )
     print(strings.t("cli.channels.status.verbosity", verbosity=slack.verbosity))
-    print(strings.t("cli.channels.status.max-chars", max_chars=slack.max_chars))
-    # Above the cap (issue-338): the digest, or 13.10.0's cut.
-    print(
-        strings.t("cli.channels.status.long-messages")
-        + (
-            strings.t("cli.channels.status.long-messages.digest")
-            if slack.long_messages == "digest"
-            else strings.t("cli.channels.status.long-messages.truncate")
-        )
-    )
     # What the read mode costs an operator who is waiting (issue-362): poll says
     # its cadence, socket says how often it RECONCILES on top of its push reads —
     # which is the ceiling on how late a missed envelope can be.
