@@ -20,6 +20,7 @@ import logging
 import os
 import re
 import shutil
+import unicodedata
 import uuid
 from collections import deque
 from dataclasses import replace
@@ -772,8 +773,40 @@ MAX_DEFAULT_LENGTH = 600
 MAX_DEFAULT_WAIT_SECONDS = 7 * 24 * 3600
 
 
+def printable(text: Optional[str], keep: str = "", replacement: str = "") -> str:
+    """``text`` with every character that does not print replaced.
+
+    The one rule for a session's own words wherever a terminal will draw them
+    or a pane will be typed them: a declared wait's condition, a status line,
+    an ask's default. A character prints when ``str.isprintable`` says so,
+    which leaves out the C0 and C1 controls, DEL, the format characters (the
+    bidirectional overrides and the zero-width ones among them) and the line
+    and paragraph separators. Each becomes ``replacement``, except the
+    characters in ``keep``. A space that is not the ASCII one becomes a space
+    whatever ``replacement`` is, so that dropping never joins two words.
+    """
+
+    def shown(char: str) -> str:
+        if char in keep or char.isprintable():
+            return char
+        return " " if unicodedata.category(char) == "Zs" else replacement
+
+    return "".join(shown(char) for char in text or "")
+
+
+#: What a default keeps beside its printable characters: it may be several
+#: lines, and it is pasted into the session inside a fence.
+DEFAULT_KEEPS = "\n\t"
+
+
 def check_default(default_answer: str, after_seconds: Optional[int]) -> str:
-    """The default answer, trimmed, once it and its wait are acceptable.
+    """The default answer, cleaned and trimmed, once it and its wait are
+    acceptable.
+
+    The default is pasted back into the session when it is taken. An escape
+    sequence in it could end the paste early, and what follows would be typed
+    as input of its own, so every character that does not print is dropped;
+    line breaks and tabs stay (:func:`printable`).
 
     ``ValueError`` — with the sentence the session is shown — for a default over
     :data:`MAX_DEFAULT_LENGTH`, a wait that is not a whole number of seconds
@@ -781,7 +814,7 @@ def check_default(default_answer: str, after_seconds: Optional[int]) -> str:
     take. The command runs this before it sends anything, and :func:`ask_session`
     runs it again: the service is not obliged to trust its caller.
     """
-    default_answer = (default_answer or "").strip()
+    default_answer = printable(default_answer, keep=DEFAULT_KEEPS).strip()
     if len(default_answer) > MAX_DEFAULT_LENGTH:
         raise ValueError(
             strings.t(

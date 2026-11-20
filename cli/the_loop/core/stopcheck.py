@@ -310,7 +310,7 @@ def check_condition(condition: str) -> str:
     whitespace and control characters becomes one space.
     """
     text = condition if isinstance(condition, str) else ""
-    text = " ".join("".join(c if c.isprintable() else " " for c in text).split())
+    text = " ".join(core_sessions.printable(text, replacement=" ").split())
     if not text:
         raise ValueError(strings.t("core.stopcheck.wait.empty-condition"))
     if len(text) > MAX_CONDITION_LENGTH:

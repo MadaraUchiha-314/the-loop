@@ -52,7 +52,7 @@ def one_line(text: Optional[str], limit: int = MAX_SHOWN) -> str:
     the-loop's, and an escape sequence would be obeyed. Every run of whitespace
     and of characters that do not print becomes one space.
     """
-    flat = " ".join("".join(c if c.isprintable() else " " for c in text or "").split())
+    flat = " ".join(core_sessions.printable(text, replacement=" ").split())
     return flat if len(flat) <= limit else flat[:limit].rstrip() + "…"
 
 

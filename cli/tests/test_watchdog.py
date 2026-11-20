@@ -500,6 +500,35 @@ def test_a_default_cannot_close_its_own_fence(world):
     assert text.count(f"{fence}text\n") == 1 and text.count(fence) == 2
 
 
+def test_abuse_a_default_recorded_with_control_characters_is_pasted_without_them(
+    world,
+):
+    """
+    Feature: the default is typed into the session as data
+      Scenario: an ask already in the log holds a default with control characters
+        Given a default with the end of a bracketed paste, a carriage return,
+          a bell and a bidirectional override
+        When its deadline passes and the watcher tells the session
+        Then what is pasted holds none of them, and the words are still there
+        And the same holds when the default is told later, with a nudge
+
+    Requirement: docs/specs/issue-551/requirements.md § Security considerations
+    """
+    hostile = "Move T5\x1b[201~\rrm -rf\x07 \u202eafter\u2066 merge.\n\tThen T6."
+    controls = ("\x1b", "\r", "\x07", "\u202e", "\u2066")
+    ask(world, default=hostile)
+    world.cycle(31)
+
+    (pasted,) = world.pasted()
+    assert not any(c in pasted for c in controls)
+    assert "Move T5[201~rm -rf after merge.\n\tThen T6." in pasted
+    told = watchdog.default_text(ref=REF, default=hostile)
+    assert told == pasted
+    assert not any(
+        c in watchdog.default_text(ref=REF, default="a\x9b31mb") for c in "\x9b"
+    )
+
+
 def test_a_default_is_recorded_and_published_once(world):
     ask(world)
     world.cycle(29)

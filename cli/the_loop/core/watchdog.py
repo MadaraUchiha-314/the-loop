@@ -91,8 +91,12 @@ def default_text(*, ref: str, default: str) -> str:
 
     The default is the session's own earlier text. It is quoted inside a fence
     one backtick longer than any run in it, so nothing in it can close the
-    fence and read as the-loop's words.
+    fence and read as the-loop's words. Characters that do not print are
+    dropped here as well as when the ask is made: an escape sequence could end
+    the paste early, and a default recorded by an older version, or written
+    into the log by hand, was never cleaned.
     """
+    default = core_sessions.printable(default, keep=core_sessions.DEFAULT_KEEPS)
     longest = max((len(run) for run in _BACKTICKS.findall(default)), default=0)
     return prompts.render(
         "watchdog/default-taken",

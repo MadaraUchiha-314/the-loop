@@ -500,6 +500,36 @@ def test_abuse_a_default_with_markup_is_quoted_as_words_on_github(
     assert body.count(SELF_COMMENT_MARKER) == 1
 
 
+#: A default as a steered session could write it: the end of a bracketed paste,
+#: a carriage return, a bell and a right-to-left override among its words.
+HOSTILE_DEFAULT = "Move T5\x1b[201~\rrm -rf\x07 \u202eafter\u2066 merge.\n\tThen T6."
+CONTROLS = ("\x1b", "\r", "\x07", "\u202e", "\u2066")
+
+
+def test_abuse_a_default_with_control_characters_is_recorded_without_them(
+    config, posted, log_path
+):
+    """
+    Feature: A question can carry a default and a deadline
+    Scenario: the text of a default answer contains control characters
+      Given a default with an escape sequence, a carriage return, a bell and a
+        bidirectional override
+      When the question is asked
+      Then the recorded default holds none of them
+      And its words, its line break and its tab are kept
+
+    Requirement: docs/specs/issue-551/requirements.md#security-considerations
+    """
+    _ask(config, default_answer=HOSTILE_DEFAULT)
+
+    (record,) = _records(log_path, "session.awaiting_input")
+    assert record["default"] == "Move T5[201~rm -rf after merge.\n\tThen T6."
+    assert not any(c in record["default"] for c in CONTROLS)
+    assert core_sessions.check_default("  \x07\x1b  ", None) == ""
+    with pytest.raises(ValueError):
+        core_sessions.check_default("\x07\u202e", 60)  # nothing left to take
+
+
 # -- the deadline passes: the watcher (issue-551, task 11) ------------------------
 
 from the_loop.authz import SELF_COMMENT_MARKER  # noqa: E402
