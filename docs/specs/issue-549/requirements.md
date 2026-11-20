@@ -181,7 +181,7 @@ details where I work on the item and only headlines where every item meets.
 1. WHEN the-loop posts an event in a declared room THEN the short form SHALL be a
    top-level message in the room, and the long form SHALL be in that message's thread.
 2. WHEN the-loop posts an event in the central channel THEN the system SHALL post only
-   the short form, as a reply in the work item's thread, with an _Open on GitHub_
+   the short form, as a reply in the work item's thread, with an *Open on GitHub*
    button when the event has a URL. It SHALL NOT post the long form there. Slack
    offers no collapsible section whose fold the-loop controls, and a thread reply
    cannot have a thread of its own (decided on PR #550).
