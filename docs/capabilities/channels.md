@@ -270,18 +270,19 @@ flowchart LR
   (`channels.publishers.conversation_opener`, reading the CLI config per call — both
   daemons and the core facade wire it, the facade with the config it was handed); a
   dispatcher built without one behaves as at 13.1.1.
-- **Rendering is the channel's.** The Slack channel posts Block Kit: a header (event,
-  person, work item), the text drawn as mrkdwn and — above `maxChars` — digested or
-  truncated per `longMessages` (the next bullet), a context line at `verbose`, a link
-  button whenever the event has a URL,
-  Approve / Request changes buttons for an approval-shaped event **only** when a press
-  can reach this instance (`read.mode: socket`, or `gateway` behind a gateway block —
-  issue-503) and the `gate.feedback` grant both hold, and — since issue-337 —
-  an **Execute** button on the phase-selection checklist mirror (a `comment.agent`
-  carrying the hook's marker) and **Do** and **Start** buttons on the kickoff's "opened"
-  reply (issue-529), each **only** under the same reachability rule and the
-  `control.command` grant, each carrying the **configured keyword** as its value (a
-  disabled keyword renders no button).
+- **Rendering is the channel's.** The Slack channel posts Block Kit. Every message is a
+  **short message**: the short form as one mrkdwn section (no machine header), a context
+  line of detail at `verbose`, an *Open on GitHub* button whenever the event has a URL,
+  and the buttons the event earns. Approve / Request changes appear on an
+  approval-shaped event **only** when a press can reach this instance (`read.mode:
+  socket`, or `gateway` behind a gateway block — issue-503) and the `gate.feedback`
+  grant both hold. Since issue-337 an **Execute** button sits on the phase-selection
+  checklist mirror (a `comment.agent` carrying the hook's marker), and **Do** and
+  **Start** buttons sit on the kickoff's "opened" reply (issue-529). Each is shown
+  **only** under the same reachability rule and the `control.command` grant, and each
+  carries the **configured keyword** as its value (a disabled keyword renders no
+  button). How the short message and the long form are built and posted is in the
+  issue-549 bullets below.
 - **A new work item is offered both loops** (issue-529). WHEN any kickoff opens a work
   item — a top-level message or mention, a repository-picker answer, `/the-loop new` —
   AND command buttons may render THEN the "opened" reply SHALL carry **Do** then
@@ -293,37 +294,41 @@ flowchart LR
   buttons. The issue is still created before the choice, so an unanswered reply leaves
   a filed, unarmed work item. A press enters the pipeline as that member's reply carrying the button's
   text; an unrecognised value is plain text.
-- **A work item's own room reads like a conversation** (issue-393,
-  [decision-134](/decisions/decision-134)). WHEN `channels.slack.room.style` is
-  `agentic` (the default) AND an event is bound to a work item's **room** (a channel the
-  item was declared into) THEN the channel SHALL render it in the-loop's first-person
-  voice — one state emoji, the event's own sentence, **no** event-type/ref header — and
-  a RoomPolicy delivery decision SHALL apply: an event identical to the last one
-  delivered for the node is dropped; a `phase.completed` immediately followed by its
-  successor's `phase.started` is collapsed to the one transition; a node's
-  `phase.started` line and its mirrored "ready for review" comment are suppressed once a
-  `*-pending` approval message has been posted for it (the gate is announced **once**,
-  with its buttons); a within-phase progress event edits that phase's one message in
-  place (`chat.update`, falling back to a fresh post if the ts is stale); an
-  acknowledgement of a consumed gate answer threads under the gate's message; and a
-  runtime template for a moment the session already spoke for is dropped. Every drop or
-  edit SHALL log the rule that decided it, so a "missing" message is diagnosable from
-  the daemon log alone. The GitHub ledger is **unchanged** — collapse and suppression
-  are a room-delivery policy, not a change to what happened, and the whole run remains
-  reconstructable from the ticket. WHEN `room.style` is `classic` THEN rendering is the
-  pre-issue-393 header form, byte-for-byte. A shared or central channel keeps the header
-  rendering whichever style is set, identifying the item by a short `#<n> <title>` link
-  rather than the full ref. The delivery memory backing these decisions is local and
-  transient: a pre-issue-393 state file loads it empty and a lost record degrades that
-  item's room to classic delivery, never to silence.
-- **A gate message can lead with the agent's own summary** (issue-393). WHEN a session
-  attaches a summary (`the-loop ask --summary`, or the approval-submission path) THEN
-  the room's message for that gate SHALL lead with that 2–3 sentence summary — what the
-  agent decided and what it is least sure of — in place of the document excerpt, drawn
-  as text with mentions and broadcasts neutralised and a length cap so it can page no
-  one; WHEN no summary is attached THEN the digest excerpt is the fallback, as before.
-  WHEN the PR-review gate publishes THEN its message SHALL name the pull request and its
-  link SHALL open the **pull request**, not the issue.
+- **Every conversation gets one delivery policy** (issue-393,
+  [decision-134](/decisions/decision-134); issue-549 widened it). Before anything is
+  posted, a RoomPolicy decision applies, in **every** conversation, the central channel
+  included. The rules, in order:
+  - **bookkeeping** (issue-549 R10): the daemon's session-started notice (recognised by
+    the `session-started` notice kind in its hidden marker) and the `phase.started` /
+    `phase.completed` label changes post **nothing** to Slack. They still reach GitHub
+    and the event log, and they still move the status reaction and feed the recap.
+  - **operator-docs**: an event stamped as operator documentation is for the ticket only.
+  - **dedupe**: an event identical to the last one delivered for the node is dropped.
+  - **gate-collapse**: a progress line or a mirrored "ready for review" comment for a
+    node whose `*-pending` approval message was just posted is dropped. The gate is
+    announced **once**, with its buttons.
+  - **progress-edit**: a within-phase progress event edits that phase's one message in
+    place (the progress edits below).
+  - **ack-thread**: an acknowledgement of a consumed gate answer threads under the
+    gate's message.
+  - **session-wins** (rooms only, while `channels.slack.room.style` is `agentic`, the
+    default): a runtime template for a moment the session already spoke for is
+    dropped, so the agent's words win over the boilerplate.
+
+  Every drop or edit SHALL log the rule that decided it, so a "missing" message is
+  diagnosable from the daemon log alone. The GitHub ledger is **unchanged**: the policy
+  decides delivery, not what happened, and the whole run stays reconstructable from the
+  ticket. The issue-393 transition-collapse and endgame-collapse rules are gone: they
+  acted only on the `phase.*` pair, which bookkeeping now drops outright. A shared or
+  central channel names the item by a short `#<n> <title>` link rather than the full
+  ref. The delivery memory behind these decisions is local and transient: a lost record
+  degrades to posting, never to silence.
+- **A gate message leads with the agent's own summary** (issue-393, issue-549). WHEN
+  a session attaches a summary (`the-loop ask --summary`, `the-loop comment --summary`,
+  or the approval-submission path) THEN that summary SHALL be the message's short form:
+  what the agent decided and what it is least sure of. WHEN the PR-review gate
+  publishes THEN its message SHALL name the pull request and its link SHALL open the
+  **pull request**, not the issue.
 - **Phase selection is a real control on Slack** (issue-393, F1/R9). WHEN the
   phase-selection checklist mirror reaches an interactive room (`read.mode: socket` and
   the `control.command` grant) THEN the channel SHALL render the phases as Block Kit
@@ -360,26 +365,122 @@ flowchart LR
   button whose press delivers that default as the member's reply; and WHEN the session
   has spoken for a node THEN a later runtime template for that same node SHALL be
   suppressed, so the agent's words win over the boilerplate.
-- **Long text is digested, never cut mid-sentence** (issue-338, decision-118). WHEN a
-  text section — an event's text, a notification's artifact excerpt — is longer than
-  `channels.slack.maxChars` AND `channels.slack.longMessages` is `digest` (the default)
-  THEN the channel SHALL post a **structural digest** within `maxChars`, computed with
-  no model: the first question in the text (else the sentence that says *reply `…`*)
-  first, in bold; every list as numbered lines with GitHub task boxes drawn ☑ / ☐;
-  every code fence, table and stack trace replaced in place by a pointer with its
-  size; absolute paths of three or more segments shortened to their last two; the rest
-  in the author's order until the budget is spent; the cut on a sentence boundary (a
-  clause, then a word, only when no sentence fits); and one closing line linking the
-  full text (the event's URL, never one from the text) whenever anything was cut, left
-  out or replaced. Every non-pointer line of a digest SHALL be text the author wrote.
-  WHEN `longMessages` is `truncate` THEN the first `maxChars` characters and a note, as
-  at 13.10.0. WHEN the text is at or under `maxChars` THEN it SHALL be posted whole, in
-  order, with no pointer and no closing line. The plain-text fallback (the phone's
-  notification) SHALL carry the same digest. Whatever the length, GitHub markdown is
-  drawn as Slack mrkdwn (`**bold**` → `*bold*`, headings, `[text](url)`, task boxes,
-  bullets), HTML comments — the-loop's markers and envelopes included — are removed,
-  and a Slack broadcast sequence (`<!channel>`, `<!here>`) in a comment is neutralised.
-  `the-loop channels status` prints the `longMessages` line beside `maxChars`.
+- **A short form for the phone, the whole text in a room's thread** (issue-549,
+  [decision-154](/decisions/decision-154), which supersedes decision-118). Every Slack
+  message from the-loop now has two parts: a **short form**, which is the message, and
+  the **long form**, the whole text GitHub received. Nothing is condensed or cut any
+  more. Each event goes through one pipeline:
+
+  ```mermaid
+  flowchart LR
+    E[bus event] --> P[policy]
+    P --> PL[placement]
+    PL --> S[short-form builder]
+    PL --> L[long-form renderer]
+    S --> MP[message plan]
+    L --> MP
+    MP --> D[delivery]
+    D --> R[status reactor]
+  ```
+
+  1. **Policy** (`room_policy.py`): the delivery policy above decides post, edit,
+     thread or drop.
+  2. **Placement** (`placement.py`): one rule says where each form goes, by the kind of
+     conversation:
+
+     | Conversation | The short message | The long form |
+     |---|---|---|
+     | Declared room | a top-level message | in that message's thread, 1–n parts |
+     | Central channel | a reply in the work item's thread | none: a thread reply has no thread, so the *Open on GitHub* button leads to the whole text |
+     | A mention thread in a room | a reply in that thread | after it, in the same thread |
+
+     Gate, command and selection buttons are always on the short message, so a
+     decision is taken from it.
+  3. **Short form** (`shortform.py`): the first source that has one wins. First the
+     agent's own summary (`--summary` on `the-loop comment` and `the-loop ask`). Then,
+     for an event no agent wrote (the runtime, a graph hook, the daemon), the fixed
+     lead its type has. Otherwise the first question in the text, else its first
+     sentence, with the work item's link; this fallback logs
+     `channels.short_form_missing` so the missing summary is visible. The text is
+     defused, drawn as mrkdwn and capped at **600 characters** on a sentence boundary
+     (`SUMMARY_MAX_CHARS`). The recap line and the mentions count inside the cap. The
+     same text is the message's `text` fallback, which notifications and screen
+     readers read.
+  4. **Long form** (`render.py`): the whole text, defused, as Slack **`markdown`
+     blocks**, one block per thread reply. Slack draws standard markdown there, tables
+     and task lists included, so the words go as written. A part is at most
+     **11,000 characters** (`LONG_FORM_PART_CHARS`; Slack caps one message's
+     `markdown` blocks at 12,000 together). A split falls between top-level blocks,
+     never inside a table, a code block, a list item or a word. One code block too
+     large for a part is split at lines, its fence closed and reopened. A table too
+     large for a part becomes an aligned code block first, then splits the same way.
+     With more than one part, each opens with an `(n/m)` mark.
+  5. **Message plan and delivery** (`delivery.py`): the plan is the short message
+     plus the ordered parts. Delivery posts the short message first, then each part,
+     in order. Every `chat.postMessage` sets `unfurl_links=false` and
+     `unfurl_media=false`, so **no message has a link preview**. Each posted
+     timestamp is recorded against the event's id before the next call, so an outbox
+     replay of the same event posts only the parts that are missing. A Slack 429
+     waits for `Retry-After` and retries the same part; it never skips one.
+  6. **Status reactor** (`status.py`): see the status bullet below.
+
+  **Progress edits.** WHEN the policy decides an edit THEN the short message is edited
+  in place (`chat.update`) and the long-form parts are edited one for one. Extra new
+  parts are posted, and parts the new text no longer needs are deleted
+  (`chat.delete`). An edit is only made to a message posted with previews off, and the
+  live check confirms an edit keeps them off.
+
+  **Defusing** (`defuse.py`), on both forms, before Slack parses anything: the-loop's
+  markers and other HTML comments are stripped; broadcast sequences (`<!here>`,
+  `<!channel>`, `<!everyone>`, `<!subteam^…>`) are neutralised; user mentions
+  (`<@U…>`, `<@W…>`) become inert text; only `http`, `https` and `mailto` stay links,
+  any other scheme is shown as text; and Slack's angle-bracket syntax is escaped, so
+  no table cell, heading or link label can open a link or a mention. The only live
+  mentions are the ones the channel adds afterwards (below).
+
+  `channels.slack.maxChars` and `channels.slack.longMessages` are **deprecated and
+  ignored**. A config that still sets them loads, with one warning per process per key;
+  `the-loop channels status` prints neither. See the
+  [migration note](/config/cli/channels-options#removed-maxchars-and-longmessages-issue-549).
+- **One status reaction shows where a work item stands** (issue-549 R8). Every work
+  item with a Slack conversation carries exactly one the-loop status reaction, on its
+  **status message**: the thread root in the central channel, the latest short message
+  in a declared room. It is one of five, fixed:
+
+  | State | Emoji | Set by |
+  |---|---|---|
+  | working | ⚙️ `gear` | phase and progress events |
+  | waiting on a human | ⏳ `hourglass_flowing_sand` | the session's question, a decision, an approval gate |
+  | in review | 👀 `eyes` | the review phases |
+  | blocked or failed | 🛑 `octagonal_sign` | an escalation, a failed outcome |
+  | complete | ✅ `white_check_mark` | `work-item-complete`, `work-item.closed` |
+
+  WHEN the state or the status message changes THEN the reactor adds the new reaction
+  and removes the old one. It only ever removes a reaction it added itself, and a
+  failed reaction never fails a delivery. Bookkeeping events still move it.
+- **A wait mentions its people once** (issue-549 R7). WHEN a message waits on a person
+  (the session's question, a decision, an approval gate) THEN the short form opens by
+  mentioning each authorized user whose Slack identity resolves to a member id. A wait
+  is mentioned **once**: an edit or a re-announcement of the same wait mentions no one,
+  and a gate that reopens is a new wait. An identity that does not resolve is mentioned
+  nowhere. Other messages mention no one.
+- **A recap after a quiet spell** (issue-549 R9). WHEN the last message from an
+  authorized human in the conversation is more than **12 hours** old (`RECAP_AFTER_S`,
+  fixed) AND the loop recorded a change since (a phase change, a gate outcome,
+  completion, an escalation) THEN the next short form opens with one recap line naming
+  up to six of those changes. With nothing changed there is no line.
+- **Gate buttons reach the work item's own conversation** (issue-549 R11). Work-item
+  refs are compared by an **identity key**: provider, host and number exact, GitHub
+  owner and repository case-insensitive. So a gate opened under a lowercased ref posts
+  its Approve / Request changes buttons in the item's own thread or room, the first
+  bound conversation winning. The graph verbs take the owner and repository from the
+  registered work item, not the lowercased git remote. The buttons' block names the
+  gate (`block_id` `the-loop:gate:<node>`), and a press counts only while that gate is
+  open. A press in a **declared room** resolves its work item through the room when no
+  thread binding names it. WHEN no press can reach this instance THEN the gate message
+  has no buttons and one line saying how to approve on GitHub, linked. WHEN the gate is
+  answered (from Slack or on GitHub) THEN its message is edited: the buttons go and a
+  line names the outcome and who answered (`gate.answered`, `channel.gate_closed`).
 - **A press's outcome is written onto the pressed message** (issue-337, decision-117).
   WHEN a button press is **processed** THEN the channel SHALL edit the pressed message:
   the pressed button set replaced by a context line naming the button (from its
@@ -1069,12 +1170,18 @@ ticket, with no Jira work items, ingress or ledger:
 - [`decision-130`](../decisions/decision-130.md) — the lifecycle is the runtime's and
   follows the label, never recorded; a declared room is channel-based, the central
   channel threaded; the next channel type is a provider row.
-- [`docs/specs/issue-338/design.md`](../specs/issue-338/design.md) — `channels/digest.py`
-  (`to_mrkdwn`, `condense`, `fit`), the renderer's `long_messages`, the post's fallback
-  text, the key in both schema copies, the status line.
-- [`decision-118`](../decisions/decision-118.md) — a structural digest the channel
-  computes rather than a model's summary; one enum key with `maxChars` as the
-  threshold; mrkdwn drawing on every message, the digest only above the cap.
+- [`docs/specs/issue-549/design.md`](../specs/issue-549/design.md) — the pipeline:
+  policy for every conversation, `placement.py`, `shortform.py`, `render.py` and
+  `defuse.py`, the message plan and `delivery.py`, `status.py`, `preamble.py` (mentions
+  and the recap), the identity key, the room press and the gate edit.
+- [`decision-154`](../decisions/decision-154.md) — a short form the agent writes, the
+  whole text in a room's thread as `markdown` blocks, the central channel short-form
+  only; `maxChars` / `longMessages` deprecated; idempotent, preview-free delivery; refs
+  compared case-insensitively on owner and repository. Supersedes decision-118.
+- [`docs/specs/issue-338/design.md`](../specs/issue-338/design.md) — the digest
+  (retired by issue-549) and `to_mrkdwn`, which lives on in `channels/mrkdwn.py`.
+- [`decision-118`](../decisions/decision-118.md) — superseded by decision-154: the
+  structural digest above `maxChars`.
 - [`docs/specs/issue-337/design.md`](../specs/issue-337/design.md) — the renderer's
   `commands`, `expected_commands` keyed on the checklist marker, the kickoff reply's
   Start button, `report_press` and the rebuilt blocks, the `channels status` steps.
@@ -1125,6 +1232,7 @@ ticket, with no Jira work items, ingress or ledger:
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-549 | **A short form for the phone, the whole text in a room's thread** (2026-11-19): every Slack message is a short form (the agent's `--summary`, else a runtime lead, else a built line that logs `channels.short_form_missing`; 600 characters), and in a declared room the whole text follows in its thread as `markdown` blocks of up to 11,000 characters with `(n/m)` marks; the central channel gets the short form only. The digest, `maxChars` and `longMessages` are retired (the keys deprecated and ignored). One policy for every conversation, with a bookkeeping rule; idempotent delivery by event id; no link previews; progress edits across parts; one status reaction of five; mentions once per wait; a 12-hour recap; gate buttons in the item's own conversation through a case-insensitive identity key, room presses, the gate message edited after its answer, and an approve-on-GitHub line where no press can arrive. `the-loop comment --summary` and `summary` on the comment API | [spec](../specs/issue-549/), [decision-154](../decisions/decision-154.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/549) |
 | issue-532 | Graph notifications behind a gateway post first time (2026-11-16): `graph/bootstrap.py::build_runtime` copies `gateway` and `instance` into the runtime config, so `posting_path()` resolves `gateway` for the `notify` hook and `publish_lifecycle` instead of `none`, and the gateway call names this instance | [spec](../specs/issue-532/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/532) |
 | issue-498 | A relayed command still opens its comment (2026-10-23): the ledger's `gate.feedback` / `control.command` relay record puts the person's words first, unquoted, and the attribution after them, because a control keyword now counts only where a comment opens with it | [spec](../specs/issue-498/), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/498) |
 | issue-529 | **A Slack kickoff offers Do or Start** (2026-10-29): the kickoff's "opened" reply — on every path, the message, the picker and `/the-loop new` — renders `command_buttons_for(*KICKOFF_COMMANDS)`, so **Do** (`the-loop do`, the ad-hoc loop) sits before **Start**, and `render_reply_blocks` puts one fixed description line per described button between the text and the buttons. Before, only Start was offered, so a tactical request walked the full PDLC unless the member knew to type `the-loop do`. No config, grant, scope, schema or event change | [spec](../specs/issue-529/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/529) |

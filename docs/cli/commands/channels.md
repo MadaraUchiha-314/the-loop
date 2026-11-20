@@ -28,11 +28,10 @@ the-loop channels manifest --name NAME --write  # renamed, kept beside the CLI c
   channel state holds, and the **catalog**: every subscribable event with a tick where
   `subscribe` names it, and every publishable event with a tick where `publish` grants
   it — so neither list is ever configured by guessing names. Since issue-325 it also
-  prints the **reactions** line: which emoji acknowledge an accepted message, or `off`;
-  and since [issue-338](https://github.com/MadaraUchiha-314/the-loop/issues/338) the
-  **`longMessages`** line beside `maxChars` — what happens to text longer than the cap
-  (`digest`: the ask first, choices numbered, code and traces as pointers, cut at a
-  sentence, the link for the rest; `truncate`: the first `maxChars` characters).
+  prints the **reactions** line: which emoji acknowledge an accepted message, or `off`.
+  It prints no `maxChars` or `longMessages` line: both keys are deprecated and ignored
+  since [issue-549](https://github.com/MadaraUchiha-314/the-loop/issues/549) (the
+  [migration note](/config/cli/channels-options#removed-maxchars-and-longmessages-issue-549)).
   Since [issue-362](https://github.com/MadaraUchiha-314/the-loop/issues/362) the
   `read:` line also names socket mode's **reconcile cadence**
   (`read.catchUpSeconds`), and a **`channel kind:`** line says what kind of

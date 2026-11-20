@@ -215,7 +215,7 @@ Tests are named so the T8 `-k` filter in `testing-plan.md` finds the abuse cases
   - _Depends on:_ 6, 9
   - _Requirements:_ R1.1, R1.2
   - _Test:_ T1 — the full channels suite still passes; no test imports the removed code
-- [ ] 18. Docs in the same PR.
+- [x] 18. Docs in the same PR.
   - `docs/capabilities/channels.md` (the pipeline, the recap threshold, the status
     emoji, the long-form budget), the configuration reference and guides (keys removed,
     one migration note), the templates, one line in

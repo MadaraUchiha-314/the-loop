@@ -1738,7 +1738,7 @@
                 "verbose"
               ],
               "default": "normal",
-              "description": "quiet = one line + the work-item link; normal = + the question text; verbose = + context detail. Strict supersets, so turning it down never changes the words."
+              "description": "Every message is the event's short form (issue-549); verbose adds a context line of the event's detail under it. quiet and normal post the same message."
             },
             "maxChars": {
               "type": "integer",
@@ -1762,7 +1762,7 @@
                     "classic"
                   ],
                   "default": "agentic",
-                  "description": "agentic (default) = one message per meaningful moment, in the-loop's first-person voice with one state emoji and no machine header; consecutive lifecycle events collapse into one transition, a gate is announced once (with its buttons), a phase's progress edits one message in place, and acknowledgements thread under the message they answer. classic = the pre-issue-393 rendering, byte-for-byte — the escape hatch and the compatibility baseline."
+                  "description": "agentic (default) = in a work item's own room, a runtime template for a moment the session already spoke for is dropped, so the agent's words win (session-wins). classic = that rule is off. Since issue-549 every other delivery rule and the short-form rendering apply in every conversation whatever this says."
                 }
               }
             },
