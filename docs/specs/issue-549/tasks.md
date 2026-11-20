@@ -115,7 +115,7 @@ Tests are named so the T8 `-k` filter in `testing-plan.md` finds the abuse cases
     `test_runtime_lead`, `test_built_fallback_logs`, `test_cap_600_on_sentence`,
     `test_text_fallback_is_short_form`; T8 — `test_abuse_summary_foreign_link_keeps_event_url`
     (red→green)
-- [ ] 8. Placement.
+- [x] 8. Placement.
   - One pure rule: declared room → short top-level and long form in its thread; central
     channel → short form only, as a reply in the item's thread, with _Open on GitHub_;
     mention thread in a room → both in that thread. Buttons go on the short message.
