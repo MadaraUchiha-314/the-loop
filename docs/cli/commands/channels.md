@@ -113,6 +113,11 @@ the-loop channels manifest --name NAME --write  # renamed, kept beside the CLI c
     bot scopes and events added and removed, and whether the existing app needs its
     *App Manifest* replaced and a reinstall. Then it prints the link. A file it cannot
     read as a manifest is left untouched unless `--name` is given (exit 2).
+- **`status`** prints a `[!]` line under `subscribe:` when the list names
+  `session.awaiting_input` and not `session.stalled`: an explicit list replaces the
+  default, so a config written before the stall notice existed would never announce a
+  stalled session. Add `session.stalled` to
+  [`channels.slack.subscribe`](/config/cli/channels-options#slacksubscribe).
 - **`status`** also prints, since
   [issue-389](https://github.com/MadaraUchiha-314/the-loop/issues/389), a **`mentions:`**
   line — the mention is the address in every channel, delivered as `app_mention` over

@@ -135,6 +135,12 @@ def _status(config: dict, probe: bool = False) -> int:
         )
     )
     print(strings.t("cli.channels.status.subscribe", events=", ".join(slack.subscribe)))
+    # A list written before the stall notice existed hears questions and not
+    # stalls, and nothing else would say so.
+    if "session.awaiting_input" in slack.subscribe and (
+        "session.stalled" not in slack.subscribe
+    ):
+        print(strings.t("cli.channels.status.subscribe.no-stall"))
     print(
         strings.t(
             "cli.channels.status.publish",

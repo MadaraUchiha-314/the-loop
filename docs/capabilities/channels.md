@@ -1035,7 +1035,11 @@ Each one is a short Slack message and a marked comment on the work item. The wat
 rules for when each fires are in [interactive-sessions](interactive-sessions.md).
 
 - **The default subscription** of a channel SHALL be `session.awaiting_input` and
-  `session.stalled`: the two events that need a person.
+  `session.stalled`: the two events that need a person. An explicit `subscribe` list
+  replaces the default, so a config that already lists its events hears a stall only
+  once `session.stalled` is added to the list. `the-loop channels status` SHALL print a
+  warning line while a Slack channel's list names `session.awaiting_input` and not
+  `session.stalled`.
 - The Slack channel SHALL hear a follow-up event when it subscribes to the event the
   follow-up is about: `session.stall_ended` with `session.stalled`, and
   `session.ask_default_taken` and `session.ask_reminded` with
@@ -1191,7 +1195,7 @@ ticket, with no Jira work items, ingress or ledger:
      jira:
        enabled: true
        subscribe: [work-item.started, phase.started, phase.completed,
-                   session.awaiting_input, work-item.closed]
+                   session.awaiting_input, session.stalled, work-item.closed]
    ```
 
 4. An authorized user declares the room on the work item:

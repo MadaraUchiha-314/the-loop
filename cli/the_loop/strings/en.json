@@ -465,6 +465,7 @@
   "cli.channels.status.split-check": "  split check:  {line}",
   "cli.channels.status.subscribable": "subscribable events ([x] = in channels.slack.subscribe):",
   "cli.channels.status.subscribe": "  subscribe:    {events}",
+  "cli.channels.status.subscribe.no-stall": "                [!] session.stalled is not subscribed: a session that stays idle with work still to do will not be announced here. An explicit subscribe list replaces the default, so add session.stalled to channels.slack.subscribe",
   "cli.channels.status.unknown-event": "  [!] {name} — not in the shipped catalog; nothing shipped broadcasts it (a custom graph notify event, or a typo)",
   "cli.channels.status.unset": "(unset)",
   "cli.channels.status.verbosity": "  verbosity:    {verbosity}",

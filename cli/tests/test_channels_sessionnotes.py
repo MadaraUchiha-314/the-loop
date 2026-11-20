@@ -579,3 +579,33 @@ def test_a_stall_notice_with_no_channel_left_still_loses_its_reaction(
 
     assert client.updates == []
     assert (ROOM, ts, "octagonal_sign") in client.removed
+
+
+# -- an explicit subscription that predates the stall notice ------------------------
+
+
+def test_status_warns_when_questions_are_heard_and_stalls_are_not(tmp_path, capsys):
+    """
+    Feature: A stall reaches a person
+    Scenario: the operator's config lists its subscription and leaves out the stall
+      Given a Slack channel that subscribes to session.awaiting_input by name
+      When the-loop channels status is printed
+      Then one line says a stalled session will not be announced, and what to add
+      And a channel on the default subscription, or one that names both, gets no line
+
+    Requirement: docs/specs/issue-551/requirements.md R4.4
+    """
+    from the_loop.commands import channels_cmd
+
+    def status(**slack):
+        channels_cmd._status(cli_config(tmp_path, **slack))  # noqa: SLF001
+        return capsys.readouterr().out
+
+    warned = status(subscribe=["session.awaiting_input", "comment.agent"])
+    assert "[!] session.stalled is not subscribed" in warned
+    assert "add session.stalled" in warned
+    both = status(subscribe=["session.awaiting_input", "session.stalled"])
+    assert "session.stalled is not subscribed" not in both
+    assert "session.stalled is not subscribed" not in status()
+    neither = status(subscribe=["comment.agent"])
+    assert "session.stalled is not subscribed" not in neither

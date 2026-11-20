@@ -28,7 +28,8 @@ channels:
     botTokenEnv: THE_LOOP_SLACK_BOT_TOKEN   # xoxb-, chat:write + channels.history
     appTokenEnv: THE_LOOP_SLACK_APP_TOKEN   # xapp-, only for read.mode: socket (a gateway holds its own)
     channel: C0123ABCDEF                     # the channel the bot posts into
-    subscribe: [session.awaiting_input, phase-approval-pending, comment.agent]
+    subscribe: [session.awaiting_input, session.stalled, phase-approval-pending,
+                comment.agent]
     publish: [work-item.reply, gate.feedback]
     verbosity: normal
     room:
@@ -132,7 +133,7 @@ channels:
   jira:
     enabled: true
     subscribe: [work-item.started, phase.started, phase.completed,
-                session.awaiting_input, work-item.closed]
+                session.awaiting_input, session.stalled, work-item.closed]
     verbosity: normal
 ```
 
@@ -153,7 +154,9 @@ is logged (fail closed).
 The event types this channel receives, exactly as [`slack.subscribe`](#slacksubscribe)
 — for example `work-item.started`, `phase.started`, `phase.completed`,
 `session.awaiting_input` and `work-item.closed`. `the-loop channels status` prints the
-catalog. A name outside it is kept, with a warning. One difference from Slack: this
+catalog. A name outside it is kept, with a warning. An explicit list replaces the
+default, so a list written before `session.stalled` existed needs it added to hear a
+stall. One difference from Slack: this
 channel hears `session.stall_ended`, `session.ask_default_taken` and
 `session.ask_reminded` only when the list names them.
 
@@ -232,6 +235,12 @@ use a name when you want the file to read the way people talk.
 
 - **Type:** `string[]`
 - **Default:** `["session.awaiting_input", "session.stalled"]`
+
+An explicit list **replaces** the default. A list written before `session.stalled`
+existed therefore hears questions and not stalls: add `session.stalled` to it, or a
+session that stays idle with work still to do is announced nowhere in Slack.
+[`the-loop channels status`](/cli/commands/channels) prints a `[!]` line while the list
+names `session.awaiting_input` and not `session.stalled`.
 
 The event types this channel **receives**. Was `events` before issue-309 —
 [`the-loop migrate-config`](/cli/commands/migrate-config) renames it. The names come
