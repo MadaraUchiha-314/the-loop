@@ -285,6 +285,47 @@ def _repos(
     )
 
 
+def _pr_spec(
+    root: Path,
+    work_item: str,
+    pr: int,
+    checkout: str,
+    pr_repo: str = "",
+    disclosure_approval: str = "",
+    still_valid: str = "",
+    spec_dir: str = "",
+) -> Dict[str, Any]:
+    # A GitHub-reading verb, so it routes like the harness's GitHub verbs: a
+    # service too old to serve the route is named, not reported as a bare 404.
+    from ..client.routing import harness_routed
+
+    return harness_routed(
+        lambda connection: connection.post(
+            "/graph/pr-spec",
+            {
+                "repo": str(root),
+                "workItem": work_item,
+                "pr": pr,
+                "prRepo": pr_repo,
+                "checkout": str(Path(checkout).expanduser().resolve()),
+                "disclosureApproval": disclosure_approval,
+                "stillValid": still_valid,
+                "specDir": spec_dir,
+            },
+        ),
+        lambda: core_graphs.pr_spec(
+            str(root),
+            work_item,
+            pr,
+            checkout,
+            pr_repo=pr_repo,
+            disclosure_approval=disclosure_approval,
+            still_valid=still_valid,
+            spec_dir=spec_dir,
+        ),
+    )
+
+
 def _discover_work_items(root: Path, spec_root: str) -> List[str]:
     base = root / spec_root
     if not base.is_dir():
@@ -1074,6 +1115,33 @@ class GraphCommand(Command):
         repos.add_argument("--ref", default="", help=strings.t("cli.graph.ref.help"))
         _add_pr_flags(repos)
 
+        prspec = sub.add_parser("pr-spec", help=strings.t("cli.graph.pr-spec.help"))
+        prspec.add_argument("work_item")
+        prspec.add_argument(
+            "--pr", type=int, required=True, help=strings.t("cli.graph.pr.help")
+        )
+        prspec.add_argument(
+            "--pr-repo", default="", help=strings.t("cli.graph.pr-repo.help")
+        )
+        prspec.add_argument(
+            "--checkout",
+            required=True,
+            help=strings.t("cli.graph.pr-spec.checkout.help"),
+        )
+        prspec.add_argument(
+            "--disclosure-approval",
+            default="",
+            help=strings.t("cli.graph.pr-spec.disclosure.help"),
+        )
+        prspec.add_argument(
+            "--still-valid",
+            default="",
+            help=strings.t("cli.graph.pr-spec.still-valid.help"),
+        )
+        prspec.add_argument(
+            "--json", action="store_true", help=strings.t("cli.graph.pr-spec.json.help")
+        )
+
         sub.add_parser(
             "hooks",
             help=strings.t("cli.graph.hooks.help"),
@@ -1256,6 +1324,65 @@ class GraphCommand(Command):
             if result["declared"]:
                 print(strings.t("cli.graph.skip.note"))
             return 0 if result["declared"] else 1
+
+        if args.action == "pr-spec":
+            try:
+                result = _pr_spec(
+                    root,
+                    args.work_item,
+                    args.pr,
+                    args.checkout,
+                    pr_repo=args.pr_repo,
+                    disclosure_approval=args.disclosure_approval,
+                    still_valid=args.still_valid,
+                    spec_dir=spec_dir,
+                )
+            except Exception as exc:  # noqa: BLE001
+                if not _is_bad_request(exc) and service_error(exc) is not None:
+                    raise
+                print(strings.t("cli.graph.refused", detail=_detail(exc)))
+                return 2
+            if args.json:
+                print(json.dumps(result, indent=2))
+                return 0 if result["recorded"] else 1
+            record = result.get("record") or {}
+            if result["recorded"]:
+                summary = (
+                    strings.t(
+                        "cli.graph.pr-spec.recorded.required",
+                        path=record.get("path", ""),
+                        citations=record.get("citations", 0),
+                        digest=str(record.get("chainDigest", ""))[:19],
+                    )
+                    if record.get("required")
+                    else strings.t(
+                        "cli.graph.pr-spec.recorded.not-required",
+                        reason=record.get("reason", ""),
+                    )
+                )
+                print(
+                    strings.t(
+                        "cli.graph.pr-spec.recorded",
+                        pr=result["pullRequest"],
+                        record=summary,
+                    )
+                )
+                return 0
+            findings = result.get("findings") or []
+            print(
+                strings.t(
+                    "cli.graph.pr-spec.refused",
+                    pr=result["pullRequest"],
+                    count=len(findings),
+                )
+            )
+            for f in findings:
+                where = (
+                    f"{f['file']}:{f['line']}" if f.get("line") else f.get("file", "")
+                )
+                text = f"{where}: {f['text']}" if where else f["text"]
+                print(strings.t("cli.graph.pr-spec.finding", finding=text))
+            return 1
 
         if args.action == "repos":
             try:

@@ -16,6 +16,10 @@
 <!-- The card: what this PR does, why, and what to check. About 120 words is the
      guide, not a limit. -->
 
+**This PR's spec:** [`docs/specs/<key>/pr-<n>/`](<link to the folder in this PR's branch>)
+— what this pull request delivers of <work item ref>. (Drop this line when the work item
+has a single pull request: its `pr-spec.json` records `required: false`.)
+
 What this PR does and why, in a few plain sentences.
 
 **Start here:** the explainer of this change — `<Location from evidence/explainer.md>`.

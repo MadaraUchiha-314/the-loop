@@ -833,6 +833,36 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/graph/pr-spec:
+    post:
+      summary: Graph Pr Spec
+      operationId: graphPrSpec
+      description: Verify one delivery pull request's PR spec and record it in the
+        origin checkout (issue-543). Online — reads the pull request, both
+        repositories' visibility and any comment URL given — and writes exactly
+        one file, `pr-spec.json` in the pull request's inner-loop directory.
+        `recorded` false carries every finding at once.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphPrSpecBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Graphprspec
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/sessions:
     get:
       summary: List Sessions
@@ -2183,6 +2213,60 @@ components:
       - toNode
       - reason
       title: GraphForceBody
+    GraphPrSpecBody:
+      properties:
+        instance:
+          type: string
+          title: Instance
+          default: ''
+          description: Which instance this operation is for (issue-374); empty means this one.
+        repo:
+          type: string
+          title: Repo
+          description: The origin checkout, where the work item's spec chain and state live.
+        workItem:
+          type: string
+          title: Workitem
+        pr:
+          type: integer
+          title: Pr
+          description: The delivery pull request's number.
+        prRepo:
+          type: string
+          title: Prrepo
+          default: ''
+          description: The pull request's repository as <owner>/<repo>; empty means the origin.
+        checkout:
+          type: string
+          title: Checkout
+          description: The pull request's working tree. Its `origin` remote and branch
+            must be the pull request's.
+        disclosureApproval:
+          type: string
+          title: Disclosureapproval
+          default: ''
+          description: URL of a comment on the work item, by an authorized user, saying
+            `allow-disclosure <owner>/<repo>`. Required when the pull request's
+            repository is more visible than the origin, or either visibility is
+            unknown.
+        stillValid:
+          type: string
+          title: Stillvalid
+          default: ''
+          description: URL of a comment on this pull request, by an authorized user,
+            declaring that the changed work-item chain does not affect it. Re-records
+            the current chain digest without re-deriving.
+        specDir:
+          type: string
+          title: Specdir
+          default: ''
+      type: object
+      required:
+      - repo
+      - workItem
+      - pr
+      - checkout
+      title: GraphPrSpecBody
     GraphReposBody:
       properties:
         instance:

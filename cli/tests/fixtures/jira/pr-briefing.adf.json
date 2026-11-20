@@ -31,6 +31,79 @@
       "content": [
         {
           "type": "text",
+          "text": "This PR's spec:",
+          "marks": [
+            {
+              "type": "strong"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " "
+        },
+        {
+          "type": "text",
+          "text": "docs/specs/<key>/pr-<n>/",
+          "marks": [
+            {
+              "type": "link",
+              "attrs": {
+                "href": "link%20to%20the%20folder%20in%20this%20PR's%20branch"
+              }
+            },
+            {
+              "type": "code"
+            }
+          ]
+        },
+        {
+          "type": "hardBreak"
+        },
+        {
+          "type": "text",
+          "text": "— what this pull request delivers of <work item ref>. (Drop this line when the work item"
+        },
+        {
+          "type": "hardBreak"
+        },
+        {
+          "type": "text",
+          "text": "has a single pull request: its "
+        },
+        {
+          "type": "text",
+          "text": "pr-spec.json",
+          "marks": [
+            {
+              "type": "code"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " records "
+        },
+        {
+          "type": "text",
+          "text": "required: false",
+          "marks": [
+            {
+              "type": "code"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": ".)"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "content": [
+        {
+          "type": "text",
           "text": "What this PR does and why, in a few plain sentences."
         }
       ]

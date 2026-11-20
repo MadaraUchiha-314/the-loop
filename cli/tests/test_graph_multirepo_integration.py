@@ -128,7 +128,7 @@ def test_the_inner_loop_of_a_foreign_pr_lands_under_the_origin_spec_chain(origin
 
     spec = origin / "docs" / "specs" / "issue-15"
     inner = WorkItemState.load(inner_loop_state_dir(spec, 7, "octo/infra"), "issue-15")
-    assert inner.current_node == "implementation"
+    assert inner.current_node == "pr-spec"  # the inner start (issue-543)
     assert (spec / "pr-loops" / "octo__infra" / "pr-7" / STATE_FILENAME).is_file()
     assert WorkItemState.load(spec, "issue-15").current_node == ""
 
@@ -156,7 +156,7 @@ def test_two_repositories_share_a_pr_number_without_sharing_a_loop(origin):
         WorkItemState.load(
             inner_loop_state_dir(spec, 7, "octo/infra"), "issue-15"
         ).current_node
-        == "implementation"
+        == "pr-spec"  # the inner start (issue-543)
     )
 
 

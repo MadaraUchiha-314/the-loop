@@ -247,6 +247,13 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   one of them has finished. The flags are the full set, so re-running corrects the
   declaration; declaring none is what a single-repository work item wants. See `reference/workflow.md`
   § Several repositories, one work item.
+- **Several pull requests, one PR spec each.** When a work item is delivered by more than
+  one pull request, or by any outside the origin, each delivery PR carries a **PR spec**:
+  four short files in its own branch, derived from the approved chain and citing it, with
+  no `status`. The inner loop starts at `pr-spec` (`/the-loop:derive-pr-spec`); record the
+  files with `the-loop graph pr-spec`. A changed chain blocks the PR's review until the PR
+  spec is re-derived. Feedback that would change the work item goes to the work item,
+  never into the PR spec. See `reference/workflow.md` § PR specs.
 - **Ask on the declared channel; iterate artifacts on a durable surface.** A session the CLI daemon
   drives is *told* where its answers come from (`routing.interaction.mode`, rendered into
   the prompt): `work-item` (the default) means every question is a **comment on the ticket
@@ -558,6 +565,9 @@ Granular commands (one step at a time; same flow `work-on` runs end-to-end):
 - `/the-loop:create-tasks-plan <id>` — requirements + design + testing plan → `tasks.md` DAG.
 - `/the-loop:execute-tasks <id>` — implement the DAG, self-check, self/critic-review.
 - `/the-loop:verify-work <id>` — execute the testing plan; record results and evidence.
+- `/the-loop:derive-pr-spec <id> --pr <n>` — at an inner loop's `pr-spec` node: derive the
+  pull request's scoped PR spec from the chain, commit it in its branch, and record it with
+  `the-loop graph pr-spec` (issue-543).
 - `/the-loop:finish-tasks <id>` — cleanup after all tasks (close the ticket; extensible).
 - `/the-loop:work-status <id>` — read-only status from the specs, tasks checkmarks and log.
 - `/the-loop:contribute-to <id>` — join an **existing, in-progress** work item as a

@@ -154,6 +154,19 @@ class GraphReposBody(BaseModel):
     instance: str = ""
 
 
+class GraphPrSpecBody(BaseModel):
+    repo: str
+    workItem: str
+    pr: int
+    prRepo: str = ""
+    checkout: str
+    disclosureApproval: str = ""
+    stillValid: str = ""
+    specDir: str = ""
+    # Which instance this is for (issue-374 R2.6): empty means this one.
+    instance: str = ""
+
+
 class SessionControlBody(BaseModel):
     ref: str
     verb: str
@@ -697,6 +710,23 @@ def build_router(
             clear=body.clear,
             pr=body.pr,
             pr_repo=body.prRepo,
+            spec_dir=body.specDir,
+            instance=body.instance,
+        )
+
+    @router.post(
+        f"{API_PREFIX}/graph/pr-spec",
+        operation_id="graphPrSpec",
+    )
+    def graph_pr_spec(body: GraphPrSpecBody) -> Dict[str, Any]:
+        return facade.graph_pr_spec(
+            body.repo,
+            body.workItem,
+            body.pr,
+            body.checkout,
+            pr_repo=body.prRepo,
+            disclosure_approval=body.disclosureApproval,
+            still_valid=body.stillValid,
             spec_dir=body.specDir,
             instance=body.instance,
         )

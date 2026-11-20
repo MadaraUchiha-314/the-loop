@@ -1005,6 +1005,43 @@ class ManagerFacade:
             ),
         )
 
+    def graph_pr_spec(
+        self,
+        repo: str,
+        work_item: str,
+        pr: int,
+        checkout: str,
+        pr_repo: str = "",
+        disclosure_approval: str = "",
+        still_valid: str = "",
+        spec_dir: str = "",
+        instance: str = "",
+    ) -> Dict[str, Any]:
+        return self._graph(
+            "pr-spec",
+            instance,
+            {
+                "repo": repo,
+                "workItem": work_item,
+                "pr": pr,
+                "prRepo": pr_repo,
+                "checkout": checkout,
+                "disclosureApproval": disclosure_approval,
+                "stillValid": still_valid,
+                "specDir": spec_dir,
+            },
+            lambda: self.core.graph_pr_spec(
+                repo,
+                work_item,
+                pr,
+                checkout,
+                pr_repo=pr_repo,
+                disclosure_approval=disclosure_approval,
+                still_valid=still_valid,
+                spec_dir=spec_dir,
+            ),
+        )
+
     def repo_scenarios(
         self, repo: str, globs: Optional[List[str]] = None, instance: str = ""
     ) -> Dict[str, Any]:

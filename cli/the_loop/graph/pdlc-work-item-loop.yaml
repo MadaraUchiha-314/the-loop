@@ -412,6 +412,10 @@ nodes:
       # finish)". No inner loops started = vacuous pass, the pre-issue-172
       # behaviour for single-session work items.
       - await-inner-loops
+      # issue-543 R1.4, R1.6: every open delivery PR of a multi-PR work item has
+      # a current PR-spec record — the check for PRs that walk no inner loop
+      # (the origin repository's own PR, and every PR under `never`).
+      - pr-spec-current
       - verify-tests
 
   # Executing the plan the `test-planning` node locked. It re-declares the SAME

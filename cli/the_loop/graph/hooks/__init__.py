@@ -17,6 +17,7 @@ from . import handoff  # noqa: F401
 from . import review  # noqa: F401
 from . import selection  # noqa: F401
 from . import mcp  # noqa: F401
+from . import pr_spec  # noqa: F401
 from . import quiz  # noqa: F401
 
 __all__ = [
@@ -29,6 +30,7 @@ __all__ = [
     "lint",
     "loops",
     "mcp",
+    "pr_spec",
     "quiz",
     "review",
     "selection",

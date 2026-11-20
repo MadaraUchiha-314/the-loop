@@ -28,6 +28,7 @@ Run the same flow one step at a time:
 | `/the-loop:explain <id>` | At `spec-explainer` / `code-explainer` (issue-488): write and publish the explainer page — the spec explainer and spec quiz before code generation, the explainer of the change and the code quiz before review — and record where it lives. |
 | `/the-loop:create-tasks-plan <id>` | Create the `tasks.md` DAG from requirements + design + testing plan. |
 | `/the-loop:execute-tasks <id>` | Implement the task DAG; verify against the testing plan; self-check; self/critic-review; present evidence. |
+| `/the-loop:derive-pr-spec <id> --pr <n>` | *(Inner loop, multi-PR work items, issue-543)* Derive the pull request's PR spec from the approved chain, commit it in the PR's branch, and record it with `the-loop graph pr-spec`. |
 | `/the-loop:verify-work <id>` | Execute the testing plan after implementation: run the planned activities, record results, commit the evidence. |
 | `/the-loop:finish-tasks <id>` | Cleanup after all tasks complete (close the ticket; extensible). |
 | `/the-loop:work-status <id>` | Read-only status from the specs, task checkmarks, work-item state and the gate records under `evidence/`. |

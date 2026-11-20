@@ -355,6 +355,30 @@ class CoreFacade:
             spec_dir=spec_dir,
         )
 
+    def graph_pr_spec(
+        self,
+        repo: str,
+        work_item: str,
+        pr: int,
+        checkout: str,
+        pr_repo: str = "",
+        disclosure_approval: str = "",
+        still_valid: str = "",
+        spec_dir: str = "",
+        instance: str = "",
+    ) -> Dict[str, Any]:
+        self._self(instance)
+        return core_graphs.pr_spec(
+            repo,
+            work_item,
+            pr,
+            checkout,
+            pr_repo=pr_repo,
+            disclosure_approval=disclosure_approval,
+            still_valid=still_valid,
+            spec_dir=spec_dir,
+        )
+
     # -- sessions ---------------------------------------------------------------------
 
     def list_sessions(self, status: Optional[str] = None) -> List[Dict[str, Any]]:
