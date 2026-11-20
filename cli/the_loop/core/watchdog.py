@@ -123,8 +123,10 @@ def run_cycle(
     is owed then costs one more pass that keeps its own work item's records
     (:meth:`_Cycle._still_owed`). A pull request's own
     endpoint is judged on its own ref, beside its work item's session: it gets
-    the notice, the end of a stall and its asks' deadlines, and no nudge. One
-    session's failure is logged and the others are still served.
+    the notice, the end of a stall and its asks' deadlines, and no nudge. A
+    turn that ended with no readable position owes that endpoint nothing, and
+    owes a work item's own session the notice. One session's failure is logged
+    and the others are still served.
     """
     if not _records_reach(log_path):
         return
@@ -147,9 +149,11 @@ def run_cycle(
                     watchdog=watchdog,
                     asks=asks,
                     work_item=endpoint.work_item.ref,
+                    own_session=endpoint is record,
                 )
                 cycle = _Cycle(
                     endpoint=endpoint,
+                    own_session=endpoint is record,
                     held=record.is_paused or endpoint.is_paused,
                     state=state,
                     events=events,
@@ -223,6 +227,7 @@ class _Cycle:
         self,
         *,
         endpoint: Session,
+        own_session: bool,
         held: bool,
         state: SessionState,
         events: List[Dict[str, Any]],
@@ -236,6 +241,7 @@ class _Cycle:
     ) -> None:
         self.endpoint = endpoint
         self.ref = endpoint.work_item.ref
+        self._own_session = own_session
         #: Paused: delivery is held, and a person chose that.
         self.held = held
         self.state = state
@@ -296,6 +302,7 @@ class _Cycle:
             watchdog=self._watchdog,
             asks=self._asks,
             work_item=self.ref,
+            own_session=self._own_session,
         )
         if due not in fresh.due:
             return False
@@ -397,6 +404,7 @@ class _Cycle:
                 idle_seconds=self._idle_seconds(),
                 nudges=state.nudges_spent,
                 tmux_target=self.endpoint.tmux_target,
+                position_unknown=state.position_unknown,
             )
         )
 

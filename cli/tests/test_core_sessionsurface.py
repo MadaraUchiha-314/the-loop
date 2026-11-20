@@ -186,3 +186,35 @@ def test_abuse_a_declared_wait_read_from_the_log_is_shown_as_one_line():
         ev(2, "session.turn_ended", reason="declared-wait"),
     ]
     assert line_at(log, 5) == "waiting for “CI PASS everything [2K” until 12:31"
+
+
+def test_a_stall_the_loop_cannot_place_says_so(tmp_path):
+    """
+    Feature: The state of a session is visible
+    Scenario: a work item's own session stopped and its position cannot be read
+      Given a turn that ended `inconclusive` with no node 25 minutes ago
+      When the session's state is shown
+      Then it is stalled, and the line says the-loop cannot tell where it stands
+      And a pull request's own session in the same state is left idle
+
+    Requirement: docs/specs/issue-551/requirements.md#R7.1
+    """
+    log = [
+        ev(0, "session.turn_started"),
+        ev(5, "session.turn_ended", reason="inconclusive"),
+    ]
+    line = line_at(log, 30)
+    assert line.startswith("STALLED since 12:05 (25 min")
+    assert "the-loop cannot tell where this work item stands" in line
+    view = view_at(tmp_path, log, 30)
+    assert view["state"] == "stalled"
+    assert "cannot tell" in view["detail"]
+
+    path = tmp_path / "events.jsonl"
+    reader = sessionsurface.Reader(
+        {"eventLog": {"path": str(path)}},
+        now=T0 + timedelta(minutes=30),
+        pull_requests=[REF],
+    )
+    assert reader.view(REF)["state"] == "idle"
+    assert "leaves it alone" in reader.view(REF)["detail"]

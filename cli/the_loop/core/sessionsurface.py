@@ -12,13 +12,18 @@ from __future__ import annotations
 
 import dataclasses
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+import logging
+from typing import Any, Dict, FrozenSet, Iterable, List, Optional, Tuple
 
 from .. import cli_config, eventlog, strings
+from ..sessions.registry import Session, SessionRegistry
 from ..state import layout_from_config
 from ..watchconfig import AsksConfig, WatchdogConfig
+from . import sessions as core_sessions
 from . import sessionstate
 from .sessionstate import OpenAsk, SessionState
+
+logger = logging.getLogger("the-loop.core.sessionsurface")
 
 __all__ = [
     "Reader",
@@ -86,15 +91,43 @@ def log_path(config: Optional[dict]) -> str:
     return str(eventlog.load_config().get("path", eventlog.DEFAULT_PATH))
 
 
+def pull_request_refs(records: Iterable[Session]) -> FrozenSet[str]:
+    """The refs among ``records`` whose session is a pull request's own: held
+    under a work item's record, with no record of its own."""
+    records = list(records)
+    own = {record.work_item.ref for record in records}
+    nested = {
+        endpoint.work_item.ref
+        for record in records
+        for endpoint in record.pull_requests
+    }
+    return frozenset(nested - own)
+
+
+def _nested_pull_requests(config: Optional[dict]) -> FrozenSet[str]:
+    """:func:`pull_request_refs` of the configured registry; none when it
+    cannot be read, so that such a session is judged as a work item's own."""
+    try:
+        registry = SessionRegistry(core_sessions._registry_dir(config))
+        return pull_request_refs(registry.list_sessions())
+    except Exception as exc:  # noqa: BLE001 — a status surface never fails on this
+        logger.debug("cannot read the session registry: %s", exc)
+        return frozenset()
+
+
 class Reader:
     """The event log, read once: call it with a work item's ref for its state.
 
     ``refs`` lists the work items the log has records for, in the order the
-    log first names them.
+    log first names them. ``pull_requests`` names the refs whose session is a
+    pull request's own; left out, the configured session registry says.
     """
 
     def __init__(
-        self, config: Optional[dict] = None, now: Optional[datetime] = None
+        self,
+        config: Optional[dict] = None,
+        now: Optional[datetime] = None,
+        pull_requests: Optional[Iterable[str]] = None,
     ) -> None:
         data = config or {}
         routing = (
@@ -106,6 +139,17 @@ class Reader:
         #: Aware, in the zone the times of day are shown in.
         self.now = now or datetime.now().astimezone()
         self.refs: List[str] = list(self._grouped)
+        self._config = config
+        self._pull_requests: Optional[FrozenSet[str]] = (
+            None if pull_requests is None else frozenset(pull_requests)
+        )
+
+    def _is_pull_request(self, ref: str) -> bool:
+        """Whether ``ref``'s session is a pull request's own, stored under the
+        work item it delivers. The registry is read once, on the first ask."""
+        if self._pull_requests is None:
+            self._pull_requests = _nested_pull_requests(self._config)
+        return ref in self._pull_requests
 
     def __call__(self, ref: str) -> SessionState:
         return sessionstate.derive(
@@ -114,6 +158,7 @@ class Reader:
             watchdog=self._watchdog,
             asks=self._asks,
             work_item=ref,
+            own_session=not self._is_pull_request(ref),
         )
 
     def view(self, ref: str) -> Dict[str, Any]:
@@ -249,6 +294,13 @@ def _state_line(state: SessionState, now: datetime) -> str:
             at=at,
             since=since,
             elapsed=elapsed(state.since, now),
+        )
+    if state.state == "stalled" and state.position_unknown:
+        return strings.t(
+            "core.sessionsurface.stalled-position-unknown",
+            since=since,
+            elapsed=elapsed(state.since, now),
+            detail=sessionstate.session_view(state)["detail"],
         )
     if state.state == "stalled":
         return strings.t(

@@ -113,30 +113,45 @@ def stalled(
     idle_seconds: int,
     nudges: int,
     tmux_target: str,
+    position_unknown: bool = False,
 ) -> Event:
     """The stall notice: the node, how long the session has been idle, how
-    many nudges did not restart it, and how a person wakes it."""
+    many nudges did not restart it, and how a person wakes it.
+
+    ``position_unknown`` is a stall of a session whose step the-loop cannot
+    tell. That notice names no node and counts no nudge, and does not claim
+    that work is owed: it says what the-loop does not know."""
     at = _at(node)
-    return Event(
-        event_type=STALLED,
-        work_item=ref,
-        text=_t(
+    attach = _t("stalled.slack.attach", target=tmux_target) if tmux_target else ""
+    if position_unknown:
+        text = _t("stalled.github.unknown", waited=_long(idle_seconds), ref=ref)
+        summary = _t(
+            "stalled.slack.unknown",
+            item=_short_id(ref),
+            waited=_short(idle_seconds),
+            attach=attach,
+        )
+    else:
+        text = _t(
             "stalled.github",
             at=at,
             waited=_long(idle_seconds),
             nudged=_counted("stalled.github.nudged", nudges),
             ref=ref,
-        ),
-        summary=_t(
+        )
+        summary = _t(
             "stalled.slack",
             item=_short_id(ref),
             at=at,
             waited=_short(idle_seconds),
             nudges=_counted("stalled.slack.nudges", nudges),
-            attach=(
-                _t("stalled.slack.attach", target=tmux_target) if tmux_target else ""
-            ),
-        ),
+            attach=attach,
+        )
+    return Event(
+        event_type=STALLED,
+        work_item=ref,
+        text=text,
+        summary=summary,
         detail={
             "stall_id": stall_id,
             "node": node if at else "",

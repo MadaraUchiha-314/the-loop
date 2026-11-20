@@ -547,3 +547,39 @@ def test_a_stalled_pull_request_session_is_listed(tmp_path):
         ],
     )
     assert [row["workItem"] for row in _of_kind(config, "stalled")] == [pr]
+
+
+def test_a_stall_the_loop_cannot_place_is_listed_for_a_work_items_own_session(
+    tmp_path,
+):
+    """
+    Feature: the attention list shows a stall
+      Scenario: the position of an idle session cannot be read
+        Given a work item's session and its pull request's own session
+        And both ended a turn `inconclusive`, with no node, 22 minutes ago
+        When the attention list is read
+        Then the work item's session is listed as stalled, with no step named
+        And the pull request's session is not listed
+
+    Requirement: docs/specs/issue-551/requirements.md R7.1
+    """
+    pr = "github:octo/other#20"
+    config = _session(tmp_path)
+    registry = SessionRegistry(layout_from_config(config).local_dir)
+    registry.link_pull_request(REF, pr)
+    owner = registry.find_by_work_item(REF)
+    endpoint = owner.endpoint_for(pr) if owner is not None else None
+    assert endpoint is not None
+    endpoint.tmux_target = "loop-github-octo-other-20"
+    registry.save_endpoint(REF, endpoint)
+    _log(
+        tmp_path,
+        [
+            _turn(ref, _minutes_ago(22), "session.turn_ended", reason="inconclusive")
+            for ref in (REF, pr)
+        ],
+    )
+    (row,) = _of_kind(config, "stalled")
+    assert row["workItem"] == REF
+    assert "the-loop cannot tell which step it is at" in row["detail"]
+    assert "idle 22 min" in row["detail"]

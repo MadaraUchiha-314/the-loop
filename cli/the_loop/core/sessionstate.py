@@ -193,6 +193,15 @@ class SessionState:
     untold_default: Optional[UntoldDefault] = None
     #: In the order the watcher performs them.
     due: Tuple[Due, ...] = ()
+    #: The session is its work item's own, not the one of a pull request that
+    #: is delivered under a work item.
+    own_session: bool = True
+
+    @property
+    def position_unknown(self) -> bool:
+        """The stop check could not tell where the work item stands when the
+        turn behind this state ended."""
+        return _position_unknown(self.reason, self.node)
 
 
 def parse_ts(value: Any) -> Optional[datetime]:
@@ -270,12 +279,21 @@ def derive(
     watchdog: WatchdogConfig,
     asks: AsksConfig,
     work_item: str,
+    own_session: bool = True,
 ) -> SessionState:
     """The state of ``work_item``'s session at ``now``.
 
     ``events`` are that work item's records, oldest first, as the event log
     stores them (:func:`load` groups them). A record that is not a mapping, or
     has no readable ``ts``, is skipped.
+
+    ``own_session`` is ``False`` for the session of a pull request that is
+    delivered under a work item. The two differ in one case, a turn that ended
+    with no readable position. The outer loop has no position for a pull
+    request's ref, so every turn of its session ends that way and nothing is
+    owed. A work item's own session ends that way only when its state cannot
+    be read, which the session itself can cause by removing the file: it is
+    never nudged, and a person is told once.
     """
     now = _utc(now)
     turn: Optional[Tuple[str, _Moment, Dict[str, Any]]] = None
@@ -489,8 +507,8 @@ def derive(
         threshold = timedelta(seconds=watchdog.idle_seconds)
         # The stop check could not tell where the work item stands, which is
         # how every turn of a pull request's own session ends. Nothing says
-        # work is owed, so the session never becomes a stall.
-        if _position_unknown(reason, node):
+        # work is owed there, so that session never becomes a stall.
+        if not own_session and _position_unknown(reason, node):
             pass
         elif now - idle[0] >= threshold:
             state = "stalled"
@@ -537,6 +555,7 @@ def derive(
         declared_wait=declared,
         untold_default=untold,
         due=tuple(due),
+        own_session=own_session,
     )
 
 
@@ -678,11 +697,17 @@ def _detail(state: SessionState) -> str:
     if state.state == "not-watched":
         return strings.t("core.sessionstate.not-watched")
     if state.state == "stalled":
+        if state.position_unknown:
+            if state.notified:
+                return strings.t("core.sessionstate.position-unknown.notified")
+            return strings.t("core.sessionstate.position-unknown.stalled")
         if state.notified:
             return strings.t("core.sessionstate.notified", nudges=state.nudges_spent)
         return strings.t("core.sessionstate.stalled", nudges=state.nudges_spent)
     if state.state == "idle":
-        if _position_unknown(state.reason, state.node):
+        if state.position_unknown:
+            if state.own_session:
+                return strings.t("core.sessionstate.position-unknown.idle")
             return strings.t("core.sessionstate.position-unknown")
         return strings.t("core.sessionstate.idle")
     if state.state != "waiting":

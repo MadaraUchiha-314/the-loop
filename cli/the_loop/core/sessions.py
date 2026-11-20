@@ -177,9 +177,13 @@ def list_sessions(
     control = _control_store(config, portable_dir)
     boundary, live_pids = _credential_view(config)
     try:
-        from .sessionsurface import Reader
+        from .sessionsurface import Reader, pull_request_refs
 
-        states = states or Reader(config)
+        # The pull requests' own sessions are named from the registry that is
+        # listed here, which a caller may have pointed somewhere else.
+        states = states or Reader(
+            config, pull_requests=pull_request_refs(registry.list_sessions())
+        )
     except Exception:  # noqa: BLE001 — a listing never fails on this decoration
         logger.debug("could not read the sessions' state", exc_info=True)
         states = None

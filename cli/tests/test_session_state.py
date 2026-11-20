@@ -355,18 +355,64 @@ def test_a_stall_that_cannot_name_its_node_gets_the_notice_without_a_nudge():
     assert acts(state_at(log, 15)) == ["notify"]
 
 
-def test_a_turn_that_ended_with_no_readable_position_owes_nothing():
-    """Requirement: R4.6 — `inconclusive` with no node is the-loop not knowing
-    where the work item stands. That is not evidence of work owed."""
-    log = [
-        ev(0, "session.turn_started"),
-        ev(5, "session.turn_ended", reason="inconclusive"),
-    ]
-    state = state_at(log, 60 * 24)
+UNKNOWN = [
+    ev(0, "session.turn_started"),
+    ev(5, "session.turn_ended", reason="inconclusive"),
+]
+
+
+def test_a_pull_requests_session_with_no_readable_position_owes_nothing():
+    """Requirement: R4.6 — `inconclusive` with no node is how every turn of a
+    pull request's own session ends: the outer loop has no position for its
+    ref. That is not evidence of work owed."""
+    state = derive(
+        UNKNOWN,
+        now=at(60 * 24),
+        watchdog=WATCHDOG,
+        asks=ASKS,
+        work_item=REF,
+        own_session=False,
+    )
     assert (state.state, state.reason, state.node) == ("idle", "inconclusive", "")
     assert (state.due, state.stall_id) == ((), None)
     assert state.idle_since == stamp(5)
+    assert "leaves it alone" in sessionstate.session_view(state)["detail"]
+
+
+def test_abuse_a_work_items_session_with_no_readable_position_gets_the_notice():
+    """
+    Feature: a stall the-loop cannot place is told to a person
+      Scenario: the work item's state file is gone, so the turn ends inconclusive
+        Given a work item's own session whose turn ended `inconclusive`, no node
+        When the idle threshold passes
+        Then the one notice is owed, and never a nudge
+        And once the notice is recorded nothing more is owed
+
+    Requirement: docs/specs/issue-551/requirements.md § Fail closed
+    """
+    before = state_at(UNKNOWN, 14)
+    assert (before.state, before.due) == ("idle", ())
+    assert "cannot tell" in sessionstate.session_view(before)["detail"]
+    assert "alone" not in sessionstate.session_view(before)["detail"]
+
+    state = state_at(UNKNOWN, 15)
+    assert (state.state, state.reason, state.node) == ("stalled", "inconclusive", "")
+    assert state.position_unknown
+    assert state.due == (Due("notify", stall_id=stall_id(5)),)
     assert "cannot tell" in sessionstate.session_view(state)["detail"]
+
+    told = UNKNOWN + [ev(15, "session.stalled", stall_id=stall_id(5))]
+    for minutes in (16, 30, 600, 60 * 24):
+        later = state_at(told, minutes)
+        assert (later.state, later.due) == ("stalled", ())
+    detail = sessionstate.session_view(state_at(told, 30))["detail"]
+    assert "cannot tell" in detail and "a person was told" in detail
+
+
+def test_a_switched_off_watchdog_owes_no_notice_for_an_unknown_position():
+    watchdog = WatchdogConfig(enabled=False, idle_seconds=600)
+    state = state_at(UNKNOWN, 60, watchdog=watchdog)
+    assert (state.state, state.due) == ("stalled", ())
 
 
 def test_an_inconclusive_end_that_names_its_node_is_still_watched():
@@ -525,8 +571,18 @@ def test_an_unknown_position_stays_unknown_when_a_pointer_moves():
         ev(5, "session.turn_ended", reason="inconclusive"),
         moved(8, "implementation"),
     ]
-    state = state_at(log, 60 * 24)
+    state = derive(
+        log,
+        now=at(60 * 24),
+        watchdog=WATCHDOG,
+        asks=ASKS,
+        work_item=REF,
+        own_session=False,
+    )
     assert (state.state, state.node, state.due) == ("idle", "", ())
+    # A work item's own session is told to a person, and still not nudged.
+    own = state_at(log, 60 * 24)
+    assert (own.state, own.node, acts(own)) == ("stalled", "", ["notify"])
 
 
 # -- the budget is the node visit's ----------------------------------------------

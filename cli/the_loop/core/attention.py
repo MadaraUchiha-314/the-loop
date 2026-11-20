@@ -156,16 +156,30 @@ def list_attention(config: Optional[dict] = None) -> List[Dict[str, Any]]:
         if ref not in active:
             continue
         if state.state == "stalled":
+            idle_for = sessionsurface.elapsed(state.since, states.now)
+            if state.position_unknown:
+                # No step to name and no nudge to count.
+                detail = (
+                    strings.t(
+                        "core.attention.position-unknown.notified", elapsed=idle_for
+                    )
+                    if state.notified
+                    else strings.t(
+                        "core.attention.position-unknown.stalled", elapsed=idle_for
+                    )
+                )
+            else:
+                detail = strings.t(
+                    "core.attention.stalled",
+                    node=state.node or "-",
+                    elapsed=idle_for,
+                    nudges=sessionsurface.nudges(state),
+                )
             items.append(
                 {
                     "workItem": ref,
                     "kind": "stalled",
-                    "detail": strings.t(
-                        "core.attention.stalled",
-                        node=state.node or "-",
-                        elapsed=sessionsurface.elapsed(state.since, states.now),
-                        nudges=sessionsurface.nudges(state),
-                    ),
+                    "detail": detail,
                     "at": state.since or "",
                 }
             )

@@ -387,6 +387,36 @@ def test_a_pull_requests_own_session_with_no_readable_position_is_left_alone(wor
     assert not world.records("session.nudged") + world.records("session.stalled")
 
 
+def test_abuse_a_session_whose_state_file_is_gone_is_told_to_a_person_once(world):
+    """
+    Feature: a stall the-loop cannot place is told to a person
+      Scenario: a steered session emptied its own pointer and stopped
+        Given a work item's own session whose turn ended `inconclusive`, no node
+        When the watcher looks, tick after tick, for days
+        Then nothing is typed into the session
+        And exactly one notice says the-loop cannot tell which step it is at
+
+    Requirement: docs/specs/issue-551/requirements.md § Fail closed
+    """
+    idle(world, node=None, reason="inconclusive")
+
+    world.cycle(9)
+    assert world.published == []
+    for minutes in (10, 20, 30, 60, 600, 6000):
+        world.cycle(minutes)
+
+    assert world.pasted() == []
+    assert world.records("session.nudged") == []
+    (stalled,) = world.records("session.stalled")
+    assert stalled["stall_id"] == f"{REF}@{world.stamp(0)}"
+    ((event, _),) = world.published
+    assert event.event_type == "session.stalled"
+    for said in (event.text, event.summary):
+        assert "the-loop cannot tell which step it is at" in said
+        assert "work still to do" not in said
+        assert "could not nudge" not in said
+
+
 # -- the notice and its end -----------------------------------------------------------
 
 

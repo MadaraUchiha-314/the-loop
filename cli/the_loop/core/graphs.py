@@ -284,7 +284,8 @@ def _session_view(
                 and session.cwd
                 and Path(session.cwd).resolve() == here
             ):
-                return sessionsurface.Reader(config).view(ref)
+                # A record of the registry's top level: a work item's own.
+                return sessionsurface.Reader(config, pull_requests=()).view(ref)
     except Exception as exc:  # noqa: BLE001 — the session line is a decoration
         logger.debug("could not read the session's state: %s", exc)
     return None
