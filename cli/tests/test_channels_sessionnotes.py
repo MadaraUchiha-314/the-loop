@@ -469,3 +469,69 @@ def test_abuse_a_default_of_approved_answers_no_human_gate(tmp_path):
     # not the wording, is what keeps a default from being one.
     answered = classify_feedback(gate(body, "approved. LGTM, ship it"))
     assert answered.status == "pass" and answered.outcome == "approved"
+
+
+# -- a stall's end when the notice cannot be edited --------------------------------
+
+
+def test_a_stall_whose_notice_cannot_be_edited_still_loses_its_reaction(
+    tmp_path, monkeypatch
+):
+    """
+    Feature: A stall notice is resolved in place
+    Scenario: Slack refuses the edit of the stall notice
+      Given a stall notice in the room, with the stop-sign reaction
+      When the stall ends and the edit of the notice fails
+      Then the status reaction still returns to working
+      And the notice is still remembered
+      And a replay of the event edits it, and then forgets it
+
+    Requirement: docs/specs/issue-551/requirements.md R4.5
+    """
+    config, client, bot = room(tmp_path)
+    bot.post(stalled())
+    ts = f"1700.{len(client.posted):06d}"
+    working = client.chat_update
+
+    def refuse(**_):
+        raise RuntimeError("message_not_found")
+
+    monkeypatch.setattr(client, "chat_update", refuse)
+    assert bot.post(ended()).ok
+
+    assert client.updates == []
+    assert client.reactions[-1] == (ROOM, ts, "gear")
+    assert (ROOM, ts, "octagonal_sign") in client.removed
+    assert memory(config)["gateTs"][f"stall:{STALL}"] == ts
+
+    monkeypatch.setattr(client, "chat_update", working)
+    assert bot.post(ended()).ok
+    assert len(client.updates) == 1
+    assert f"stall:{STALL}" not in memory(config)["gateTs"]
+
+
+def test_a_stall_notice_with_no_channel_left_still_loses_its_reaction(
+    tmp_path, monkeypatch
+):
+    """
+    Feature: A stall notice is resolved in place
+    Scenario: the notice is remembered but where it was posted is not
+      When the stall ends
+      Then nothing is edited and the status reaction returns to working
+
+    Requirement: docs/specs/issue-551/requirements.md R4.5
+    """
+    from the_loop.channels.state import ChannelState
+
+    config, client, bot = room(tmp_path)
+    bot.post(stalled())
+    ts = f"1700.{len(client.posted):06d}"
+    with ChannelState.locked(bot.state_path, bot.stores) as state:
+        state.remember_delivery(REF, gateMessage={f"stall:{STALL}": {"channel": ""}})
+        state.save(bot.state_path)
+    monkeypatch.setattr(ChannelState, "conversation_for", lambda self, ref: None)
+
+    assert bot.post(ended()).ok
+
+    assert client.updates == []
+    assert (ROOM, ts, "octagonal_sign") in client.removed

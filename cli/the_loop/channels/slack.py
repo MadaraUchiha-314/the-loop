@@ -3227,18 +3227,14 @@ class SlackBotChannel:
             ts = memory["gateTs"].get(key, "")
             note = dict(memory["gateMessage"].get(key) or {})
             bound = state.conversation_for(event.work_item)
-            if ts:
-                state.remember_delivery(
-                    event.work_item, gateTs={key: None}, gateMessage={key: None}
-                )
-                state.save(self.state_path)
         in_room = bool(bound and bound[0] and not bound[1])
         kind = placement.ROOM if in_room else placement.CENTRAL
         stall = event.event_type == sessionnotes.STALL_ENDED
         channel_id = note.get("channel") or (bound[0] if bound else "")
         if not ts or not channel_id:
-            if not stall:
-                # The session moved on whether or not its question was here.
+            # The session moved on whether or not its question was here. A
+            # stall changed the reaction only if its notice was posted.
+            if ts or not stall:
                 self._react_status(event, kind, ("", ""))
             return ok
         line = build_short_form(event).text
@@ -3283,7 +3279,19 @@ class SlackBotChannel:
                 event.work_item,
                 exc,
             )
+            # The message keeps its old words, and stays remembered so that a
+            # replay can edit it. The status is not left saying "stalled".
+            self._react_status(event, kind, ("", ""))
             return ok
+        # Forgotten only now: a message that was not edited is still open.
+        try:
+            with ChannelState.locked(self.state_path, self.stores) as state:
+                state.remember_delivery(
+                    event.work_item, gateTs={key: None}, gateMessage={key: None}
+                )
+                state.save(self.state_path)
+        except Exception as exc:  # noqa: BLE001 — memory is best-effort
+            logger.debug("slack: could not forget %s (%s)", key, exc)
         self._react_status(event, kind, ("", ""), client)
         return ok
 
