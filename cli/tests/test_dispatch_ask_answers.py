@@ -12,12 +12,13 @@ Requirement: docs/specs/issue-551/requirements.md
 from __future__ import annotations
 
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from conftest import FakeTmux, StubInteractiveAdapter
 from the_loop import eventlog
+from the_loop.collaborators import CollaboratorStore
 from the_loop.control import ControlConfig
 from the_loop.core import sessions as core_sessions
 from the_loop.core import sessionstate
@@ -29,6 +30,8 @@ from the_loop.webhook.router import Router
 REF = "github:octo/repo#15"
 PR = "github:octo/repo#20"
 AUTHORIZED = "octocat"
+#: On the work item's roster, and on no allow-list: their comment is input.
+COLLABORATOR = "dana"
 MINIMUM = 1800
 
 
@@ -98,14 +101,17 @@ def deliver(tmp_path, log_path):
         config=routing,
         tmux_runner=tmux,
     )
+    rosters = CollaboratorStore(tmp_path / "portable")
+    rosters.add(REF, login=COLLABORATOR, actor=AUTHORIZED, source="cli")
     router = Router(
         events=["issue_comment"],
         deduper=dispatcher.deduper,
         auto_execute_labels=routing.auto_execute_labels,
         authorized_users=[AUTHORIZED],
+        collaborators=rosters,
     )
 
-    def comment(number, body, delivery_id):
+    def comment(number, body, delivery_id, login=AUTHORIZED):
         issue = {"number": number}
         if number != 15:
             issue["pull_request"] = {"url": "https://api.github.com/pulls/20"}
@@ -113,7 +119,7 @@ def deliver(tmp_path, log_path):
             "action": "created",
             "issue": issue,
             "repository": {"full_name": "octo/repo"},
-            "comment": {"body": body, "user": {"login": AUTHORIZED}},
+            "comment": {"body": body, "user": {"login": login}},
         }
         routed = router.route("issue_comment", payload, delivery_id)
         if routed is not None:
@@ -230,3 +236,53 @@ def test_a_comment_on_the_work_item_leaves_no_answer_where_nothing_was_asked(
     assert wait_until(lambda: _records(log_path, "session.ask_answered"))
     (answered,) = _records(log_path, "session.ask_answered")
     assert answered["work_item"] == REF
+
+
+def test_abuse_a_collaborators_comment_answers_no_ask_and_resets_no_budget(
+    config, posted, log_path, deliver
+):
+    """
+    Feature: A question can carry a default and a deadline
+    Scenario: a collaborator, who may add input and answer nothing, comments
+      Given a session that was nudged once and then asked with a default
+      And a collaborator on the work item who is on no allow-list
+      When the collaborator comments on the work item
+      Then the comment is delivered to the session as input
+      And no session.ask_answered is recorded, and the delivery names no actor
+      And the default is still owed at its deadline
+      And the nudge already spent stays spent
+
+    Requirement: docs/specs/issue-551/requirements.md#security-considerations
+    (abuse cases 1 and 2; fail closed: an answer whose author cannot be shown
+    to be authorized)
+    """
+    comment, tmux = deliver
+    eventlog.emit("session.turn_started", work_item=REF, node="build")
+    eventlog.emit("session.turn_ended", work_item=REF, node="build", reason="exit-met")
+    eventlog.emit("session.nudged", work_item=REF, stall_id=f"{REF}@x", nudge=1)
+    _ask(REF, config)
+    (asked,) = _records(log_path, "session.awaiting_input")
+
+    routed = comment(15, "Yes, move it.", "d-1", login=COLLABORATOR)
+
+    assert routed is not None, "a collaborator's comment is routed as input"
+    assert wait_until(lambda: _records(log_path, "dispatch.succeeded"))
+    assert len(tmux.delivers) == 1
+    (delivered,) = _records(log_path, "dispatch.succeeded")
+    assert not delivered.get("actor")
+    assert _records(log_path, "session.ask_answered") == []
+    assert "take-default" in _due_after_deadline(log_path, REF, asked)
+    state = sessionstate.derive(
+        sessionstate.load(log_path).get(REF, []),
+        now=datetime.now(timezone.utc),
+        watchdog=WatchdogConfig(),
+        asks=AsksConfig(min_default_wait_seconds=MINIMUM),
+        work_item=REF,
+    )
+    assert state.nudges_spent == 1
+    assert [ask.ask_id for ask in state.open_asks] == [asked["ask_id"]]
+
+    # The same words from an authorized user do all three.
+    comment(15, "Yes, move it.", "d-2")
+    assert wait_until(lambda: _records(log_path, "session.ask_answered"))
+    assert "take-default" not in _due_after_deadline(log_path, REF, asked)
