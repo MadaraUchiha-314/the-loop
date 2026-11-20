@@ -104,7 +104,7 @@ Tests are named so the T8 `-k` filter in `testing-plan.md` finds the abuse cases
   - _Requirements:_ R1.1, R2.1–R2.6, abuse case 3
   - _Test:_ T1 — `tests/test_channels_render.py::test_split_*`; T7/T8 —
     `test_abuse_64k_body_bounded_parts_and_time` (red→green)
-- [ ] 7. The short-form builder.
+- [x] 7. The short-form builder.
   - Order: the agent's summary, else the fixed runtime lead, else a line built from the
     first question or sentence, which logs `channels.short_form_missing`. Drawn as
     mrkdwn, defused, capped at 600 characters on a sentence. It is also every message's

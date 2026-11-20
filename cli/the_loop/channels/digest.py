@@ -44,6 +44,11 @@ from .mrkdwn import (
     strip_comments,
     to_mrkdwn,
 )
+from .shortform import (
+    SUMMARY_MAX_CHARS,
+    cut_at_boundary as _cut,
+    sentences as _sentences,
+)
 from .render import (
     HEADING_LINE_RE as _HEADING_LINE,
     ITEM_RE as _ITEM,
@@ -65,10 +70,6 @@ __all__ = [
     "truncate",
 ]
 
-#: How long an agent-authored summary may be before it is capped (issue-393 R8).
-#: A summary is meant to be 2–3 sentences; a generous ceiling keeps a runaway one
-#: from taking over the message while never clipping a real one.
-SUMMARY_MAX_CHARS = 600
 
 #: A Slack user mention in text — `<@U…>` / `<@W…>`, with or without a `|label`.
 #: Neutralised in an agent-authored summary so it can ping no one (abuse case 3);
@@ -102,11 +103,6 @@ def shorten_paths(text: str) -> str:
 
 # -- the digest (R1, R2, R3) ---------------------------------------------------------
 
-#: The end of a sentence: the mark, any closing quote / bracket / emphasis, then
-#: whitespace or the end. Abbreviations are filtered by :func:`_sentence_ends`.
-_SENTENCE_END = re.compile(r"[.!?]+[\"'’)\]*_~`]*(?=\s|$)")
-_ABBREVIATIONS = ("e.g", "i.e", "vs", "etc", "cf", "no", "fig", "approx")
-_CLAUSE_END = re.compile(r"[,;:]|\s—|\s–")
 _REPLY_WORD = re.compile(r"\breply\b", re.I)
 
 _POINTERS = strings.section("digest.pointer")
@@ -118,34 +114,6 @@ class _Block:
     text: str = ""
     items: List[Tuple[str, str]] = field(default_factory=list)  # (box, text)
     count: int = 0
-
-
-def _sentence_ends(text: str) -> List[int]:
-    """Offsets just past each sentence end in ``text``."""
-    ends: List[int] = []
-    for match in _SENTENCE_END.finditer(text):
-        window = text[max(0, match.start() - 12) : match.start()]
-        token = window.rsplit(None, 1)[-1].lower() if window.strip() else ""
-        if match.group(0).startswith(".") and (
-            token in _ABBREVIATIONS or (len(token) == 1 and token.isalpha())
-        ):
-            continue
-        ends.append(match.end())
-    return ends
-
-
-def _sentences(text: str) -> List[str]:
-    out: List[str] = []
-    start = 0
-    for end in _sentence_ends(text):
-        piece = text[start:end].strip()
-        if piece:
-            out.append(piece)
-        start = end
-    tail = text[start:].strip()
-    if tail:
-        out.append(tail)
-    return out
 
 
 def _parse(text: str) -> List[_Block]:
@@ -221,31 +189,6 @@ def _find_ask(blocks: List[_Block]) -> Optional[str]:
 def _dress_ask(sentence: str) -> str:
     """The ask, bold — its own emphasis marks dropped so the bold is one span."""
     return "*" + _inline(sentence).replace("*", "").strip() + "*"
-
-
-def _cut(text: str, room: int) -> str:
-    """``text`` shortened to fit ``room``: at the last sentence end within it,
-    else the last clause end (plus ``…``), else the last space (plus ``…``),
-    else ``""`` — never inside a word when a boundary exists (R1.2)."""
-    if len(text) <= room:
-        return text
-    if room <= 1:
-        return ""
-    ends = [end for end in _sentence_ends(text) if end <= room]
-    if ends:
-        return text[: ends[-1]].rstrip()
-    clause = None
-    for match in _CLAUSE_END.finditer(text):
-        if match.start() < room - 1:
-            clause = match.start()
-        else:
-            break
-    if clause:
-        return text[:clause].rstrip() + "…"
-    space = text.rfind(" ", 0, room - 1)
-    if space > 0:
-        return text[:space].rstrip() + "…"
-    return text[: room - 1].rstrip() + "…"
 
 
 def _render(block: _Block) -> List[str]:
