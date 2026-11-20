@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Slack message shapes</title>
+<!-- issue-549 design mock-up. Self-contained: no external fonts, scripts or images.
+     It imitates the layout of Slack messages only; it uses no Slack assets. -->
+<style>
+  :root {
+    --bg: #ffffff; --panel: #f8f8f8; --ink: #1d1c1d; --quiet: #616061; --rule: #e2e2e2;
+    --link: #1264a3; --accent: #007a5a; --danger: #e01e5a; --code: #f4f4f4; --mention: #e8f5fa;
+    --chip: #f0f0f0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1a1d21; --panel: #222529; --ink: #d1d2d3; --quiet: #9a9b9e; --rule: #35373b;
+      --link: #1d9bd1; --accent: #2bac76; --danger: #e8456f; --code: #2c2d30; --mention: #1d3a4a;
+      --chip: #2c2d30; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.46 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  main { max-width: 1120px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .lead { color: var(--quiet); margin: 0 0 24px; max-width: 760px; }
+  section.case { margin: 0 0 32px; }
+  section.case > h2 { font-size: 17px; margin: 0 0 4px; }
+  section.case > p.note { color: var(--quiet); margin: 0 0 12px; font-size: 14px; }
+  .pane { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); border: 1px solid var(--rule);
+    border-radius: 8px; overflow: hidden; }
+  .pane.single { grid-template-columns: minmax(0, 1fr); }
+  .col { padding: 12px 16px; min-width: 0; }
+  .col + .col { border-left: 1px solid var(--rule); background: var(--panel); }
+  .colhead { font-size: 13px; font-weight: 700; color: var(--quiet); margin: 0 0 8px;
+    text-transform: uppercase; letter-spacing: .04em; }
+  .msg { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 8px; padding: 6px 0; }
+  .avatar { width: 36px; height: 36px; border-radius: 6px; background: var(--accent); color: #fff;
+    display: grid; place-items: center; font-weight: 700; font-size: 13px; }
+  .avatar.human { background: #7c3085; }
+  .who { font-weight: 900; }
+  .who .app { font-size: 10px; font-weight: 700; background: var(--chip); color: var(--quiet);
+    padding: 0 4px; border-radius: 3px; margin-left: 4px; vertical-align: 1px; }
+  .time { color: var(--quiet); font-size: 12px; margin-left: 6px; font-weight: 400; }
+  .body p { margin: 2px 0; }
+  .mention { background: var(--mention); color: var(--link); border-radius: 3px; padding: 0 2px; }
+  a { color: var(--link); text-decoration: none; }
+  code { background: var(--code); border: 1px solid var(--rule); border-radius: 3px; padding: 0 3px;
+    font-size: 12px; color: var(--danger); }
+  .recap { color: var(--quiet); font-size: 13px; border-left: 3px solid var(--rule); padding-left: 8px;
+    margin: 2px 0 4px; }
+  .buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  .btn { border: 1px solid var(--rule); border-radius: 4px; padding: 3px 12px; font-weight: 700;
+    font-size: 13px; background: var(--bg); color: var(--ink); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .reactions { display: flex; gap: 6px; margin-top: 6px; }
+  .reaction { border: 1px solid var(--link); background: var(--mention); border-radius: 12px; padding: 0 8px;
+    font-size: 12px; }
+  .threadlink { font-size: 13px; color: var(--link); font-weight: 700; margin-top: 4px; }
+  .context { color: var(--quiet); font-size: 13px; margin-top: 6px; }
+  table { border-collapse: collapse; margin: 6px 0; font-size: 13px; display: block; overflow-x: auto; }
+  th, td { border: 1px solid var(--rule); padding: 3px 8px; text-align: left; white-space: nowrap; }
+  th { background: var(--code); }
+  h4 { margin: 8px 0 2px; font-size: 15px; }
+  ul.tasks { list-style: none; padding-left: 4px; margin: 4px 0; }
+  .part { color: var(--quiet); font-size: 12px; }
+  .none { color: var(--quiet); font-style: italic; font-size: 14px; padding: 12px 0; }
+  .legend { font-size: 13px; color: var(--quiet); margin-top: 8px; }
+  @media (max-width: 720px) {
+    .pane { grid-template-columns: minmax(0, 1fr); }
+    .col + .col { border-left: 0; border-top: 1px solid var(--rule); }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Slack message shapes</h1>
+  <p class="lead">issue-549, design mock-up. Four shapes: a room message with its long form in the thread,
+    the central channel (short form only), a gate message before and after a press, and the recap after a
+    gap. Layout only; Slack draws the real thing.</p>
+
+  <section class="case" id="room">
+    <h2>1 · Declared room: short message, long form in its thread (R2, R3, R4.1, R5)</h2>
+    <p class="note">The agent's summary is the top-level message. The whole comment, table included, is the
+      thread reply, drawn by Slack's markdown block. No link preview under either.</p>
+    <div class="pane">
+      <div class="col">
+        <div class="colhead">#loop-issue-549 (room)</div>
+        <div class="msg">
+          <div class="avatar">tl</div>
+          <div class="body">
+            <div class="who">the-loop <span class="app">APP</span><span class="time">10:42</span></div>
+            <p>📝 Design is drafted: placement, one delivery step, and the ref-case fix for the Approve
+              buttons. Nothing needed from you until the testing plan joins it.</p>
+            <div class="buttons"><span class="btn">Open on GitHub</span></div>
+            <div class="reactions"><span class="reaction">⚙️ 1</span></div>
+            <div class="threadlink">1 reply</div>
+          </div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="colhead">Thread</div>
+        <div class="msg">
+          <div class="avatar">tl</div>
+          <div class="body">
+            <div class="who">the-loop <span class="app">APP</span><span class="time">10:42</span></div>
+            <h4>Design drafted</h4>
+            <p>The Slack channel plans each delivery as a short message plus, in a declared room, the long form
+              in its thread.</p>
+            <table>
+              <thead><tr><th>Where</th><th>Top-level</th><th>Thread</th></tr></thead>
+              <tbody>
+                <tr><td>Declared room</td><td>short form</td><td>long form</td></tr>
+                <tr><td>Central channel</td><td>short form (reply)</td><td>none</td></tr>
+              </tbody>
+            </table>
+            <ul class="tasks"><li>☑ placement rule</li><li>☐ testing plan</li></ul>
+            <p>See <a href="#room">design.md</a>.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="case" id="central">
+    <h2>2 · Central channel: the short form only (R4.2)</h2>
+    <p class="note">Each work item already lives in one thread here, and Slack cannot nest threads, so no long
+      form is posted. The button opens the full text on GitHub.</p>
+    <div class="pane">
+      <div class="col">
+        <div class="colhead">#the-loop (central)</div>
+        <div class="msg">
+          <div class="avatar">tl</div>
+          <div class="body">
+            <div class="who">the-loop <span class="app">APP</span><span class="time">09:15</span></div>
+            <p><b>#549 Make the slack collaboration experience with the-loop better!</b></p>
+            <div class="reactions"><span class="reaction">⏳ 1</span></div>
+            <div class="threadlink">7 replies</div>
+          </div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="colhead">Thread of #549</div>
+        <div class="msg">
+          <div class="avatar">tl</div>
+          <div class="body">
+            <div class="who">the-loop <span class="app">APP</span><span class="time">10:42</span></div>
+            <p>📝 Design is drafted: placement, one delivery step, and the ref-case fix for the Approve
+              buttons. Nothing needed from you until the testing plan joins it.</p>
+            <div class="buttons"><span class="btn">Open on GitHub</span></div>
+          </div>
+        </div>
+        <p class="none">No long-form reply follows here.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="case" id="gate">
+    <h2>3 · A gate: mention, buttons, then the outcome (R7, R8, R11)</h2>
+    <p class="note">The person who can answer is mentioned once. A press by an authorized user is answered like
+      the same reply on GitHub; the message is edited to show who answered, and the buttons go.</p>
+    <div class="pane">
+      <div class="col">
+        <div class="colhead">Gate opens</div>
+        <div class="msg">
+          <div class="avatar">tl</div>
+          <div class="body">
+            <div class="who">the-loop <span class="app">APP</span><span class="time">11:03</span></div>
+            <p>✋ <span class="mention">@approver</span> design and testing plan are ready for your approval.</p>
+            <div class="buttons"><span class="btn primary">Approve</span><span class="btn">Request changes</span>
+              <span class="btn">Open on GitHub</span></div>
+            <div class="reactions"><span class="reaction">⏳ 1</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="colhead">After the press</div>
+        <div class="msg">
+          <div class="avatar">tl</div>
+          <div class="body">
+            <div class="who">the-loop <span class="app">APP</span><span class="time">11:03 (edited)</span></div>
+            <p>✋ <span class="mention">@approver</span> design and testing plan are ready for your approval.</p>
+            <div class="context">✅ Approved by @approver from Slack · 11:20</div>
+            <div class="buttons"><span class="btn">Open on GitHub</span></div>
+            <div class="reactions"><span class="reaction">⚙️ 1</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="legend">Where the channel cannot receive a press, the buttons are replaced by one line:
+      “Reply <code>approved</code> on the pull request to approve.” with the link (R11.5).</p>
+  </section>
+
+  <section class="case" id="recap">
+    <h2>4 · Back after a gap: the recap line (R9)</h2>
+    <p class="note">The last message from an authorized human here is older than 12 hours, so the short form
+      starts with one line built from the event record.</p>
+    <div class="pane single">
+      <div class="col">
+        <div class="msg">
+          <div class="avatar">tl</div>
+          <div class="body">
+            <div class="who">the-loop <span class="app">APP</span><span class="time">Tue 08:30</span></div>
+            <p class="recap">Since you last wrote (Sun 19:02): design approved · tasks planned · PR #561 opened ·
+              1 check failed and fixed.</p>
+            <p>🔍 Implementation is ready for review on PR #561.
+              <span class="mention">@approver</span>, the briefing is in the PR.</p>
+            <div class="buttons"><span class="btn primary">Approve</span><span class="btn">Request changes</span>
+              <span class="btn">Open on GitHub</span></div>
+            <div class="reactions"><span class="reaction">👀 1</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="legend">Status reactions, one at a time on the status message: ⚙️ working · ⏳ waiting on a human ·
+      👀 in review · 🛑 blocked or failed · ✅ complete.</p>
+  </section>
+</main>
+</body>
+</html>
