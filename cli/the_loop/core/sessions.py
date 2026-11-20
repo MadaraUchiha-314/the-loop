@@ -806,22 +806,23 @@ def check_default(default_answer: str, after_seconds: Optional[int]) -> str:
     return default_answer
 
 
-def _default_spent(ref: str, config: Optional[dict]) -> bool:
-    """Whether a default was already taken for ``ref`` at the step it is on.
+def _timed_ask_refusal(ref: str, config: Optional[dict]) -> str:
+    """Why ``ref`` may not ask with a deadline right now; ``""`` when it may.
 
-    A default lets a session go on without a person, once. A second one at the
-    same step would let it go on without a person for as long as it keeps
-    asking, so the next question there has to wait for an answer. Read from the
-    log this process writes; a log that cannot be read spends nothing, because
-    a question must always be askable.
+    A default lets a session go on without a person, once. Two reasons refuse
+    another: a default was already taken at the step the work item is on, or a
+    question with a deadline is still open. Either would let a session go on
+    without a person for as long as it keeps asking, so the next question has
+    to wait for an answer. Read from the log this process writes; a log that
+    cannot be read refuses nothing, because a question must always be askable.
     """
     try:
         path = eventlog.current_path()
         if path is None:
-            return False
+            return ""
         routing = _routing(config)
         state = sessionstate.derive(
-            sessionstate.load(path).get(ref, []),
+            sessionstate.load(path, work_item=ref).get(ref, []),
             now=datetime.now(timezone.utc),
             watchdog=WatchdogConfig.from_mapping(routing.get("watchdog") or {}),
             asks=AsksConfig.from_mapping(routing.get("asks") or {}),
@@ -829,8 +830,12 @@ def _default_spent(ref: str, config: Optional[dict]) -> bool:
         )
     except Exception as exc:  # noqa: BLE001 — never a reason to refuse a question
         logger.warning("cannot read whether a default was taken for %s: %s", ref, exc)
-        return False
-    return state.default_spent
+        return ""
+    if state.default_spent:
+        return strings.t("core.sessions.ask.default-spent")
+    if any(ask.default_at and not ask.legacy for ask in state.open_asks):
+        return strings.t("core.sessions.ask.default-open")
+    return ""
 
 
 def ask_session(
@@ -875,8 +880,9 @@ def ask_session(
             _routing(config).get("asks") or {}
         ).min_default_wait_seconds
         wait = durations.clamp(requested, minimum)
-        if _default_spent(work_item.ref, config):
-            raise ValueError(strings.t("core.sessions.ask.default-spent"))
+        refusal = _timed_ask_refusal(work_item.ref, config)
+        if refusal:
+            raise ValueError(refusal)
     control = _control_config(config)
     actor = actor or _local_actor()
     # One event on the bus (issue-309): the ledger records it FIRST — the record

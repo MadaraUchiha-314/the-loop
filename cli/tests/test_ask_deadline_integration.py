@@ -853,3 +853,46 @@ def test_abuse_a_second_default_on_the_same_step_is_refused(config, posted, log_
 
     eventlog.emit("graph.advanced", work_item=REF, node="build")
     assert _ask(config)["defaultAt"]
+
+
+def test_abuse_a_second_timed_ask_while_the_first_is_open_is_refused(
+    config, posted, log_path, monkeypatch
+):
+    """
+    Feature: A question can carry a default and a deadline
+    Scenario: a session queues a second deadline before the first one passes
+      Given an ask with a default and a wait that nobody has answered yet
+      When the session asks again with a default and a wait
+      Then the ask is refused, saying one question with a deadline at a time
+      And nothing is posted or recorded for it
+      And only this work item's lines of the log were read
+      And the same question without a wait is accepted
+      And once a person has answered, a wait is accepted again
+
+    Requirement: docs/specs/issue-551/requirements.md#security-considerations
+    """
+    _ask(config)
+    loads = []
+    real_load = sessionstate.load
+
+    def load(path, work_item=None):
+        loads.append(work_item)
+        return real_load(path, work_item)
+
+    monkeypatch.setattr(sessionstate, "load", load)
+
+    with pytest.raises(ValueError) as refused:
+        _ask(config)
+    assert "one question with a deadline at a time" in str(refused.value)
+    assert "without --after" in str(refused.value)
+    assert loads == [REF]
+    assert len(posted) == 1
+    (first,) = _records(log_path, "session.awaiting_input")
+
+    plain = _ask(config, default_answer="", default_after_seconds=None)
+    assert plain["asked"] is True and plain["defaultAt"] is None
+
+    eventlog.emit(
+        "session.ask_answered", work_item=REF, ask_id=first["ask_id"], actor="octocat"
+    )
+    assert _ask(config)["defaultAt"]
