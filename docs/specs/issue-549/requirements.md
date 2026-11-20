@@ -29,6 +29,10 @@ truncation. Link previews are switched off. Six smaller changes ship with this:
 - bookkeeping stays out of Slack;
 - GitHub keeps the long form, unchanged.
 
+**R11** makes every human approval gate show its Approve button in the work item's
+own Slack conversation. On this work item the gate messages went to a second thread,
+because their ref was lowercased.
+
 Read R1–R3 closely: they replace the issue-338 digest. R4 has the one open question:
 where the long form goes in the central channel, which already uses one thread per
 work item.
@@ -284,6 +288,42 @@ conversation reads as a conversation, not a log.
 3. WHEN a bookkeeping event changes the work item's state THEN the R8 status reaction
    SHALL still be updated.
 
+### Requirement 11 — Approve from Slack at every human gate
+
+**User story:** As the approver, I want an Approve button on Slack for every gate
+that waits on me, so that I can approve where I read the work, without opening GitHub.
+
+Added on PR #550 by the author
+([comment](https://github.com/MadaraUchiha-314/the-loop/pull/550#issuecomment-7028547970)).
+On this work item, both gate messages were posted with their buttons, but to a second
+Slack thread. The runtime published them under `github:madarauchiha-314/the-loop#549`,
+and the channel keyed them apart from `github:MadaraUchiha-314/the-loop#549`
+([analysis](https://github.com/MadaraUchiha-314/the-loop/pull/550#issuecomment-7028580719)).
+
+#### Acceptance criteria (EARS)
+
+1. WHEN any human approval gate opens THEN the system SHALL post its Approve and
+   Request changes buttons in the work item's own conversation, as part of the short
+   message (R4.4). This covers `brainstorm-approval`, `requirements-approval`,
+   `design-approval`, the PR's `human-approval`, the security sign-off, and any
+   operator-declared gate that publishes an approval event.
+2. WHEN two work-item refs differ only in the letter case of the GitHub owner or
+   repository THEN the system SHALL treat them as one work item for every Slack
+   conversation lookup, binding and delivery. A gate message SHALL NOT open a second
+   thread for its work item.
+3. WHEN a channel holds two conversations for one work item that differ only in that
+   case THEN the system SHALL deliver the next message to the conversation bound
+   first. It SHALL leave the other one readable and attributed to the same work item.
+4. WHEN an authorized user presses Approve or Request changes THEN the gate SHALL
+   classify the press exactly as the same answer typed on the ticket or PR. It SHALL
+   record the approver and lock the artifact as it does for a GitHub approval, and
+   acknowledge the press in the conversation.
+5. IF the channel cannot receive a button press (no Socket Mode or gateway delivery,
+   or no `gate.feedback` grant) THEN the gate message SHALL show no approval buttons.
+   It SHALL instead say in one line how to approve on GitHub, with the link.
+6. WHEN a gate is answered on GitHub or on Slack THEN the gate's Slack message SHALL be
+   edited to show the outcome and who answered, and its buttons SHALL be removed.
+
 ## Non-functional requirements
 
 - **Order.** For one event the short message SHALL be posted before its long-form
@@ -336,6 +376,15 @@ conversation reads as a conversation, not a log.
   6. WHEN an authorized user's configured Slack identity cannot be resolved to a
      member id THEN the system SHALL mention no one for them. It SHALL NOT guess an id
      from a display name.
+  7. WHEN someone who is not an authorized user presses Approve or Request changes
+     THEN the gate SHALL NOT count the press. The system SHALL tell only that person
+     (an ephemeral reply) that the press was not accepted, and record the refusal.
+  8. WHEN a button press names a work item or gate that is not open (a stale message,
+     or a forged action value) THEN the system SHALL change nothing and say so to the
+     presser only.
+  9. Case-insensitive matching of refs (R11.2) SHALL apply only to the GitHub owner and
+     repository. The issue or PR number and the provider SHALL match exactly. A ref on
+     another host SHALL NOT match a `github.com` ref.
 - **Fail closed.** If the renderer cannot produce valid blocks for a part, the system
   SHALL post that part as escaped plain text, keeping every word. It SHALL NOT post
   raw, unescaped markup, and it SHALL NOT drop the part. If a removed config key is
