@@ -356,7 +356,7 @@ def derive(
             default_spent = True
             if asks_open.pop(_text(record, "ask_id"), None) is not None:
                 ask_closed = moment
-        if event in _BUDGET_RESETS or _delivered_a_person(record):
+        if event in _BUDGET_RESETS or _delivered_a_person(record, work_item):
             nudges_spent, notified, last_nudge = 0, False, None
             last_attempt, default_spent = None, False
 
@@ -509,8 +509,19 @@ def _position_unknown(reason: str, node: str) -> bool:
     return reason == "inconclusive" and not node
 
 
-def _delivered_a_person(record: Dict[str, Any]) -> bool:
-    return record.get("event") == _DELIVERED and bool(_text(record, "actor"))
+def _delivered_to(record: Dict[str, Any]) -> str:
+    """The session a delivery went to. A delivery to a pull request's own
+    session is logged under its work item, with the pull request as
+    `endpoint`."""
+    return _text(record, "endpoint") or _text(record, "work_item")
+
+
+def _delivered_a_person(record: Dict[str, Any], to: str = "") -> bool:
+    """Whether ``record`` is a person's event delivered to a session; with
+    ``to``, to that work item's session and no other."""
+    if record.get("event") != _DELIVERED or not _text(record, "actor"):
+        return False
+    return not to or _delivered_to(record) == to
 
 
 def _later(first: _Moment, second: Optional[_Moment]) -> _Moment:
@@ -558,7 +569,7 @@ def load(path: Union[str, Path]) -> Dict[str, List[Dict[str, Any]]]:
             continue
         if event == _DELIVERED and not _delivered_a_person(record):
             continue  # most of a busy log, and nothing the derivation reads
-        ref = record.get("work_item")
+        ref = _delivered_to(record) if event == _DELIVERED else record.get("work_item")
         if isinstance(ref, str) and ref:
             grouped.setdefault(ref, []).append(record)
     return grouped

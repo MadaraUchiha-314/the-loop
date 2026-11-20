@@ -1005,6 +1005,31 @@ def test_load_groups_the_records_that_matter_by_work_item(tmp_path):
     assert state_at(grouped.get("github:acme/widgets#9", []), 20).state == "not-watched"
 
 
+def test_a_persons_event_on_a_pull_request_resets_that_sessions_budget(tmp_path):
+    """Requirement: R4.3 — the delivery is logged under the work item with the
+    pull request as its `endpoint`. The person spoke to the pull request's
+    session, so that is the budget their event renews."""
+    pull = "github:acme/widgets#12"
+    spent = one_empty_turn_per_nudge()
+    path = tmp_path / "events.jsonl"
+    _write(
+        path,
+        spent
+        + [{**record, "work_item": pull} for record in spent]
+        + [ev(28, "dispatch.succeeded", via="tmux", actor="rohith", endpoint=pull)],
+    )
+    grouped = sessionstate.load(path)
+    assert grouped[pull][-1]["event"] == "dispatch.succeeded"
+    assert grouped[REF][-1]["event"] == "session.turn_ended"
+    outer = state_at(grouped[REF], 40)
+    inner = derive(
+        grouped[pull], now=at(40), watchdog=WATCHDOG, asks=ASKS, work_item=pull
+    )
+    assert (outer.nudges_spent, inner.nudges_spent) == (2, 0)
+    # The same record handed straight to the derivation is not the outer's.
+    assert state_at(spent + grouped[pull][-1:], 40).nudges_spent == 2
+
+
 def test_load_of_a_missing_log_is_empty(tmp_path):
     assert sessionstate.load(tmp_path / "absent.jsonl") == {}
 
