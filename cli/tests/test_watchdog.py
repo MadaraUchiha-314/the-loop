@@ -493,6 +493,9 @@ def test_a_default_for_a_paused_session_closes_the_ask_without_a_paste(world):
     (taken,) = world.records("session.ask_default_taken")
     assert taken["delivered"] is False
     assert world.pasted() == [] and len(world.published) == 1
+    ((event, _),) = world.published
+    assert "The session has not been told" in event.text
+    assert "going ahead" not in event.text + event.summary
 
 
 def test_a_default_for_a_dead_pane_closes_the_ask_and_says_so(world):
@@ -502,7 +505,65 @@ def test_a_default_for_a_dead_pane_closes_the_ask_and_says_so(world):
     world.cycle(32)
     taken, failed = world.records("session.ask_default_taken")
     assert "delivered" not in taken and failed["delivered"] is False
-    assert len(world.published) == 1
+    ((event, _),) = world.published
+    assert "The session has not been told" in event.text
+    assert "going ahead" not in event.text + event.summary
+
+
+def test_a_default_the_session_was_told_is_published_as_going_ahead(world):
+    ask(world)
+    world.cycle(31)
+    ((event, _),) = world.published
+    assert "going ahead with its stated default" in event.text
+    assert "has not been told" not in event.text + event.summary
+
+
+def test_the_next_nudge_tells_a_session_the_default_it_was_never_told(world):
+    """A default taken while the pane was gone is told with the next nudge
+    that lands, and only once.
+
+    Requirement: R6.2
+    """
+    ask(world)
+    world.tmux.session_missing = True
+    world.cycle(31)
+    world.tmux.session_missing = False
+    told = watchdog.default_text(ref=REF, default="Move T5 to after merge.")
+
+    world.cycle(42)
+
+    (first,) = world.pasted()[-1:]
+    assert first.startswith("the-loop: you have been idle for 11 minutes")
+    assert first.endswith("\n" + told)
+    assert world.records("session.nudged")[-1]["default_of"] == "ask-1"
+
+    world.cycle(53)
+    assert told not in world.pasted()[-1]
+    assert "default_of" not in world.records("session.nudged")[-1]
+
+
+def test_a_nudge_that_did_not_land_leaves_the_default_untold(world):
+    """Requirement: R6.2"""
+    ask(world)
+    world.registry.pause(REF)
+    world.cycle(31)
+    world.registry.resume(REF)
+    world.tmux.deliver_ok = False
+    world.cycle(42)
+    world.tmux.deliver_ok = True
+    world.cycle(53)
+    assert "Move T5 to after merge." in world.pasted()[-1]
+
+
+def test_a_person_who_answers_after_the_default_ends_the_untold_default(world):
+    """Requirement: R6.2"""
+    ask(world)
+    world.registry.pause(REF)
+    world.cycle(31)
+    world.registry.resume(REF)
+    world.emit(32, "session.reply_sent", actor="octocat")
+    world.cycle(45)
+    assert all("Move T5" not in text for text in world.pasted())
 
 
 def test_an_earlier_asks_default_is_taken_with_its_own_text(world):

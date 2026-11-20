@@ -28,6 +28,7 @@ __all__ = [
     "EVENTS",
     "OpenAsk",
     "SessionState",
+    "UntoldDefault",
     "derive",
     "load",
     "parse_ts",
@@ -120,6 +121,14 @@ class OpenAsk:
 
 
 @dataclass(frozen=True)
+class UntoldDefault:
+    """An ask's default that was taken while the session could not be told."""
+
+    ask_id: str
+    default: str
+
+
+@dataclass(frozen=True)
 class DeclaredWait:
     """What the session said it waits for (`the-loop wait`)."""
 
@@ -178,6 +187,9 @@ class SessionState:
     #: The most recent of them.
     open_ask: Optional[OpenAsk] = None
     declared_wait: Optional[DeclaredWait] = None
+    #: The last default taken, when the session was never told of it and no
+    #: person has spoken since. The next nudge tells it.
+    untold_default: Optional[UntoldDefault] = None
     #: In the order the watcher performs them.
     due: Tuple[Due, ...] = ()
 
@@ -283,6 +295,10 @@ def derive(
     last_attempt: Optional[Tuple[str, Any]] = None
     stalls: Dict[str, _Stall] = {}
     unresumed: List[_Stall] = []
+    # The last default taken that the session was not told, and the one the
+    # last nudge carried: a nudge that did not land leaves it untold.
+    untold: Optional[UntoldDefault] = None
+    carried: Optional[UntoldDefault] = None
 
     for record in events:
         if not isinstance(record, dict):
@@ -329,6 +345,12 @@ def derive(
                 if not outcome:
                     nudges_spent, last_nudge = nudges_spent + 1, when
                     last_attempt = attempt
+                    told = untold is not None and untold.ask_id == _text(
+                        record, "default_of"
+                    )
+                    carried, untold = (untold, None) if told else (None, untold)
+                elif carried is not None:
+                    untold, carried = carried, None
             else:
                 notified = True
             stall_id = _text(record, "stall_id")
@@ -349,12 +371,20 @@ def derive(
                 unresumed.remove(ended)
 
         if event in _ANSWERS:
+            untold = carried = None
             if asks_open:
                 asks_open, ask_closed = {}, moment
         elif event == _DEFAULT_TAKEN:
             default_spent = True
             if asks_open.pop(_text(record, "ask_id"), None) is not None:
                 ask_closed = moment
+            # A record without `delivered: false` is written before the paste;
+            # the paste that fails writes the same default again with it.
+            untold = carried = None
+            if record.get("delivered") is False and _text(record, "default"):
+                untold = UntoldDefault(
+                    _text(record, "ask_id"), _text(record, "default")
+                )
         if event in _BUDGET_RESETS or _delivered_a_person(record, work_item):
             nudges_spent, notified, last_nudge = 0, False, None
             last_attempt, default_spent = None, False
@@ -492,6 +522,7 @@ def derive(
         open_asks=open_asks,
         open_ask=open_ask,
         declared_wait=declared,
+        untold_default=untold,
         due=tuple(due),
     )
 

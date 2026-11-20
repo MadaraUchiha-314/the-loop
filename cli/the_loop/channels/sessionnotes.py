@@ -199,18 +199,24 @@ def default_taken(
     default: str,
     deadline: Optional[datetime],
     question_url: str = "",
+    delivered: bool = True,
 ) -> Event:
     """ "Default taken": nobody answered by the deadline, the session goes
     ahead with its own default, and that is not an approval of anything.
 
+    ``delivered`` is whether the session was told. When it was not (it is
+    paused, or its pane did not take the message) the note says the default
+    applies and that the session does not know yet, never that it went ahead.
+
     The default is quoted as inert words on both surfaces, and is not carried
     in ``detail``: nothing draws it a second time without that.
     """
+    told = "" if delivered else ".untold"
     return Event(
         event_type=ASK_DEFAULT_TAKEN,
         work_item=ref,
         text=_t(
-            "default-taken.github",
+            f"default-taken.github{told}",
             question=(
                 _t("default-taken.github.question-link", url=question_url)
                 if question_url
@@ -220,11 +226,11 @@ def default_taken(
             default=_inert(default),
         ),
         summary=_t(
-            "default-taken.slack",
+            f"default-taken.slack{told}",
             time=_clock(deadline),
             default=quoted_default(default),
         ),
-        detail={"ask_id": ask_id},
+        detail={"ask_id": ask_id, "delivered": "true" if delivered else ""},
     )
 
 

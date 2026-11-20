@@ -87,11 +87,12 @@ def question(ask_id="ask-1", default="Move T5 to after merge.", **detail):
     )
 
 
-def default_taken(default="Move T5 to after merge.", ask_id="ask-1"):
+def default_taken(default="Move T5 to after merge.", ask_id="ask-1", **facts):
     return sessionnotes.default_taken(
         REF,
         ask_id=ask_id,
         default=default,
+        **facts,
         deadline=at(8, 47),
         question_url="https://github.com/octo/repo/issues/551#issuecomment-1",
     )
@@ -224,6 +225,22 @@ def test_the_default_taken_comment_is_pinned():
     )
 
 
+def test_the_default_taken_comment_for_a_session_that_was_not_told_is_pinned():
+    """Requirement: R6.2"""
+    event = default_taken(delivered=False)
+    assert comment(event) == (
+        "🤖 **the-loop** — **default taken**\n\n"
+        "Nobody answered [the question above]"
+        "(https://github.com/octo/repo/issues/551#issuecomment-1) by 08:47 UTC,"
+        " so the default applies: “Move T5 to after merge.”\n\n"
+        "The session has not been told: it is paused, or its terminal did not"
+        " take the message. Reply here, or attach to the session, to tell it.\n\n"
+        "This is not an approval of anything."
+    )
+    assert event.detail["delivered"] == ""
+    assert default_taken().detail["delivered"] == "true"
+
+
 def test_the_reminder_comment_is_pinned():
     assert comment(reminded()) == (
         "🤖 **the-loop** — **still waiting**\n\n"
@@ -256,6 +273,15 @@ def test_the_default_taken_line_is_pinned():
     assert build_short_form(default_taken()).text == (
         "⚙️ No answer by 08:47 UTC, so the session went ahead with:"
         " _“Move T5 to after merge.”_ Reply to overrule."
+    )
+
+
+def test_the_default_taken_line_for_a_session_that_was_not_told_is_pinned():
+    """Requirement: R6.2"""
+    assert build_short_form(default_taken(delivered=False)).text == (
+        "⚙️ No answer by 08:47 UTC, so the default applies:"
+        " _“Move T5 to after merge.”_ The session has not been told (it is"
+        " paused, or its terminal is gone). Reply here to tell it."
     )
 
 

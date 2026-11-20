@@ -299,6 +299,13 @@ class _Cycle:
             "node": state.node,
             "nudge": state.nudges_spent + 1,
         }
+        untold = state.untold_default
+        if untold is not None:
+            # Its default was taken while it could not be told. This nudge is
+            # the first thing typed to it since, so it says so. Named on the
+            # record, so that the default is told once.
+            text += "\n" + default_text(ref=self.ref, default=untold.default)
+            attempt["default_of"] = untold.ask_id
         # The attempt spends the node visit's budget whether or not the paste
         # lands, so a pane that never takes one is not tried without end.
         if not eventlog.emit("session.nudged", **attempt):
@@ -401,14 +408,16 @@ class _Cycle:
         }
         # Recorded whether or not the session can be told: the ask closes
         # exactly once, and the thread says what happened.
-        if not self._reachable():
+        told = self._reachable()
+        if not told:
             if not eventlog.emit("session.ask_default_taken", **taken, delivered=False):
                 return
         else:
             if not eventlog.emit("session.ask_default_taken", **taken):
                 return
             result = self._paste(default_text(ref=self.ref, default=ask.default))
-            if result is None or not result.ok:
+            told = result is not None and bool(result.ok)
+            if not told:
                 # The ask is closed already; this only says the paste failed.
                 eventlog.emit("session.ask_default_taken", **taken, delivered=False)
         self._tell(
@@ -418,6 +427,7 @@ class _Cycle:
                 default=ask.default,
                 deadline=sessionstate.parse_ts(ask.default_at),
                 question_url=str(self._asked(ask.ask_id).get("comment_url") or ""),
+                delivered=told,
             )
         )
 
