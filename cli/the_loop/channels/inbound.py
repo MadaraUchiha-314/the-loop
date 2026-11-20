@@ -2133,8 +2133,13 @@ def _refuse_gate_press(
         return _drop(reply, "unauthorized-actor", level="warning", actor=reply.author)
     stale = False
     if named:
-        live = state.delivery_for(reply.work_item)["gateTs"].get(named, "")
-        stale = live != reply.ts
+        memory = state.delivery_for(reply.work_item)
+        live = memory["gateTs"].get(named, "")
+        where = str((memory["gateMessage"].get(named) or {}).get("channel") or "")
+        # the same ts in another conversation is another message
+        stale = live != reply.ts or bool(
+            where and reply.channel_id and where != reply.channel_id
+        )
     if not stale:
         parked = _at_human_gate(reply.work_item, cli_config)
         stale = parked is False

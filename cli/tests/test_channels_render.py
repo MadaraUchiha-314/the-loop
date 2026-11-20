@@ -298,3 +298,56 @@ def test_a_fence_marker_longer_than_a_part_never_floods_the_conversation():
     assert len(long_form.parts) <= 4
     assert all(len(part) <= LONG_FORM_PART_CHARS for part in long_form.parts)
     assert sum(part.count("word") for part in long_form.parts) == 2000
+
+
+def test_an_info_line_inside_a_code_block_does_not_close_it():
+    """R1.1 (critic round): "```KEEP" inside a block is text; only a bare fence
+    closes it, so nothing is lost when the block is split."""
+    text = "```\n" + "x" * 12000 + "\n```KEEP\nend\n```"
+    joined = "\n".join(render_long_form(text).parts)
+    assert "KEEP" in joined and "end" in joined
+
+
+def test_a_data_row_that_looks_like_a_rule_is_kept():
+    """R1.1, R2.3 (critic round): only the second line is the rule line."""
+    from the_loop.channels.render import table_as_code
+
+    drawn = "\n".join(table_as_code(["| Header |", "| --- |", "| --KEEP |", "| v |"]))
+    assert "--KEEP" in drawn
+
+
+def test_a_ragged_table_is_kept_as_written_in_linear_time():
+    """Abuse case 3 (critic round): one wide row and many short ones is not
+    padded to width x rows."""
+    from the_loop.channels.render import table_as_code
+
+    n = 4000
+    lines = ["|" + " a |" * n, "| --- |"] + ["| x |"] * n
+    started = time.monotonic()
+    drawn = table_as_code(lines)
+    assert time.monotonic() - started < 0.5
+    assert len(drawn) == len(lines) + 2
+
+
+def test_abuse_a_heading_of_spaces_renders_in_linear_time():
+    """Abuse case 3 (security review): "# a" + spaces + "b" backtracked in cubic
+    time through the heading pattern; a 64 KB one now costs what prose costs."""
+    from the_loop.channels.base import Event
+    from the_loop.channels.mrkdwn import to_mrkdwn
+    from the_loop.channels.shortform import build_short_form, long_form_adds
+
+    text = "# a" + " " * 64000 + "b"
+    started = time.monotonic()
+    render_long_form(text)
+    to_mrkdwn(text)
+    event = Event(event_type="comment.agent", work_item="github:o/r#7", text=text)
+    short = build_short_form(event, session_authored=True)
+    long_form_adds(event, short)
+    assert time.monotonic() - started < 2
+
+
+def test_a_heading_keeps_its_words_without_the_closing_hashes():
+    from the_loop.channels.mrkdwn import to_mrkdwn
+
+    assert to_mrkdwn("## Plan ##") == "*Plan*"
+    assert to_mrkdwn("# C# notes") == "*C# notes*"

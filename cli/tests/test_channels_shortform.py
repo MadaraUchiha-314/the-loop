@@ -261,3 +261,20 @@ def test_a_human_comment_names_its_author():
     )
     text = build_short_form(hostile).text
     assert "<!" not in text and "commented:" in text
+
+
+def test_a_very_long_url_never_pushes_the_short_form_past_its_cap():
+    """R3.2 (critic round): a URL longer than half the cap is left to the
+    button; the short form stays within 600 characters."""
+    from the_loop.channels.base import Event
+    from the_loop.channels.shortform import SUMMARY_MAX_CHARS, build_short_form
+
+    event = Event(
+        event_type="comment.agent",
+        work_item="github:o/r#7",
+        text="Drafted the design.",
+        url="https://github.com/a/b/issues/1?x=" + "a" * 600,
+    )
+    short = build_short_form(event, session_authored=True)
+    assert len(short.text) <= SUMMARY_MAX_CHARS
+    assert "Drafted the design." in short.text

@@ -30,7 +30,7 @@ from typing import Any, List, Optional, Tuple
 from .. import eventlog, strings
 from .defuse import defuse
 from .mrkdwn import outside_code, to_mrkdwn, unfold
-from .render import HEADING_LINE_RE, ITEM_RE, QUOTE_RE, block_spans
+from .render import HEADING_LINE_RE, ITEM_RE, QUOTE_RE, block_spans, heading_text
 from .voice import room_lead
 
 __all__ = [
@@ -184,7 +184,12 @@ def _prose(text: str) -> List[Tuple[str, str]]:
             out.append(("paragraph", joined))
         elif span.kind == "heading":
             heading = HEADING_LINE_RE.match(body[0])
-            out.append(("heading", heading.group(1) if heading else body[0].strip()))
+            out.append(
+                (
+                    "heading",
+                    heading_text(heading.group(1)) if heading else body[0].strip(),
+                )
+            )
         elif span.kind == "list":
             for line in body:
                 item = ITEM_RE.match(line)
@@ -260,6 +265,8 @@ def build_short_form(
     text = defuse(outside_code(str(getattr(event, "text", "") or ""), unfold))
     line = to_mrkdwn(_first_line(text)).strip()
     link = _link(url)
+    if len(link) > limit // 2:
+        link = ""  # a link that long leaves no room; the button carries the URL
     if not link:
         return ShortForm(_with_preamble(preamble, line, limit), url, "built")
     body = _with_preamble(preamble, line, limit - len(link) - 1)

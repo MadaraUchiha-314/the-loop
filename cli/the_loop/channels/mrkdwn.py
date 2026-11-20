@@ -32,7 +32,8 @@ __all__ = [
 _BOLD = re.compile(r"\*\*([^*\n]+)\*\*")
 _BOLD_UNDERSCORE = re.compile(r"(?<!\w)__([^_\n]+)__(?!\w)")
 _STRIKE = re.compile(r"~~([^~\n]+)~~")
-_HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*#*\s*$", re.MULTILINE)
+#: Linear: no lazy group between optional runs (security review, abuse case 3).
+_HEADING = re.compile(r"^#{1,6}[ \t]+(\S.*)$", re.MULTILINE)
 _LINK = re.compile(r"!?\[([^\[\]\n]+)\]\(([^()\s]+)\)")
 _TASK_DONE = re.compile(r"^(\s*)[-*+]\s+\[[xX]\]\s*", re.MULTILINE)
 _TASK_OPEN = re.compile(r"^(\s*)[-*+]\s+\[ \]\s*", re.MULTILINE)
@@ -131,7 +132,10 @@ def _unfold(text: str) -> str:
 
 def _line_rules(text: str) -> str:
     text = _unfold(text)
-    text = _HEADING.sub(r"*\1*", text)
+    text = _HEADING.sub(
+        lambda m: "*" + (m.group(1).rstrip().rstrip("#").rstrip() or m.group(1)) + "*",
+        text,
+    )
     text = _TASK_DONE.sub("\\1☑ ", text)
     text = _TASK_OPEN.sub("\\1☐ ", text)
     text = _BULLET.sub("\\1• ", text)

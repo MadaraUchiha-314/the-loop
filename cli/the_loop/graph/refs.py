@@ -131,6 +131,4 @@ def identity_key(work_item: str) -> str:
         return work_item
     if ref.provider != "github":
         return ref.ref
-    return dataclasses.replace(
-        ref, owner=ref.owner.casefold(), repo=ref.repo.casefold()
-    ).ref
+    return dataclasses.replace(ref, owner=ref.owner.lower(), repo=ref.repo.lower()).ref

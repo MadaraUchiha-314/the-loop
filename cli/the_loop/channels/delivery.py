@@ -286,6 +286,7 @@ def deliver(
     # the edit fell back to a fresh post they belong to the old message, and the
     # new one gets its long form posted whole.
     reuse: Tuple[str, ...] = ()
+    stale: List[str] = []
 
     if not top:
         if plan.edit_ts:
@@ -320,6 +321,12 @@ def deliver(
         if index < len(reuse):
             ts = _edit_part(client, plan.channel, reuse[index], part, sleep)
             calls += 1
+            if not ts:
+                # a reply is gone (someone deleted it): the parts after it are
+                # posted fresh too, and the old replies after it deleted, so
+                # the thread keeps the author's order
+                stale.extend(reuse[index + 1 :])
+                reuse = reuse[:index]
         if not ts:
             response = _with_retry(
                 lambda: post_message(
@@ -339,7 +346,7 @@ def deliver(
 
     # A long form that shrank: the replies past its new end go (R6.2). Best
     # effort — a reply Slack will not delete is left, never re-posted.
-    for surplus in reuse[len(plan.parts) :]:
+    for surplus in [*reuse[len(plan.parts) :], *stale]:
         if surplus in landed:
             continue
         try:

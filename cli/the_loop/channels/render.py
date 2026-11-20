@@ -50,7 +50,17 @@ LONG_FORM_PART_CHARS = 11_000
 
 TABLE_ROW_RE = re.compile(r"^\s*\|")
 TABLE_RULE_RE = re.compile(r"^\s*\|?\s*:?-{2,}")
-HEADING_LINE_RE = re.compile(r"^#{1,6}\s+(.+?)\s*#*\s*$")
+#: A heading line. Linear: the text is taken whole and its closing ``#`` run
+#: stripped in Python (:func:`heading_text`); a lazy group between two
+#: optional runs backtracked in cubic time (security review, abuse case 3).
+HEADING_LINE_RE = re.compile(r"^#{1,6}[ \t]+(\S.*)$")
+
+
+def heading_text(captured: str) -> str:
+    """A heading's words: the captured text without its closing ``#`` run."""
+    return captured.rstrip().rstrip("#").rstrip() or captured.strip()
+
+
 ITEM_RE = re.compile(
     r"^(\s*)(?:[-*+]|\d{1,3}[.)]|[A-Z][.)]|[a-z]\))\s+(?:\[([ xX])\]\s*)?(.*)$"
 )
@@ -101,9 +111,11 @@ def block_spans(lines: Sequence[str]) -> List[BlockSpan]:
         fence = FENCE_RE.match(line)
         if fence:
             flush(i)
-            marker = fence.group(1)
+            # a closer is the fence character alone on its line (CommonMark):
+            # "```KEEP" inside the block is text, not the end of it
+            closer = re.compile(rf"^\s*{re.escape(fence.group(1)[0])}{{3,}}\s*$")
             j = i + 1
-            while j < count and not lines[j].lstrip().startswith(marker):
+            while j < count and not closer.match(lines[j]):
                 j += 1
             spans.append(BlockSpan("code", i, min(j + 1, count), closed=j < count))
             i = j + 1
@@ -191,8 +203,17 @@ def table_as_code(lines: Sequence[str]) -> List[str]:
     as written (a crafted table of many empty cells), the rows are kept exactly
     as written instead, so the fallback never grows the text (abuse case 3).
     """
-    rows = [_cells(line) for line in lines if not TABLE_RULE_RE.match(line)]
+    # only the second line can be the rule line: a data row "| --x |" is data
+    rows = [
+        _cells(line)
+        for k, line in enumerate(lines)
+        if not (k == 1 and TABLE_RULE_RE.match(line))
+    ]
     width = max((len(row) for row in rows), default=0)
+    if width * len(rows) > 2 * sum(len(row) for row in rows) + len(rows):
+        # a ragged table (one wide row, many short ones): padding would cost
+        # width x rows; the rows are kept as written instead (abuse case 3)
+        return ["```"] + [line.strip() for line in lines] + ["```"]
     sizes = [0] * width
     for row in rows:
         for index, cell in enumerate(row):

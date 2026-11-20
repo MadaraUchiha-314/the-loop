@@ -337,3 +337,16 @@ def test_the_posted_memory_keeps_a_live_progress_message_s_record():
     assert {"progress-2", "progress-3"} <= set(kept) and "progress-1" not in kept
     assert len(kept) == POSTED_CAP + 2
     assert len(_posted_map(records)) == POSTED_CAP
+
+
+def test_a_deleted_reply_keeps_the_thread_in_order():
+    """R2.4, R6.3 (critic round): when a middle reply is gone, it and every part
+    after it are posted fresh, and the old replies after it are deleted, so the
+    thread never reads [B', A']."""
+    client = EditClient(gone={"1700.2"})
+    delivered = deliver(client, _edit_plan(["a", "b"], ["1700.2", "1700.3"]))
+    kinds = [(kind, params.get("ts")) for kind, params in client.calls]
+    assert kinds[:2] == [("update", "1700.1"), ("update", "1700.2")]
+    assert [k for k, _ in kinds[2:4]] == ["post", "post"]
+    assert ("delete", "1700.3") in kinds
+    assert "1700.3" not in delivered.parts and len(delivered.parts) == 2
