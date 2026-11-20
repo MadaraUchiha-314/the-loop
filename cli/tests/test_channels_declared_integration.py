@@ -893,3 +893,96 @@ def test_the_loop_comment_with_a_summary_posts_the_summary_to_slack_and_the_whol
     assert part["thread_ts"] == "1700.000002"
     (block,) = _markdown(part)
     assert block["text"] == LONG_COMMENT
+
+
+# -- issue-549 task 11: progress edits edit one message, long form included -------
+
+
+def _progress(event_id, text, summary="Review is under way.", node="self-review"):
+    return Event(
+        event_type="phase.progress",
+        work_item=REF,
+        text=text,
+        summary=summary,
+        detail={"phase": "needs-review", "node": node},
+        event_id=event_id,
+    )
+
+
+def _paragraphs(count, size=5000):
+    return "\n\n".join(f"Paragraph {n}. " + "word " * (size // 5) for n in range(count))
+
+
+def test_a_progress_edit_in_the_central_channel_edits_one_message(tmp_path):
+    """
+    Feature: progress within a phase edits one message
+      Scenario: a progress edit in the central channel edits one message
+        Given #375 declared no room, so its conversation is a thread in the
+             central channel
+        When two progress events for the same phase are delivered
+        Then the first is one reply in the work item's thread
+        And the second edits that reply in place, posting nothing new
+
+    Requirement: docs/specs/issue-549/requirements.md R6.1
+    """
+    config = cli_config(tmp_path)
+    client = FakeSlackClient()
+    bot = channel_for(config, client)
+
+    bot.post(_progress("ev-p1", "self-review is running.", summary=""))
+    posted = len(client.posted)
+    bot.post(
+        _progress(
+            "ev-p2", "critic-review is running.", summary="", node="critic-review"
+        )
+    )
+
+    assert len(client.posted) == posted  # root + the one progress reply
+    root, first = client.posted
+    assert first["channel"] == CENTRAL and first["thread_ts"] == "1700.000001"
+    ((channel, ts, text, _blocks),) = client.updates
+    assert (channel, ts) == (CENTRAL, "1700.000002")
+    assert "critic-review" in text
+
+
+def test_a_progress_edit_with_fewer_parts_deletes_the_surplus(tmp_path):
+    """
+    Feature: progress within a phase edits one message
+      Scenario: a progress edit with fewer parts deletes the surplus
+        Given #375 has declared slack@C0TMP375
+        And its phase's progress message holds a long form of three parts
+        When a progress event for the same phase carries a one-part long form
+        Then the progress message is edited in place
+        And its first long-form reply is edited to the new long form
+        And the two surplus replies are deleted
+        And nothing is posted
+
+    Requirement: docs/specs/issue-549/requirements.md R6.1, R6.2
+    """
+    config = cli_config(tmp_path)
+    declare(config)
+    client = FakeSlackClient()
+    bot = channel_for(config, client)
+
+    bot.post(_progress("ev-p1", _paragraphs(6)))
+    opening, short, *parts = client.posted
+    assert len(parts) == 3
+    assert all(part["thread_ts"] == "1700.000002" for part in parts)
+    before = len(client.posted)
+
+    bot.post(
+        _progress(
+            "ev-p2", "The review chain reached critic-review.", node="critic-review"
+        )
+    )
+
+    assert len(client.posted) == before  # no second copy (R6.2)
+    edited = [ts for _channel, ts, _text, _blocks in client.updates]
+    assert edited == ["1700.000002", "1700.000003"]
+    _, _, _, blocks = client.updates[1]
+    assert _markdown({"blocks": blocks})[0]["text"] == (
+        "The review chain reached critic-review."
+    )
+    assert client.deleted == [(ROOM, "1700.000004"), (ROOM, "1700.000005")]
+    record = state_of(config).posted_for(REF, "ev-p2")
+    assert record == {"channel": ROOM, "top": "1700.000002", "parts": ["1700.000003"]}

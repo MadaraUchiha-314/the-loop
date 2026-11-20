@@ -2710,10 +2710,6 @@ class SlackBotChannel:
             parts_thread = thread or THREAD_OF_TOP
         else:
             parts_thread = thread if where.long else ""
-        if editing:
-            # An edit replaces the one message; its long form is task 11's
-            # (multi-part progress edits), so an edit carries no parts yet.
-            parts_thread = ""
         return plan_message(
             event_id=event.event_id,
             channel=channel_id,
@@ -2723,9 +2719,32 @@ class SlackBotChannel:
             parts=long_form.parts,
             parts_thread=parts_thread,
             edit_ts=decision.ts if editing else "",
+            edit_parts=(
+                self._parts_under(event, channel_id, decision.ts) if editing else ()
+            ),
             short_source=short.source,
             tables_as_code=long_form.tables_as_code,
         )
+
+    def _parts_under(self, event: Event, channel_id: str, ts: str) -> Tuple[str, ...]:
+        """The long-form replies the message at ``ts`` holds today, from the
+        delivery memory: the newest event delivered to that message — its first
+        post or its last edit — other than ``event`` itself (issue-549 R6.2). A
+        lost memory yields none, so the edit posts its long form afresh."""
+        if not event.work_item:
+            return ()
+        try:
+            with ChannelState.locked(self.state_path, self.stores) as state:
+                posted = state.delivery_for(event.work_item)["posted"]
+        except Exception as exc:  # noqa: BLE001 — a memory read never fails a post
+            logger.debug("slack: posted memory read failed (%s)", exc)
+            return ()
+        for event_id, record in reversed(list(posted.items())):
+            if event_id == event.event_id:
+                continue
+            if record.get("channel") == channel_id and record.get("top") == ts:
+                return tuple(record.get("parts") or ())
+        return ()
 
     def _deliver(self, client, event: Event, plan: MessagePlan) -> Delivered:
         """Run the delivery step with this work item's delivery memory: what an

@@ -149,7 +149,7 @@ Tests are named so the T8 `-k` filter in `testing-plan.md` finds the abuse cases
   - _Requirements:_ R10.1–R10.3
   - _Test:_ T1 — `tests/test_room_policy.py::test_bookkeeping_dropped_*`; T2 —
     `Scenario: a session-started notice reaches GitHub and not Slack` (red→green)
-- [ ] 11. Progress edits, multi-part.
+- [x] 11. Progress edits, multi-part.
   - A progress edit edits the one message, central included; a long form with fewer
     parts deletes the surplus (`chat.delete`), more parts posts the extra; a message that is gone or cannot be edited gets a new one.
   - _Depends on:_ 9

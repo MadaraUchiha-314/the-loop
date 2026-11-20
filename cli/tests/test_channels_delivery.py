@@ -164,3 +164,83 @@ def test_an_edit_updates_the_one_message():
         ("update", {"channel": "C1", "ts": "1700.5", "text": "s", "blocks": []})
     ]
     assert delivered.top == "1700.5" and delivered.edited
+
+
+# -- progress edits with a long form (issue-549 task 11, R6.2, R6.3) -------------
+
+
+class EditClient(Client):
+    """Records deletes too; ``gone`` names ts values chat.update refuses."""
+
+    def __init__(self, gone=()):
+        super().__init__()
+        self.gone = set(gone)
+
+    def chat_update(self, **params):
+        self.calls.append(("update", params))
+        if params["ts"] in self.gone:
+            return {"ok": False, "error": "message_not_found"}
+        return {"ok": True, "ts": params["ts"]}
+
+    def chat_delete(self, **params):
+        self.calls.append(("delete", params))
+        return {"ok": True}
+
+
+def _edit_plan(parts, edit_parts):
+    return plan_message(
+        event_id="ev-2",
+        channel="C1",
+        short_text="Short.",
+        short_blocks=[],
+        parts=parts,
+        parts_thread=THREAD_OF_TOP,
+        edit_ts="1700.1",
+        edit_parts=edit_parts,
+    )
+
+
+def test_an_edit_with_fewer_parts_edits_in_place_and_deletes_the_surplus():
+    client = EditClient()
+    delivered = deliver(client, _edit_plan(["new one"], ["1700.2", "1700.3", "1700.4"]))
+    kinds = [(kind, params.get("ts")) for kind, params in client.calls]
+    assert kinds == [
+        ("update", "1700.1"),
+        ("update", "1700.2"),
+        ("delete", "1700.3"),
+        ("delete", "1700.4"),
+    ]
+    assert client.calls[1][1]["blocks"] == [{"type": "markdown", "text": "new one"}]
+    assert "unfurl_links" not in client.calls[1][1]  # chat.update takes none
+    assert delivered.top == "1700.1" and delivered.parts == ("1700.2",)
+
+
+def test_an_edit_with_more_parts_posts_the_extra_in_the_thread():
+    client = EditClient()
+    delivered = deliver(client, _edit_plan(["a", "b", "c"], ["1700.2"]))
+    kinds = [kind for kind, _ in client.calls]
+    assert kinds == ["update", "update", "post", "post"]
+    for _, params in client.calls[2:]:
+        assert params["thread_ts"] == "1700.1"
+        assert params["unfurl_links"] is False and params["unfurl_media"] is False
+    assert delivered.parts[0] == "1700.2" and len(delivered.parts) == 3
+
+
+def test_a_reply_that_cannot_be_edited_is_posted_fresh():
+    client = EditClient(gone={"1700.2"})
+    delivered = deliver(client, _edit_plan(["a"], ["1700.2"]))
+    kinds = [kind for kind, _ in client.calls]
+    assert kinds == ["update", "update", "post"]
+    assert delivered.parts != ("1700.2",) and len(delivered.parts) == 1
+
+
+def test_a_message_that_is_gone_gets_a_new_post_and_its_whole_long_form():
+    """R6.3: the old replies belong to the lost message; the new one gets its
+    long form posted whole, and nothing of the old one is touched."""
+    client = EditClient(gone={"1700.1"})
+    delivered = deliver(client, _edit_plan(["a", "b"], ["1700.2", "1700.3"]))
+    kinds = [kind for kind, _ in client.calls]
+    assert kinds == ["update", "post", "post", "post"]
+    assert not delivered.edited
+    new_top = delivered.top
+    assert all(p["thread_ts"] == new_top for _, p in client.calls[2:])

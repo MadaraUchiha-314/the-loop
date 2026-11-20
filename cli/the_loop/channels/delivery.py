@@ -85,8 +85,9 @@ class MessagePlan:
     ``top`` is the short message; ``parts`` the long form's thread replies, in
     order (empty in the central channel, R4.2). ``edit_ts`` set means the top
     message edits the message at that ts (the room policy's progress-edit, R6)
-    rather than posting a new one. ``short_source`` and ``tables_as_code`` are for
-    the delivery log only.
+    rather than posting a new one; ``edit_parts`` are then the long-form replies
+    that message holds today, edited in place, deleted when surplus (R6.2).
+    ``short_source`` and ``tables_as_code`` are for the delivery log only.
     """
 
     event_id: str
@@ -94,6 +95,7 @@ class MessagePlan:
     top: PlannedMessage
     parts: Tuple[PlannedMessage, ...] = ()
     edit_ts: str = ""
+    edit_parts: Tuple[str, ...] = ()
     short_source: str = ""
     tables_as_code: int = 0
 
@@ -127,6 +129,7 @@ def plan_message(
     parts: Sequence[str] = (),
     parts_thread: str = "",
     edit_ts: str = "",
+    edit_parts: Sequence[str] = (),
     short_source: str = "",
     tables_as_code: int = 0,
 ) -> MessagePlan:
@@ -149,6 +152,7 @@ def plan_message(
         ),
         parts=planned,
         edit_ts=edit_ts,
+        edit_parts=tuple(str(ts) for ts in edit_parts if ts) if edit_ts else (),
         short_source=short_source,
         tables_as_code=tables_as_code,
     )
@@ -253,6 +257,10 @@ def deliver(
     landed: List[str] = [str(ts) for ts in (prior.get("parts") or []) if ts]
     calls = 0
     edited = False
+    # The replies an edited message already holds (R6.2), edited in place. When
+    # the edit fell back to a fresh post they belong to the old message, and the
+    # new one gets its long form posted whole.
+    reuse: Tuple[str, ...] = ()
 
     if not top:
         if plan.edit_ts:
@@ -274,27 +282,65 @@ def deliver(
                 raise ChannelError("slack: post failed: no ts returned")
         calls += 1
         keep(Delivered(plan.channel, top, tuple(landed), calls, edited))
+    elif plan.edit_ts:
+        edited = top == plan.edit_ts  # a replay of an edit already made
+    if edited:
+        reuse = plan.edit_parts
 
     for index, part in enumerate(plan.parts):
         if index < len(landed):
             continue  # posted by an earlier attempt at this event
         thread = top if part.thread_ts == THREAD_OF_TOP else part.thread_ts
-        response = _with_retry(
-            lambda: post_message(
-                client,
-                channel=plan.channel,
-                text=part.text,
-                blocks=part.blocks,
-                thread_ts=thread,
-            ),
-            f"long-form part {index + 1}/{len(plan.parts)}",
-            sleep,
-        )
-        landed.append(str(response.get("ts") or ""))
-        calls += 1
+        ts = ""
+        if index < len(reuse):
+            ts = _edit_part(client, plan.channel, reuse[index], part)
+            calls += 1
+        if not ts:
+            response = _with_retry(
+                lambda: post_message(
+                    client,
+                    channel=plan.channel,
+                    text=part.text,
+                    blocks=part.blocks,
+                    thread_ts=thread,
+                ),
+                f"long-form part {index + 1}/{len(plan.parts)}",
+                sleep,
+            )
+            ts = str(response.get("ts") or "")
+            calls += 1
+        landed.append(ts)
         keep(Delivered(plan.channel, top, tuple(landed), calls, edited))
 
+    # A long form that shrank: the replies past its new end go (R6.2). Best
+    # effort — a reply Slack will not delete is left, never re-posted.
+    for surplus in reuse[len(plan.parts) :]:
+        if surplus in landed:
+            continue
+        try:
+            _ok(client.chat_delete(channel=plan.channel, ts=surplus), "delete")
+        except Exception as exc:  # noqa: BLE001 — a surplus reply never fails delivery
+            logger.debug("slack: chat.delete of %s failed (%s)", surplus, exc)
+        calls += 1
+
     return Delivered(plan.channel, top, tuple(landed), calls, edited)
+
+
+def _edit_part(client: Any, channel: str, ts: str, part: PlannedMessage) -> str:
+    """Edit the long-form reply at ``ts`` to hold ``part``; ``""`` when it is gone
+    or cannot be edited, so the caller posts it fresh instead (R6.3). An edit
+    takes no unfurl flags: the reply was posted with them (design.md stage 4)."""
+    try:
+        _ok(
+            client.chat_update(
+                channel=channel, ts=ts, text=part.text, blocks=list(part.blocks)
+            ),
+            "edit",
+        )
+        return ts
+    except Exception as exc:  # noqa: BLE001 — a stale reply is recoverable
+        logger.debug("slack: chat.update of reply %s failed (%s); posting", ts, exc)
+        return ""
 
 
 def _edit_top(
