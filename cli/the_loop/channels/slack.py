@@ -102,6 +102,10 @@ __all__ = [
     "Snapshot",
     "mention_findings",
     "APPROVE_VALUE",
+    "GATE_ACTIONS",
+    "GATE_BLOCK_PREFIX",
+    "approve_on_github_line",
+    "gate_node_of",
     "BUTTON_CHOICE_LIMIT",
     "KICKOFF_REFUSALS",
     "BUTTON_NAMES",
@@ -600,6 +604,13 @@ def probe_subscription(
 
 #: Block Kit action ids the-loop renders — and the only ones it acts on.
 ACTION_PREFIX = "the-loop:"
+#: The gate pair's actions block id: this prefix and the gate's node, so a press
+#: names the gate it answers (issue-549 abuse case 8).
+GATE_BLOCK_PREFIX = f"{ACTION_PREFIX}gate:"
+#: The two buttons that answer a gate.
+GATE_ACTIONS = (f"{ACTION_PREFIX}approve", f"{ACTION_PREFIX}changes")
+#: Slack's ceiling on a ``block_id``.
+_BLOCK_ID_LIMIT = 255
 #: The button values, which are the words `classify-feedback` already reads.
 APPROVE_VALUE = "approved"
 CHANGES_VALUE = "changes requested"
@@ -1995,6 +2006,22 @@ def render_short_blocks(
                     ],
                 }
             )
+    gate = event.event_type in APPROVAL_EVENTS
+    if gate and not interactive:
+        # No press can reach this instance (R11.5): no buttons, and one line
+        # saying how to answer on GitHub, linked by the event's own URL.
+        blocks.append(
+            {
+                "type": "context",
+                "elements": [
+                    _mrkdwn(
+                        approve_on_github_line(
+                            event.url or _work_item_url(event.work_item)
+                        )
+                    )
+                ],
+            }
+        )
     actions = _message_actions(
         event,
         interactive=interactive,
@@ -2002,8 +2029,32 @@ def render_short_blocks(
         open_on_github=open_on_github,
     )
     if actions:
-        blocks.append({"type": "actions", "elements": actions})
+        block: Dict[str, Any] = {"type": "actions", "elements": actions}
+        node = str((event.detail or {}).get("node") or "")
+        if gate and interactive and node:
+            # The gate the buttons answer (issue-549 abuse case 8): a press
+            # names it, and counts only while that gate is open.
+            block["block_id"] = f"{GATE_BLOCK_PREFIX}{node}"[:_BLOCK_ID_LIMIT]
+        blocks.append(block)
     return blocks
+
+
+def approve_on_github_line(url: str) -> str:
+    """What a gate message says where no press can be received (issue-549
+    R11.5): how to answer the gate on GitHub, linked when there is a link."""
+    on_github = strings.t("channels.slack.checklist.on-github")
+    where = f"<{url}|{on_github}>" if url else on_github
+    return strings.t("channels.slack.gate.approve-on-github", where=where)
+
+
+def gate_node_of(action: Mapping[str, Any]) -> str:
+    """The gate node a pressed Approve / Request changes button names through
+    its block (issue-549 abuse case 8), or ``""`` for a message posted before
+    the buttons named one."""
+    block_id = str(action.get("block_id") or "")
+    if block_id.startswith(GATE_BLOCK_PREFIX):
+        return block_id[len(GATE_BLOCK_PREFIX) :]
+    return ""
 
 
 def _mrkdwn_section(text: str) -> Dict[str, Any]:

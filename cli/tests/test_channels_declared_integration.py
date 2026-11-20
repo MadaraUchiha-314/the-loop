@@ -986,3 +986,368 @@ def test_a_progress_edit_with_fewer_parts_deletes_the_surplus(tmp_path):
     assert client.deleted == [(ROOM, "1700.000004"), (ROOM, "1700.000005")]
     record = state_of(config).posted_for(REF, "ev-p2")
     assert record == {"channel": ROOM, "top": "1700.000002", "parts": ["1700.000003"]}
+
+
+# -- issue-549 R11: Approve from Slack at every human gate ----------------------
+
+REGISTERED = "github:Octo/Repo#549"  # the work item's own spelling
+LOWERED = "github:octo/repo#549"  # what the runtime published on #549
+GATE_NODE = "design-approval"
+INTERACTIVE = {
+    "publish": ["work-item.reply", "gate.feedback"],
+    "read": {"mode": "socket"},
+    "subscribe": ["phase-approval-pending"],
+}
+
+
+class PressClient(FakeSlackClient):
+    """The recording client, plus the ephemeral a refused press is told by."""
+
+    def __init__(self, *a, **k):
+        super().__init__(*a, **k)
+        self.ephemeral = []  # (channel, user, text, thread)
+
+    def chat_postEphemeral(self, *, channel, user, text, thread_ts=None):
+        self.ephemeral.append((channel, user, text, thread_ts))
+        return {"ok": True}
+
+
+def _notify(config, work_item, tmp_path, node=GATE_NODE):
+    """The graph's own `notify` hook opening ``node`` for ``work_item`` — the
+    path that published #549's gates under a lowercased ref."""
+    from the_loop.graph import hooks  # noqa: F401 — registers the hooks
+    from the_loop.graph.contract import HookContext, WorkItem
+    from the_loop.graph.hooks.sideeffects import notify
+
+    spec = tmp_path / "spec"
+    spec.mkdir(exist_ok=True)
+    return notify(
+        HookContext(
+            work_item=WorkItem(ref=work_item, id="issue-549", spec_dir=spec),
+            node={"id": node},
+            boundary="entry",
+            repo=tmp_path,
+            config=config,
+            params={"event": "phase-approval-pending"},
+        )
+    )
+
+
+def _gate_buttons(post):
+    (block,) = [b for b in post["blocks"] or [] if b.get("type") == "actions"]
+    return block.get("block_id"), [e.get("action_id") for e in block["elements"]]
+
+
+def _gate_press(
+    *,
+    channel=ROOM,
+    ts="1700.000002",
+    thread="",
+    user="UHUMAN",
+    node=GATE_NODE,
+    action="the-loop:approve",
+    value="approved",
+):
+    message = {"ts": ts, **({"thread_ts": thread} if thread else {})}
+    action_payload = {"action_id": action, "value": value}
+    if node:
+        action_payload["block_id"] = f"the-loop:gate:{node}"
+    return {
+        "type": "block_actions",
+        "user": {"id": user},
+        "channel": {"id": channel},
+        "message": message,
+        "container": {
+            "message_ts": ts,
+            "channel_id": channel,
+            **({"thread_ts": thread} if thread else {}),
+        },
+        "actions": [action_payload],
+        "action_ts": "1900.1",
+    }
+
+
+def _press(config, payload, sink, client):
+    return inbound.handle_socket_action(
+        payload,
+        config,
+        post_comment=sink.post_comment,
+        deliver=sink.deliver,
+        client_factory=lambda token: client,
+    )
+
+
+@pytest.fixture()
+def gate_open(monkeypatch):
+    """The graph parked at ``design-approval`` — the read the pipeline makes."""
+    monkeypatch.setattr(inbound, "_gate_read", lambda ref, cfg: (True, GATE_NODE))
+
+
+def test_a_gate_opened_under_a_lowercased_ref_posts_its_buttons_in_the_work_items_own_thread(
+    tmp_path, monkeypatch, gate_open
+):
+    """
+    Feature: approve from Slack at every human gate
+      Scenario: a gate opened under a lowercased ref posts its buttons in the work item's own thread
+        Given #549's conversation is a thread in the central channel, bound
+             under its registered spelling github:Octo/Repo#549
+        And the channel can receive a press
+        When the graph's notify hook opens design-approval under
+             github:octo/repo#549
+        Then the gate message is a reply in that same thread, with Approve and
+             Request changes naming the gate
+        And no second thread is opened
+        And a press on it reaches the work item and counts as its answer
+
+    Requirement: docs/specs/issue-549/requirements.md R11.1, R11.2
+    """
+    config = cli_config(tmp_path, **INTERACTIVE)
+    client = PressClient()
+    monkeypatch.setattr("the_loop.channels.slack.build_client", lambda token: client)
+    channel_for(config, client).open(REGISTERED)
+
+    result = _notify(config, LOWERED, tmp_path)
+
+    assert result.status == "pass", result
+    root, gate = client.posted  # no second root
+    assert root["thread_ts"] is None
+    assert gate["channel"] == CENTRAL and gate["thread_ts"] == "1700.000001"
+    block_id, actions = _gate_buttons(gate)
+    assert block_id == f"the-loop:gate:{GATE_NODE}"
+    assert {"the-loop:approve", "the-loop:changes"} <= set(actions)
+    state = state_of(config)
+    assert state.delivery_for(REGISTERED)["gateTs"] == {GATE_NODE: "1700.000002"}
+    assert state.conversation_for(LOWERED) == state.conversation_for(REGISTERED)
+
+    sink = Sink()
+    outcome = _press(
+        config,
+        _gate_press(channel=CENTRAL, ts="1700.000002", thread="1700.000001"),
+        sink,
+        client,
+    )
+    assert outcome["outcome"] == "processed" and outcome["event"] == "gate.feedback"
+    assert [ref for ref, _ in sink.recorded] == [REGISTERED]
+
+
+def test_a_press_in_a_declared_room_approves_the_gate(tmp_path, gate_open):
+    """
+    Feature: approve from Slack at every human gate
+      Scenario: a press in a declared room approves the gate
+        Given #375 has declared slack@C0TMP375 and the channel can receive a press
+        And design-approval's message is a top-level message in the room
+        When an authorized member presses Approve on it
+        Then the press is resolved to #375 through the room
+        And it is recorded on the ticket as the same gate answer a typed
+             "approved" is, which the gate classifies as approved
+        And the pressed message is edited to acknowledge it, its buttons gone
+
+    Requirement: docs/specs/issue-549/requirements.md R11.4
+    """
+    from the_loop.graph.contract import HookContext, WorkItem
+    from the_loop.graph.hooks.feedback import classify_feedback
+
+    config = cli_config(tmp_path, **INTERACTIVE)
+    declare(config)
+    client = PressClient()
+    channel_for(config, client).post(
+        Event(
+            event_type="phase-approval-pending",
+            work_item=REF,
+            text="design.md is ready for its gate.",
+            url="https://github.com/octo/repo/issues/375",
+            detail={"node": GATE_NODE},
+            source="loop",
+            event_id="ev-gate-375",
+        )
+    )
+    gate = client.posted[-1]
+    assert gate["channel"] == ROOM and gate["thread_ts"] is None
+    sink = Sink()
+
+    outcome = _press(config, _gate_press(ts="1700.000002"), sink, client)
+
+    assert outcome["outcome"] == "processed" and outcome["event"] == "gate.feedback"
+    ((ref, body),) = sink.recorded
+    assert ref == REF and "approved" in body
+
+    def verdict(text):
+        spec = tmp_path / "spec"
+        spec.mkdir(exist_ok=True)
+        return classify_feedback(
+            HookContext(
+                work_item=WorkItem(ref=REF, id="issue-375", spec_dir=spec),
+                node={"id": GATE_NODE},
+                boundary="exit",
+                repo=tmp_path,
+                config={"authorizedUsers": ["gh-UHUMAN"]},
+                event={"comments": [{"author": "gh-UHUMAN", "body": text}]},
+            )
+        ).outcome
+
+    assert verdict(body) == verdict("approved") == "approved"  # R11.4
+    ((channel, ts, _text, blocks),) = client.updates
+    assert (channel, ts) == (ROOM, "1700.000002")
+    assert "the-loop:approve" not in str(blocks)
+
+
+def test_a_channel_that_cannot_receive_a_press_shows_how_to_approve_on_github(
+    tmp_path,
+):
+    """
+    Feature: approve from Slack at every human gate
+      Scenario: a channel that cannot receive a press shows how to approve on GitHub
+        Given a channel read by polling, so no press can reach the-loop
+        When a gate opens for #375
+        Then its message carries no Approve or Request changes button
+        And one line says how to answer the gate on GitHub, linked
+
+    Requirement: docs/specs/issue-549/requirements.md R11.5
+    """
+    config = cli_config(
+        tmp_path,
+        publish=["work-item.reply", "gate.feedback"],
+        subscribe=["phase-approval-pending"],
+    )
+    client = PressClient()
+
+    channel_for(config, client).post(
+        Event(
+            event_type="pr-review-pending",
+            work_item=REF,
+            text="PR #12 is ready for review.",
+            url="https://github.com/octo/repo/pull/12",
+            detail={"node": "human-approval"},
+            source="loop",
+        )
+    )
+
+    gate = client.posted[-1]
+    assert "the-loop:approve" not in str(gate["blocks"])
+    assert "the-loop:changes" not in str(gate["blocks"])
+    lines = [
+        element["text"]
+        for block in gate["blocks"]
+        if block["type"] == "context"
+        for element in block["elements"]
+    ]
+    (line,) = [text for text in lines if "on GitHub" in text]
+    assert "<https://github.com/octo/repo/pull/12|on GitHub>" in line
+    assert "approved" in line
+
+
+def test_every_approval_gate_is_remembered_with_its_buttons(tmp_path):
+    """R11.1: the security sign-off is a gate like the others — its message is
+    remembered, so it can be answered and closed."""
+    config = cli_config(tmp_path, **INTERACTIVE)
+    declare(config)
+    client = PressClient()
+    bot = channel_for(config, client)
+    for event_type, node in (
+        ("phase-approval-pending", "requirements-approval"),
+        ("pr-review-pending", "human-approval"),
+        ("security-sign-off-pending", "security-sign-off"),
+    ):
+        bot.post(
+            Event(
+                event_type=event_type,
+                work_item=REF,
+                text=f"{node} is open.",
+                detail={"node": node},
+                source="loop",
+            )
+        )
+        block_id, actions = _gate_buttons(client.posted[-1])
+        assert block_id == f"the-loop:gate:{node}"
+        assert "the-loop:approve" in actions
+    assert set(state_of(config).delivery_for(REF)["gateTs"]) == {
+        "requirements-approval",
+        "human-approval",
+        "security-sign-off",
+    }
+
+
+# -- abuse cases 7 and 8 (T8) ----------------------------------------------------
+
+
+def test_unauthorized_press_refused(tmp_path, gate_open):
+    """Abuse case 7: a press from a member not on the allow-list is not counted —
+    nothing is recorded or delivered, the message is not edited, only the
+    presser is told, and the drop is recorded."""
+    from the_loop import eventlog
+
+    config = cli_config(tmp_path, **INTERACTIVE)
+    declare(config)
+    client = PressClient()
+    channel_for(config, client).post(
+        Event(
+            event_type="phase-approval-pending",
+            work_item=REF,
+            text="design.md is ready.",
+            detail={"node": GATE_NODE},
+            source="loop",
+        )
+    )
+    sink = Sink()
+    log = tmp_path / "events.jsonl"
+    eventlog.configure("test", path=log, enabled=True)
+    try:
+        outcome = _press(
+            config, _gate_press(ts="1700.000002", user="USTRANGER"), sink, client
+        )
+    finally:
+        eventlog.configure("test", enabled=False)
+
+    assert outcome == {"outcome": "unauthorized-actor"}
+    assert sink.recorded == [] and sink.delivered == []
+    assert client.updates == [] and client.acks == []
+    ((channel, user, text, _thread),) = client.ephemeral
+    assert (channel, user) == (ROOM, "USTRANGER")
+    assert "not counted" in text
+    assert '"reason":"unauthorized-actor"' in log.read_text(encoding="utf-8")
+
+
+def test_stale_press_changes_nothing(tmp_path, monkeypatch):
+    """Abuse case 8: a press on a gate that is not open — answered, so its
+    message is no longer the open one; a forged node; or a graph parked
+    elsewhere — records nothing, edits nothing, and only the presser is told."""
+    config = cli_config(tmp_path, **INTERACTIVE)
+    declare(config)
+    client = PressClient()
+    channel_for(config, client).post(
+        Event(
+            event_type="phase-approval-pending",
+            work_item=REF,
+            text="design.md is ready.",
+            detail={"node": GATE_NODE},
+            source="loop",
+        )
+    )
+    sink = Sink()
+    monkeypatch.setattr(inbound, "_gate_read", lambda ref, cfg: (True, GATE_NODE))
+    cases = [
+        # a forged node: no message of it is open
+        _gate_press(ts="1700.000002", node="requirements-approval"),
+        # a message that is not the gate's open one (an older, answered copy)
+        _gate_press(ts="1700.000001"),
+    ]
+    for payload in cases:
+        assert _press(config, payload, sink, client) == {"outcome": "gate-not-open"}
+    # the graph has moved on to another gate
+    monkeypatch.setattr(
+        inbound, "_gate_read", lambda ref, cfg: (True, "tasks-approval")
+    )
+    assert _press(config, _gate_press(ts="1700.000002"), sink, client) == {
+        "outcome": "gate-not-open"
+    }
+    # the graph is parked at no gate at all
+    monkeypatch.setattr(inbound, "_gate_read", lambda ref, cfg: (False, ""))
+    assert _press(config, _gate_press(ts="1700.000002"), sink, client) == {
+        "outcome": "gate-not-open"
+    }
+
+    assert sink.recorded == [] and sink.delivered == []
+    assert client.updates == [] and client.acks == []
+    assert len(client.ephemeral) == 4
+    assert {user for _c, user, _t, _th in client.ephemeral} == {"UHUMAN"}
+    assert all("no longer open" in text for _c, _u, text, _th in client.ephemeral)

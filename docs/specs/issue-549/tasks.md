@@ -184,7 +184,7 @@ Tests are named so the T8 `-k` filter in `testing-plan.md` finds the abuse cases
 
 ### Gates
 
-- [ ] 15. Buttons in the item's own conversation, and room presses. **Security-relevant.**
+- [x] 15. Buttons in the item's own conversation, and room presses. **Security-relevant.**
   - Gate messages publish under the identity key, so they land in the work item's
     thread (task 1); buttons only when the channel can receive a press, else one line
     saying how to approve on GitHub.

@@ -54,6 +54,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, Mapping
 
+from .events import APPROVAL_EVENTS
+
 __all__ = [
     "Decision",
     "POST",
@@ -76,7 +78,9 @@ EDIT = "edit"  # chat.update the message at `ts`
 THREAD = "thread"  # a reply under the message at `ts`
 
 #: Events that carry a gate's approval request — the one announcement a gate gets.
-GATE_PENDING_EVENTS = frozenset({"phase-approval-pending", "pr-review-pending"})
+#: Every approval event (issue-549 R11.1), the security sign-off included, so
+#: each gate's message is remembered and can be found again.
+GATE_PENDING_EVENTS = frozenset(APPROVAL_EVENTS)
 
 #: The lifecycle pair: the runtime's ``loop:<phase>`` label changes, which are
 #: bookkeeping (issue-549 R10.1) and never posted to Slack.
