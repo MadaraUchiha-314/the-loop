@@ -3,13 +3,22 @@
 
 The harness hook is a **clock**, not a state machine. It says *when* to look; the
 graph says *what we are looking at*. So this wrapper never needs to know which
-phase a work item is in — it asks ``the-loop check``, which resolves the current
-node from work-item state.
+phase a work item is in — it asks the-loop.
+
+It asks the service first (issue-551): ``the-loop sessions stop-check`` is given
+the harness's own hook payload and answers ``allow`` or ``refuse``, because only
+the service knows of an open ask, a declared wait and who owns each node. The
+attempt cap stays here, so it holds when the service is down, and a give-up is
+reported back with ``--gave-up``. The plugin and the CLI ship separately: when
+the verb is missing or nothing usable comes back, the wrapper judges
+``the-loop check`` itself, as it did before there was a service.
 
 Harness protocols, which is why this file lives with the plugin (the harness
 integration) rather than with the CLI:
 
 * **Claude Code** — exit 2 blocks the stop and stderr goes back to the model.
+* **Codex** — ``{"decision": "block", "reason": ...}`` on stdout; ``{}`` lets
+  the stop through.
 * **Cursor** — ``{"followup_message": ...}`` on stdout, which Cursor auto-submits.
 
 ``THE_LOOP_WORK_ITEM`` names the work item. Without it the hook is a no-op, so an
@@ -25,6 +34,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import select
 import shutil
 import subprocess
 import sys
@@ -33,6 +43,11 @@ from pathlib import Path
 
 DEFAULT_MAX_ATTEMPTS = 3
 CHECK_TIMEOUT_SECONDS = 30
+#: The service's answer and the give-up report (issue-551). Both are bounded so
+#: the worst case — the service times out and `check` runs after it — still ends
+#: inside the 60 seconds a harness gives this hook.
+STOP_CHECK_TIMEOUT_SECONDS = 20
+GAVE_UP_TIMEOUT_SECONDS = 10
 
 
 def attempts_path(work_item: str, repo: str) -> Path:
@@ -53,8 +68,86 @@ def read_attempts(path: Path) -> int:
         return 0
 
 
+def read_payload() -> str:
+    """The harness's hook payload from stdin, read once; ``""`` when there is none.
+
+    It is forwarded to the service unread (issue-551): the service takes the
+    list of background tasks from it. A terminal is never read, and a pipe
+    nobody writes to is not waited on — either would hold the stop.
+    """
+    stream = sys.stdin
+    try:
+        if stream is None or stream.isatty():
+            return ""
+        try:
+            if not select.select([stream], [], [], 1.0)[0]:
+                return ""
+        except (OSError, ValueError, TypeError):
+            pass  # not a selectable stream (Windows, a test's buffer): read it
+        return stream.read()
+    except (OSError, ValueError):
+        return ""
+
+
+def ask_service(work_item: str, payload: str) -> dict | None:
+    """The service's verdict on this stop, or ``None`` when there is none to use.
+
+    ``None`` sends the caller to :func:`run_check` (issue-551, version skew). It
+    covers every way of not getting an answer: no CLI, a CLI without the verb
+    (argparse exits non-zero), a service that is down or does not know the work
+    item (non-zero, nothing on stdout), a timeout, and output that is not a JSON
+    object with a known ``verdict``.
+    """
+    # A value shaped like a flag would be read as one, not as the work item.
+    if work_item.startswith("-") or not shutil.which("the-loop"):
+        return None
+    try:
+        proc = subprocess.run(
+            ["the-loop", "sessions", "stop-check", "--work-item", work_item],
+            input=payload,
+            capture_output=True,
+            text=True,
+            timeout=STOP_CHECK_TIMEOUT_SECONDS,
+        )
+        if proc.returncode != 0:
+            return None
+        answer = json.loads(proc.stdout)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+    if not isinstance(answer, dict) or answer.get("verdict") not in ("allow", "refuse"):
+        return None
+    return answer
+
+
+def report_give_up(work_item: str) -> None:
+    """Tell the service the cap let this stop through (issue-551, R3.6).
+
+    It records the turn's end as ``gate-gave-up``, which the idle watcher then
+    covers. Best effort: the stop is already allowed, so a failure changes nothing.
+    """
+    try:
+        subprocess.run(
+            [
+                "the-loop",
+                "sessions",
+                "stop-check",
+                "--work-item",
+                work_item,
+                "--gave-up",
+            ],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            timeout=GAVE_UP_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
 def run_check(work_item: str) -> dict | None:
     """Ask the CLI where the work item stands. ``None`` means "cannot tell".
+
+    The fallback for a CLI or a service that cannot answer ``stop-check``
+    (issue-551). It knows nothing of asks or waits and records nothing.
 
     ``--recompute`` stays. Work-item state is a **cache, not an authority**, and
     this is a gate: the state file is one the agent being gated can write. The
@@ -85,9 +178,9 @@ def run_check(work_item: str) -> dict | None:
 def blocking_node(report: dict) -> dict | None:
     """The node the agent should not stop on, if there is one.
 
-    The first node that is not satisfied, **at or before the node the work item
-    is at** — and only when that node is a ``block``. Each narrowing is a way an
-    earlier version got it wrong:
+    Used when the service gave no verdict (issue-551). A ``block`` **before**
+    the node the work item is at, else that node itself when it is a ``block``.
+    Each narrowing is a way an earlier version got it wrong:
 
     * Only nodes the work item has *reached* count. A node further along is not
       done yet, and treating that as a blocker would fire the gate on every turn
@@ -103,10 +196,18 @@ def blocking_node(report: dict) -> dict | None:
       ``pointer`` that is empty (no state file was found) or names no node in
       the report — is **inconclusive**, and the turn ends. A gate that cannot
       tell where the item is must not invent a requirement.
-    * Only ``block`` counts, not ``wait``. ``wait`` means the node is parked on a
-      human — a review that has not come back. Blocking the agent from ending its
-      turn then would spin it against a person who is not there, which is the one
-      thing an attempt cap exists to contain rather than to cause.
+    * Only ``block`` counts, not ``wait``. ``wait`` on the item's own node means
+      it is parked on a human — a review that has not come back. Blocking the
+      agent from ending its turn then would spin it against a person who is not
+      there, which is the one thing an attempt cap exists to contain rather than
+      to cause.
+    * A ``wait`` **before** the item's node counts as passed (issue-551, R3.3).
+      It can only be an approved human gate, which recomputes as ``wait`` for
+      good, or a graph wait the pointer is already past. The walk used to end at
+      the first such node and allow the stop, so one approved gate switched this
+      gate off for every node after it. A ``block`` before the item's node still
+      blocks and is the node named (issue-429, R3.4); any other status there
+      leaves the report inconclusive.
     """
     nodes = report.get("nodes") or []
     ids = [node.get("node") for node in nodes]
@@ -119,9 +220,10 @@ def blocking_node(report: dict) -> dict | None:
     if not reached or reached not in ids:
         return None
     for node in nodes:
-        if node.get("status") not in ("pass", "skip"):
-            return node if node.get("status") == "block" else None
-        if node.get("node") == reached:
+        status = node.get("status")
+        if status == "block":
+            return node
+        if node.get("node") == reached or status not in ("pass", "skip", "wait"):
             return None
     return None
 
@@ -158,6 +260,23 @@ def feedback_text(node: dict, attempts: int, maximum: int) -> str:
     except (ValueError, KeyError, IndexError):
         return "\n".join(messages) or "the-loop check: unmet"
     return "\n".join(lines)
+
+
+def refusal_text(answer: dict, attempts: int, maximum: int) -> str:
+    """The service's refusal, with this hook's attempt count under it.
+
+    The words are the service's (``text``); the count is the one thing only the
+    hook knows. An answer without ``text`` is worded from its ``messages``.
+    """
+    text = answer.get("text")
+    if not isinstance(text, str) or not text.strip():
+        return feedback_text(answer, attempts, maximum)
+    try:
+        line = _prompt("gate-attempt.md").strip()
+        count = line.format(attempts=attempts, maximum=maximum)
+    except (ValueError, KeyError, IndexError):
+        count = ""
+    return f"{text}\n{count}" if count else text
 
 
 def give_up_text(work_item: str, maximum: int) -> str:
@@ -201,14 +320,19 @@ def main(argv: list[str]) -> int:
         maximum = DEFAULT_MAX_ATTEMPTS
     maximum = max(1, maximum)
 
-    report = run_check(work_item)
-    if report is None:
-        if harness == "codex":
-            print("{}")
-        return 0
+    answer = ask_service(work_item, read_payload())
+    if answer is not None:
+        node = answer if answer["verdict"] == "refuse" else None
+    else:
+        # Version skew, or no service (issue-551): judge `the-loop check` here.
+        report = run_check(work_item)
+        if report is None:
+            if harness == "codex":
+                print("{}")
+            return 0
+        node = blocking_node(report)
 
     counter = attempts_path(work_item, os.getcwd())
-    node = blocking_node(report)
     if node is None:
         if harness == "codex":
             print("{}")
@@ -233,8 +357,12 @@ def main(argv: list[str]) -> int:
         message = give_up_text(work_item, maximum)
         if message:
             print(message, file=sys.stderr)
+        if answer is not None:
+            report_give_up(work_item)
         return 0
 
+    if answer is not None:
+        return emit(harness, refusal_text(answer, attempts, maximum))
     return emit(harness, feedback_text(node, attempts, maximum))
 
 

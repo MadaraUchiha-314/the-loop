@@ -22,6 +22,14 @@ _UUID = re.compile(r"^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$")
 BEGIN = "<!-- the-loop:codex:start -->"
 END = "<!-- the-loop:codex:end -->"
 GATE_SCRIPT = "the-loop-gate.py"
+TURN_START_SCRIPT = "the-loop-turn-start.py"
+#: The hooks a Codex session gets: the event, the script and its timeout in
+#: seconds. The turn-start hook is issue-551's (R4.5): a session without it has
+#: no turn records, and the idle watcher leaves it alone.
+_CODEX_HOOKS = (
+    ("Stop", GATE_SCRIPT, 60),
+    ("UserPromptSubmit", TURN_START_SCRIPT, 15),
+)
 
 
 def codex_home(user_home: Optional[Path] = None) -> Path:
@@ -312,50 +320,32 @@ def prepare_instructions(
             notes.append(strings.t("codex-support.applied.prepared", path=agents))
         if keep_out_of_git:
             notes += _keep_out_of_git(agents)
-        command = shlex.join(
-            [sys.executable, str(resources / "hooks" / GATE_SCRIPT), "codex"]
-        )
+        installed = []
 
         def mutate(data: dict) -> bool:
             hooks = data.setdefault("hooks", {})
             if not isinstance(hooks, dict):
                 raise ValueError("hooks must be an object")
-            groups = hooks.setdefault("Stop", [])
-            if not isinstance(groups, list):
-                raise ValueError("Stop hooks must be a list")
-            for group in groups:
-                if not isinstance(group, dict) or not isinstance(
-                    group.get("hooks"), list
-                ):
-                    raise ValueError("each Stop matcher must contain a hooks list")
-            # Identify our gate by script and argument, not by the exact command:
-            # another interpreter or install path must replace the old entry, not
-            # add a second gate that shares (and halves) the attempts budget.
-            gates = [
-                (group, h)
-                for group in groups
-                for h in group["hooks"]
-                if _is_codex_gate(h)
+            installed[:] = [
+                event
+                for event, script, timeout in _CODEX_HOOKS
+                if _install_hook(
+                    hooks,
+                    event,
+                    script,
+                    shlex.join(
+                        [sys.executable, str(resources / "hooks" / script), "codex"]
+                    ),
+                    timeout,
+                )
             ]
-            if len(gates) == 1 and gates[0][1].get("command") == command:
-                return False
-            if gates:
-                gates[0][1]["command"] = command
-                emptied = []
-                for group, stale in gates[1:]:
-                    group["hooks"][:] = [h for h in group["hooks"] if h is not stale]
-                    if not group["hooks"]:
-                        emptied.append(group)
-                groups[:] = [g for g in groups if not any(g is e for e in emptied)]
-                return True
-            groups.append(
-                {"hooks": [{"type": "command", "command": command, "timeout": 60}]}
-            )
-            return True
+            return bool(installed)
 
         result = update_json(hooks_file, mutate)
-        if result.applied:
+        if result.applied and "Stop" in installed:
             notes.append(strings.t("codex-support.applied.hook"))
+        if result.applied and "UserPromptSubmit" in installed:
+            notes.append(strings.t("codex-support.applied.turn-start-hook"))
         return TrustResult(applied=notes).merge(result)
     except (OSError, ValueError, subprocess.SubprocessError) as exc:
         return TrustResult(
@@ -363,8 +353,48 @@ def prepare_instructions(
         )
 
 
-def _is_codex_gate(hook: object) -> bool:
-    """True for a hook running the-loop's gate for Codex, whatever its path."""
+def _install_hook(
+    hooks: dict, event: str, script: str, command: str, timeout: int
+) -> bool:
+    """Make ``command`` the one entry running ``script`` on ``event``.
+
+    True when that changed ``hooks``. ``ValueError`` for an ``event`` whose shape
+    is not Codex's; the operator's own entries are never touched.
+    """
+    groups = hooks.setdefault(event, [])
+    if not isinstance(groups, list):
+        raise ValueError(f"{event} hooks must be a list")
+    for group in groups:
+        if not isinstance(group, dict) or not isinstance(group.get("hooks"), list):
+            raise ValueError(f"each {event} matcher must contain a hooks list")
+    # Identify our hook by script and argument, not by the exact command:
+    # another interpreter or install path must replace the old entry, not
+    # add a second gate that shares (and halves) the attempts budget.
+    ours = [
+        (group, h)
+        for group in groups
+        for h in group["hooks"]
+        if _is_codex_hook(h, script)
+    ]
+    if len(ours) == 1 and ours[0][1].get("command") == command:
+        return False
+    if ours:
+        ours[0][1]["command"] = command
+        emptied = []
+        for group, stale in ours[1:]:
+            group["hooks"][:] = [h for h in group["hooks"] if h is not stale]
+            if not group["hooks"]:
+                emptied.append(group)
+        groups[:] = [g for g in groups if not any(g is e for e in emptied)]
+        return True
+    groups.append(
+        {"hooks": [{"type": "command", "command": command, "timeout": timeout}]}
+    )
+    return True
+
+
+def _is_codex_hook(hook: object, script: str) -> bool:
+    """True for a hook running the-loop's ``script`` for Codex, whatever its path."""
     if not isinstance(hook, dict) or not isinstance(hook.get("command"), str):
         return False
     try:
@@ -372,9 +402,7 @@ def _is_codex_gate(hook: object) -> bool:
     except ValueError:
         return False
     return (
-        len(tokens) >= 2
-        and tokens[-1] == "codex"
-        and Path(tokens[-2]).name == GATE_SCRIPT
+        len(tokens) >= 2 and tokens[-1] == "codex" and Path(tokens[-2]).name == script
     )
 
 

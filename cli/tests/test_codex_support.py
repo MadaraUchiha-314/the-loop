@@ -2,8 +2,10 @@
 
 import json
 import os
+import shlex
 import subprocess
 from http.client import RemoteDisconnected
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
@@ -292,6 +294,7 @@ def test_codex_stop_hook_returns_valid_json_and_continues_only_for_gate_debt(
 ):
     gate = load_gate()
     monkeypatch.setenv("THE_LOOP_WORK_ITEM", REF)
+    monkeypatch.setattr(gate, "ask_service", lambda *a, **k: None)
     monkeypatch.setattr(gate, "run_check", lambda _: report(not blocked))
     monkeypatch.setattr(gate, "attempts_path", lambda *args: tmp_path / "attempts")
     assert gate.main(["gate", "codex"]) == 0
@@ -591,6 +594,82 @@ def test_a_stale_gate_from_another_install_is_replaced_not_duplicated(tmp_path, 
     assert "operator-check" in commands and len(groups) == 1
 
 
+def _hook_commands(hooks_file, event):
+    groups = json.loads(hooks_file.read_text())["hooks"][event]
+    return [h["command"] for g in groups for h in g["hooks"]]
+
+
+def test_spawn_setup_installs_the_turn_start_hook_beside_the_gate(tmp_path, home):
+    """issue-551, R4.5: without it a Codex session has no turn records and the
+    idle watcher leaves it alone."""
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    assert CodexAdapter().prepare_environment(str(checkout)).ok
+    data = json.loads((home / "hooks.json").read_text())["hooks"]
+    (group,) = data["UserPromptSubmit"]
+    (hook,) = group["hooks"]
+    script, harness = shlex.split(hook["command"])[-2:]
+    assert Path(script).name == "the-loop-turn-start.py" and Path(script).is_file()
+    assert harness == "codex"
+    assert (hook["type"], hook["timeout"]) == ("command", 15)
+    assert len(_hook_commands(home / "hooks.json", "Stop")) == 1
+    original = (home / "hooks.json").read_text()
+    again = CodexAdapter().prepare_environment(str(checkout))
+    assert again.ok and (home / "hooks.json").read_text() == original
+
+
+def test_the_turn_start_hook_is_added_to_a_setup_that_has_only_the_gate(tmp_path):
+    """An install from before issue-551 gains the hook and keeps everything else."""
+    assert prepare_instructions(str(tmp_path)).ok
+    hooks = tmp_path / ".codex/hooks.json"
+    data = json.loads(hooks.read_text())
+    gate_command = data["hooks"]["Stop"][0]["hooks"][0]["command"]
+    operator = {"hooks": [{"type": "command", "command": "operator-prompt-check"}]}
+    data["hooks"]["UserPromptSubmit"] = [operator]
+    hooks.write_text(json.dumps(data))
+    result = prepare_instructions(str(tmp_path))
+    assert result.ok
+    notes = " | ".join(result.applied)
+    assert "Codex turn-start hook installed" in notes
+    assert "Stop hook" not in notes, "the gate was already there"
+    assert _hook_commands(hooks, "Stop") == [gate_command]
+    commands = _hook_commands(hooks, "UserPromptSubmit")
+    assert commands[0] == "operator-prompt-check" and len(commands) == 2
+    assert "the-loop-turn-start.py" in commands[1]
+
+
+def test_a_stale_turn_start_hook_is_replaced_not_duplicated(tmp_path, home):
+    stale = {
+        "type": "command",
+        "command": "/old/python /gone/hooks/the-loop-turn-start.py codex",
+    }
+    home.mkdir()
+    (home / "hooks.json").write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "UserPromptSubmit": [{"hooks": [stale]}, {"hooks": [dict(stale)]}]
+                }
+            }
+        )
+    )
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    assert CodexAdapter().prepare_environment(str(checkout)).ok
+    (command,) = _hook_commands(home / "hooks.json", "UserPromptSubmit")
+    assert "the-loop-turn-start.py" in command and "/gone/" not in command
+
+
+def test_a_malformed_turn_start_event_leaves_the_hooks_file_untouched(tmp_path):
+    hooks = tmp_path / ".codex/hooks.json"
+    hooks.parent.mkdir()
+    original = json.dumps({"hooks": {"UserPromptSubmit": "not a list"}})
+    hooks.write_text(original)
+    result = prepare_instructions(str(tmp_path))
+    assert not result.ok and "UserPromptSubmit" in result.error
+    assert hooks.read_text() == original
+
+
 def test_codex_home_is_stripped_and_expanded_for_every_writer(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("CODEX_HOME", " ~/codex ")
@@ -637,6 +716,7 @@ def test_codex_stop_attempt_cap_still_returns_valid_json(tmp_path, monkeypatch, 
     gate = load_gate()
     monkeypatch.setenv("THE_LOOP_WORK_ITEM", REF)
     monkeypatch.setenv("THE_LOOP_GATE_MAX_ATTEMPTS", "1")
+    monkeypatch.setattr(gate, "ask_service", lambda *a, **k: None)
     monkeypatch.setattr(gate, "run_check", lambda _: report(False))
     monkeypatch.setattr(gate, "attempts_path", lambda *args: tmp_path / "attempts")
     assert gate.main(["gate", "codex"]) == 0

@@ -317,3 +317,94 @@ class TestTheServiceDecidesTheStop:
         ]
         assert (ended["work_item"], ended["node"]) == (REF, "design")
         assert (ended["node_status"], ended["reason"]) == ("block", "open-ask")
+
+
+class TestTheGateGivesUp:
+    """The gate script as the harness runs it, against the real CLI and a real
+    registry, graph and event log.
+
+    Feature: The Stop gate holds on every agent-owned node
+    Requirement: docs/specs/issue-551/requirements.md R3
+    """
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="a POSIX shell shim")
+    def test_the_gate_gives_up_after_its_attempts_and_records_why(self, tmp_path):
+        """
+        Feature: The Stop gate holds on every agent-owned node
+        Scenario: the gate gives up after its attempts and records why
+          Given a registered session whose pointer is on the agent-owned design node
+          And design.md does not exist
+          And the Stop hook's attempt cap is two
+          When the session tries to end its turn three times
+          Then the first two stops are refused and name the design node
+          And no turn end is recorded for them
+          And the third stop is allowed
+          And one turn end is recorded with the node, its status and the reason
+            `gate-gave-up`
+
+        Requirement: docs/specs/issue-551/requirements.md R3.6, R3.8
+        """
+        repo = _checkout(tmp_path / "checkout", PAST_AN_APPROVED_GATE)
+        (repo / "docs" / "specs" / WORK_ITEM / "requirements.md").write_text(
+            REQUIREMENTS
+        )
+        state_root = tmp_path / ".the-loop"
+        layout = layout_from_config({"state": {"root": str(state_root)}})
+        SessionRegistry(layout.local_dir).register(
+            Session(
+                work_item=WorkItemRef.parse(REF),
+                harness="claude",
+                harness_session_id="sess-1",
+                cwd=str(repo),
+            )
+        )
+        config = tmp_path / "cli-config.yaml"
+        config.write_text(f'version: "0.12.0"\nstate:\n  root: "{state_root}"\n')
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        shim = bin_dir / "the-loop"
+        shim.write_text(f'#!/bin/sh\nexec "{sys.executable}" -m the_loop "$@"\n')
+        shim.chmod(0o755)
+        env = {
+            **os.environ,
+            "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            "THE_LOOP_WORK_ITEM": REF,
+            "THE_LOOP_SERVICE_LOCAL": "1",
+            "THE_LOOP_CLI_CONFIG": str(config),
+            "THE_LOOP_GATE_MAX_ATTEMPTS": "2",
+            "TMPDIR": str(tmp_path),  # the attempt counter stays in the test's tree
+        }
+
+        def stop() -> subprocess.CompletedProcess:
+            return subprocess.run(
+                [sys.executable, str(GATE), "claude"],
+                cwd=repo,
+                env=env,
+                input='{"hook_event_name": "Stop"}',
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+
+        def turn_ends() -> list:
+            return [
+                e
+                for e in eventlog.read_events(layout.event_log)
+                if e["event"] == "session.turn_ended"
+            ]
+
+        for attempt in (1, 2):
+            refused = stop()
+            assert refused.returncode == 2, refused.stderr
+            assert "Node `design` still owes work" in refused.stderr
+            assert "/the-loop:create-design issue-1" in refused.stderr
+            assert f"(attempt {attempt}/2)" in refused.stderr
+        assert turn_ends() == []
+
+        gave_up = stop()
+
+        assert gave_up.returncode == 0, gave_up.stderr
+        assert "still incomplete after 2 attempts" in gave_up.stderr
+        (ended,) = turn_ends()
+        assert (ended["work_item"], ended["node"]) == (REF, "design")
+        assert (ended["node_status"], ended["reason"]) == ("block", "gate-gave-up")
