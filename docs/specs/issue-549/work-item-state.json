@@ -40,7 +40,7 @@
       "outcome": "",
       "enteredAt": "2026-11-20T02:26:02+00:00",
       "exitedAt": "",
-      "lastBlock": "",
+      "lastBlock": "`validate-artifacts` did not pass:\n- required artifact is missing \u2014 write one of: requirements.md, bugfix.md (docs/specs/issue-549)",
       "forced": false
     }
   },
