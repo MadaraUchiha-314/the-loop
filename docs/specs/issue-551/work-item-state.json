@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-551",
-  "currentNode": "design",
+  "currentNode": "test-planning",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -45,8 +45,24 @@
     },
     "design": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-11-20T18:57:36+00:00",
+      "exitedAt": "2026-11-20T19:07:37+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "design-critic-review": {
+      "attempts": 0,
+      "outcome": "skipped",
+      "enteredAt": "2026-11-20T19:07:37+00:00",
+      "exitedAt": "2026-11-20T19:07:37+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "test-planning": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-11-20T19:07:37+00:00",
       "exitedAt": "",
       "lastBlock": "",
       "forced": false
@@ -339,6 +355,6 @@
     }
   ],
   "loop": "pdlc-work-item-loop",
-  "phase": "design",
+  "phase": "test-planning",
   "claudeDoc": true
 }

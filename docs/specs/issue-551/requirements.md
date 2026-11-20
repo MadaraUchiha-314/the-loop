@@ -12,8 +12,8 @@ overrides: {}
 
 ## The short version
 
-A daemon-driven session can stop with work still owed, and today nothing notices. On
-#549 it stopped twice, for 43 and 36 minutes, right after it advanced the graph
+A daemon-driven session can stop with work still owed, and today nothing notices.
+On #549 it stopped twice, for 43 and 36 minutes, right after it advanced the graph
 itself. It also waited 8.5 hours on a question that did not need to block. Each time
 the author had to ask "what's happening?".
 
