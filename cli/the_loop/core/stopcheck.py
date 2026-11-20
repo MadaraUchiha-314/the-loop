@@ -201,7 +201,7 @@ def _session_state(
     ).event_log
     routing = core_sessions._routing(config)
     return sessionstate.derive(
-        sessionstate.load(log_path).get(work_item.ref, []),
+        sessionstate.load(log_path, work_item=work_item.ref).get(work_item.ref, []),
         now=now or datetime.now(timezone.utc),
         watchdog=WatchdogConfig.from_mapping(routing.get("watchdog") or {}),
         asks=AsksConfig.from_mapping(routing.get("asks") or {}),

@@ -15,12 +15,14 @@ Spec: docs/specs/issue-551/design.md § "The state of a session".
 
 from __future__ import annotations
 
+import json
+import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
-from .. import eventlog, strings
+from .. import strings
 from ..watchconfig import AsksConfig, WatchdogConfig
 
 __all__ = [
@@ -556,22 +558,63 @@ def _declared(
     )
 
 
-def load(path: Union[str, Path]) -> Dict[str, List[Dict[str, Any]]]:
+#: A line that can hold a record the derivation reads: one of its event types,
+#: quoted as the log writes a value. Most of a busy log fails this test, and a
+#: line that fails it is never parsed.
+_READ_LINE = re.compile(
+    r'"(?:session\.|graph\.(?:started|advanced|forced|parked)"|dispatch\.succeeded")'
+)
+
+
+def load(
+    path: Union[str, Path], work_item: Optional[str] = None
+) -> Dict[str, List[Dict[str, Any]]]:
     """Read the event log once: the records :func:`derive` reads, by work item.
 
     The watcher derives every session from one pass, so a tick costs one read of
-    the log however many sessions are live. A missing log is no records.
+    the log however many sessions are live. The file is streamed a line at a
+    time and a line is parsed only when its text can hold a record that is
+    kept, so the cost follows the session records, not the size of the log.
+    ``work_item`` keeps one work item's records and passes over every line
+    that does not name it. A missing log is no records; a torn or unreadable
+    line is skipped.
     """
     grouped: Dict[str, List[Dict[str, Any]]] = {}
-    for record in eventlog.read_events(path):
-        event = record.get("event")
-        if event not in EVENTS:
-            continue
-        if event == _DELIVERED and not _delivered_a_person(record):
-            continue  # most of a busy log, and nothing the derivation reads
-        ref = _delivered_to(record) if event == _DELIVERED else record.get("work_item")
-        if isinstance(ref, str) and ref:
-            grouped.setdefault(ref, []).append(record)
+    # The ref as the log writes it, quotes included.
+    named = json.dumps(work_item) if work_item else None
+    try:
+        handle = open(path, "r", encoding="utf-8", errors="replace")
+    except OSError:
+        return grouped
+    with handle:
+        for line in handle:
+            if named is not None and named not in line:
+                continue
+            if _READ_LINE.search(line) is None:
+                continue
+            # A delivery is kept only when it names a person.
+            if '"dispatch.succeeded"' in line and '"actor"' not in line:
+                continue
+            try:
+                record = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(record, dict):
+                continue
+            event = record.get("event")
+            if not isinstance(event, str) or event not in EVENTS:
+                continue
+            if event == _DELIVERED and not _delivered_a_person(record):
+                continue
+            ref = (
+                _delivered_to(record)
+                if event == _DELIVERED
+                else record.get("work_item")
+            )
+            if not isinstance(ref, str) or not ref:
+                continue
+            if work_item is None or ref == work_item:
+                grouped.setdefault(ref, []).append(record)
     return grouped
 
 

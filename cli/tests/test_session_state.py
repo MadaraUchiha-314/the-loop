@@ -1030,6 +1030,56 @@ def test_a_persons_event_on_a_pull_request_resets_that_sessions_budget(tmp_path)
     assert state_at(spent + grouped[pull][-1:], 40).nudges_spent == 2
 
 
+def test_load_parses_no_line_of_a_type_it_does_not_read(tmp_path, monkeypatch):
+    """Requirement: testing-plan T7 — most of a busy log is other subsystems'
+    records. They are passed over as text; none is parsed."""
+    path = tmp_path / "events.jsonl"
+    kinds = ["comment.agent", "poller.cycle", "dispatch.succeeded", "graph.blocked"]
+    _write(
+        path,
+        [ev(index / 60, kinds[index % 4], body="x" * 100) for index in range(50_000)],
+    )
+    parsed = []
+    real = json.loads
+    monkeypatch.setattr(
+        json, "loads", lambda text, **kw: parsed.append(1) or real(text)
+    )
+    assert sessionstate.load(path) == {}
+    assert parsed == []
+
+
+def test_load_for_one_work_item_parses_only_its_lines(tmp_path, monkeypatch):
+    other = "github:acme/widgets#70"
+    path = tmp_path / "events.jsonl"
+    _write(
+        path,
+        [started(0), ended(5, "exit-met")]
+        + [{**started(index), "work_item": other} for index in range(100)]
+        + [ev(6, "dispatch.succeeded", actor="rohith", work_item=other, endpoint=REF)],
+    )
+    parsed = []
+    real = json.loads
+    monkeypatch.setattr(
+        json, "loads", lambda text, **kw: parsed.append(1) or real(text)
+    )
+    grouped = sessionstate.load(path, work_item=REF)
+    assert set(grouped) == {REF} and len(parsed) == 3
+    assert grouped[REF] == sessionstate.load(path)[REF]
+
+
+def test_load_reads_a_log_written_with_spaces_and_survives_bad_bytes(tmp_path):
+    path = tmp_path / "events.jsonl"
+    with open(path, "wb") as handle:
+        handle.write(json.dumps(started(0)).encode() + b"\n")
+        handle.write(b'{"event": "session.turn_ended", \xff\xfe broken\n')
+        handle.write(b'["session.turn_ended"]\n')
+        handle.write(json.dumps(ended(5, "exit-met")).encode() + b"\n")
+    assert [r["event"] for r in sessionstate.load(path)[REF]] == [
+        "session.turn_started",
+        "session.turn_ended",
+    ]
+
+
 def test_load_of_a_missing_log_is_empty(tmp_path):
     assert sessionstate.load(tmp_path / "absent.jsonl") == {}
 

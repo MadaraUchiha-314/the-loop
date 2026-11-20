@@ -11,7 +11,7 @@ from typing import Optional
 import pytest
 
 from the_loop import eventlog
-from the_loop.core import watchdog
+from the_loop.core import sessionstate, watchdog
 from the_loop.watchconfig import AsksConfig, WatchdogConfig
 from watchdog_world import ASKS, REF, TARGET, WATCHDOG, World
 
@@ -592,9 +592,9 @@ def test_the_cycle_reads_the_log_once(world, monkeypatch):
         world.started(-1, ref=ref)
         world.ended(0, ref=ref)
     reads = []
-    real = eventlog.read_events
+    real = sessionstate.load
     monkeypatch.setattr(
-        eventlog, "read_events", lambda path, **kw: reads.append(path) or real(path)
+        sessionstate, "load", lambda path, **kw: reads.append(path) or real(path)
     )
     world.cycle(10)
     assert len(reads) == 1 and len(world.pasted()) == 5
