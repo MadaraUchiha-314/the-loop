@@ -119,24 +119,52 @@ let an agent run.
 
 ## Verification activities
 
-- [ ] T1 — `cd cli && uv run python -m pytest -q tests/test_session_state.py tests/test_stop_check.py tests/test_durations.py tests/test_graph_claim_assignment.py tests/test_configschema.py tests/test_eventlog.py`
-- [ ] T2 — `cd cli && uv run python -m pytest -q tests/test_watchdog_integration.py tests/test_ask_deadline_integration.py tests/test_inbound_readonly_integration.py tests/test_gate_pointer_integration.py`
-- [ ] T2 — `uv run the-loop scenarios --root "$PWD" --glob 'cli/tests/test_*_integration.py' --format markdown` (the scenarios above appear)
-- [ ] T3 — `cd cli && uv run python -m pytest -q tests/test_api_contract_parity.py`
-- [ ] T4 — `cd cli && uv run python -m pytest -q tests/test_idle_watchdog_e2e.py`
-- [ ] T5 — render `docs/specs/issue-551/design/messages.html` with headless Chromium and save the screenshot
-- [ ] T8 — `cd cli && uv run python -m pytest -q -k "abuse or unauthorized or foreign_work_item or nudge_is_fixed"`
-- [ ] T10 — the migration cases pass within T1/T2 (named in `unit.md`)
-- [ ] T12 — `grep -rnE "next session starts fresh|ending the session at a phase" skills/ commands/ docs/capabilities/` returns nothing; `cd cli && uv run python -m pytest -q tests/test_docs_parity.py`
-- [ ] T13 — `uv run pre-commit run --all-files`
+- [x] T1 — `cd cli && uv run python -m pytest -q tests/test_session_state.py tests/test_stop_check.py tests/test_durations.py tests/test_graph_claim_assignment.py tests/test_configschema.py tests/test_eventlog.py`
+- [x] T2 — `cd cli && uv run python -m pytest -q tests/test_watchdog_integration.py tests/test_ask_deadline_integration.py tests/test_inbound_readonly_integration.py tests/test_gate_pointer_integration.py`
+- [x] T2 — `uv run the-loop scenarios --root "$PWD" --glob 'cli/tests/test_*_integration.py' --format markdown` (the scenarios above appear)
+- [x] T3 — `cd cli && uv run python -m pytest -q tests/test_api_contract_parity.py`
+- [x] T4 — `cd cli && uv run python -m pytest -q tests/test_idle_watchdog_e2e.py`
+- [x] T5 — render `docs/specs/issue-551/design/messages.html` with headless Chromium and save the screenshot
+- [x] T8 — `cd cli && uv run python -m pytest -q -k "abuse or unauthorized or foreign_work_item or nudge_is_fixed"`
+- [x] T10 — the migration cases pass within T1/T2 (named in `unit.md`)
+- [x] T12 — `grep -rnE "next session starts fresh|ending the session at a phase" skills/ commands/ docs/capabilities/` returns nothing; `cd cli && uv run python -m pytest -q tests/test_docs_parity.py`
+- [x] T13 — `uv run pre-commit run --all-files`
 
 ## Verification results
 
-_Not yet executed._
+Executed on 2026-11-20 at `82db8f0a` (T13 at `c384908c`), with `THE_LOOP_CLI_CONFIG`,
+`THE_LOOP_INSTANCE` and `THE_LOOP_WORK_ITEM` unset. Every planned activity ran and
+passed.
 
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
-| | | | |
+| T1 | the T1 command above | 304 passed | [`evidence/unit.md`](evidence/unit.md) |
+| T2 | the T2 command above | 49 passed | [`evidence/integration.md`](evidence/integration.md) |
+| T2 | `the-loop scenarios … --format markdown` | every planned scenario title appears | [`evidence/integration.md`](evidence/integration.md) |
+| T3 | `pytest tests/test_api_contract_parity.py` | 7 passed | [`evidence/contract.md`](evidence/contract.md) |
+| T4 | `pytest tests/test_idle_watchdog_e2e.py` | 1 passed in 8.4 s; five runs in a row passed | [`evidence/e2e.md`](evidence/e2e.md) |
+| T5 | headless Chromium screenshot of the mock-up | captured; five wording differences recorded | [`evidence/ui.md`](evidence/ui.md) |
+| T7 | `pytest tests/test_session_state.py -k cycle_budget` | 0.70 s against a 2 s bound | [`evidence/unit.md`](evidence/unit.md) |
+| T8 | the T8 command above | 308 passed; each abuse case mapped to its test | [`evidence/security-tests.md`](evidence/security-tests.md) |
+| T9 | within the whole suite | passed | [`evidence/integration.md`](evidence/integration.md) |
+| T10 | `pytest tests/test_harness_gate.py`; `-k legacy` | 85 passed; 5 passed | [`evidence/unit.md`](evidence/unit.md) |
+| T12 | the grep; `pytest tests/test_docs_parity.py` | no output; 5 passed | [`evidence/documentation-check.md`](evidence/documentation-check.md) |
+| T13 | `uv run pre-commit run --all-files` | exit 0; whole suite 7810 passed, 2 skipped | [`evidence/ci-parity.md`](evidence/ci-parity.md) |
+
+**Deviations from the plan as written:**
+
+- **Environment.** The commands were run with three `THE_LOOP_*` variables unset. A
+  daemon-spawned session exports them, and with them set 22 unrelated status tests
+  read the operator's live daemon.
+- **T5 wording.** The built messages differ from the mock-up in five places, listed
+  in [`evidence/ui.md`](evidence/ui.md). The largest: GitHub shows a stall's end as a
+  follow-up comment, because the GitHub channel cannot edit a comment in place.
+- **T4 clock.** The end-to-end run moves only the watcher's clock, so it proves
+  order and counts. The reported idle durations are proved by T1.
+
+**Not executed:** T11 (a stall on a real harness), as planned. It needs the daemon
+to run this code, which happens after merge and release. The first real nudge or
+"default taken" will be reported on the ticket with its event-log lines.
 
 ## Review comments
 
