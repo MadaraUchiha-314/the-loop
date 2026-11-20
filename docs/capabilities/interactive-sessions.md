@@ -403,9 +403,13 @@ stateDiagram-v2
   reason lapsed, not at the turn's end. A turn that ended with `exit-met`,
   `inconclusive` or `gate-gave-up` is idle from its end.
 - **Stalled**: idle for `routing.watchdog.idleSeconds` or longer. One case never
-  becomes a stall: a turn that ended `inconclusive` with no node on record. The Stop
-  gate could not tell where the work item stands, so nothing says work is owed. The
-  session stays idle, and the surfaces say that the-loop cannot tell where it stands.
+  becomes a stall: a turn of a pull request's own session that ended `inconclusive`
+  with no node on record. The Stop gate reads the outer loop, which has no position
+  for a pull request's ref, so nothing says work is owed. That session stays idle, and
+  the surfaces say that the-loop cannot tell where it stands. A work item's own session
+  whose turn ended that way does become a stall: its state could not be read, which
+  the session itself can cause by removing the file. The surfaces show it as stalled
+  and say that the-loop cannot tell where the work item stands.
 - WHEN the pointer moves after the last turn record, and no turn has started since,
   THEN the state SHALL follow the pointer. The session is idle at the new node from
   the moment of the move (reason `pointer-moved`), unless the graph parked that node
@@ -451,9 +455,14 @@ stateDiagram-v2
   [channels](channels.md) for the notice.
 - **The nudges and the one notice are a budget of the node visit, not of the idle
   period.** A nudge starts a turn, so a session that answers each nudge with one empty
-  turn would otherwise be nudged forever. The budget SHALL reset only when the pointer
-  moves, or when an authorized person's reply, comment or review is delivered to the
-  session.
+  turn would otherwise be nudged forever. The budget SHALL reset only on one of three
+  records: the pointer moved, the dispatcher delivered an authorized person's comment
+  or review (`session.ask_answered`, or a `dispatch.succeeded` that names an actor), or
+  a `session.reply_sent` that names an `authorized_actor`. Only the inbound channel
+  pipeline writes that field, for a member it checked against the allow-list. A reply
+  made through `POST /api/v1/sessions/reply`, the MCP tool, the SDK or the CLI carries
+  no such field, because the service authenticates no caller and a session can call
+  the operation itself. Such a reply closes the open asks and resets nothing.
 - Each nudge SHALL be recorded before it is pasted, and that record has no `delivered`
   field. WHEN the paste fails THEN a second `session.nudged` record SHALL follow, with
   the same `stall_id` and `nudge` and with `delivered: false`. The two records are one
@@ -468,6 +477,10 @@ stateDiagram-v2
   code or terminal node.
 - WHEN the stalled session's node cannot be resolved (no node is on record, or the
   graph does not have it) THEN the watcher SHALL send the notice with no nudge.
+- WHEN the turn of a work item's own session ended `inconclusive` with no node on
+  record AND the session is idle past the threshold THEN the watcher SHALL send the
+  notice once per budget window, with no nudge. That notice SHALL say that the-loop
+  cannot tell which step the session is at, and SHALL NOT say that work is owed.
 - WHEN a nudge finds the session's tmux session gone THEN that one attempt SHALL be
   recorded as any failed nudge is, so it counts toward the budget, and the notice
   SHALL follow in the same cycle.
@@ -475,7 +488,7 @@ stateDiagram-v2
   SHALL send it no nudge, because the node facts it reads are the outer loop's. The
   Stop gate cannot place such a session on a node, so its turns record no node.
   - WHEN such a turn ended `inconclusive` THEN the session SHALL never become a stall,
-    and no notice is owed.
+    and no notice is owed. This holds for a pull request's own session only.
   - WHEN such a turn ended for another reason (for example `open-ask`) and the session
     is then idle past the threshold THEN the watcher SHALL send the notice, and still
     no nudge.
@@ -505,6 +518,14 @@ stateDiagram-v2
   "proceed with your default" text, once, and its record names the ask in
   `default_of`. A `session.reply_sent` or `session.ask_answered` record before that
   nudge cancels it.
+- The default SHALL hold no character that does not print, except line breaks and
+  tabs. `the-loop ask` drops the C0 and C1 control characters, DEL and the Unicode
+  format characters (the bidirectional overrides and the zero-width characters among
+  them) before it records the default, and a space that is not the ASCII one becomes a
+  space. The watcher applies the same rule again to the text it pastes, so an ask
+  recorded before this rule existed is covered. An escape sequence in a default could
+  otherwise end the paste early. The declared wait's condition and the status lines
+  use the same rule.
 - A session MAY have several asks open at once, and at most one of them with a
   deadline. `the-loop ask --after` SHALL be refused while another ask with a deadline
   is open for the work item, and at a step where a default was already taken with
@@ -529,8 +550,9 @@ stateDiagram-v2
   THEN the ask SHALL be recorded without a deadline, its default SHALL never be taken,
   and the command's output SHALL say so.
 - **One default per step.** WHEN a default was taken for a work item and neither the
-  pointer has moved nor an authorized person's comment, review or reply has reached the
-  session since THEN `the-loop ask` SHALL refuse another ask that carries `--after`,
+  pointer has moved nor an authorized person's comment, review or channel reply has
+  reached the session since (the records that reset the nudge budget) THEN
+  `the-loop ask` SHALL refuse another ask that carries `--after`,
   and SHALL tell the session to ask without `--after` and wait for a person. An ask
   without `--after` SHALL always be accepted. Without this a session could go on with
   no person for as long as it kept asking.

@@ -81,12 +81,20 @@ gateway client had none.
   log, because an act it could not record would be repeated on every tick.
 - **A pull request's own session is watched for its asks only.** The Stop check reads
   the outer loop, cannot place such a session on a node, and records its stops as
-  `inconclusive`. A stop the-loop cannot place owes no nudge and no notice. Judging the
-  inner loop's node is left for a separate work item.
+  `inconclusive`. Such a stop of a pull request's own session owes no nudge and no
+  notice. Judging the inner loop's node is left for a separate work item.
+- **A work item's own session that the-loop cannot place is told to a person.** Its
+  stop is recorded as `inconclusive` only when its state cannot be read, and the
+  session itself can remove that file. It gets no nudge, and one notice once it has
+  been idle past the threshold.
 - **A person's word closes every open ask.** An authorized comment on the work item or
   on one of its pull requests cancels every default open there, whichever question it
   was written under. One default may be taken per step: a second ask with a deadline at
   the same step is refused, so a session cannot go on without a person indefinitely.
+- **A reply through the service's reply operation is not proof of a person.** It closes
+  the open asks, which is the safe direction. It does not reset the nudge budget or the
+  one default per step: only a pointer move, an authorized person's delivered comment
+  or review, and a reply the inbound channel pipeline vouched for do that.
 - **The status surfaces cannot disagree with the watcher**, because they share the
   derivation.
 - **The binding check is not authentication.** The service authenticates no caller

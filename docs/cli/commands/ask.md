@@ -28,7 +28,9 @@ One verb, three effects — in this order:
    is authorized) or straight into the session's pane via
    `POST /api/v1/sessions/reply`, which emits `session.reply_sent`. Either record
    closes every open ask of the work item. An authorized comment on the work item or on
-   any of its pull requests counts, wherever the question was asked.
+   any of its pull requests counts, wherever the question was asked. A reply through
+   the route closes the asks and does nothing else: it does not let the session ask
+   with `--after` again at the same step, because the route cannot show who called it.
 
 If the post fails, the exit code is 1 and the failure is printed — but the wait is
 **still recorded** (`comment_posted: false`, level `warning`): the agent is
@@ -91,7 +93,7 @@ A question asked without `--after` waits for a person, however long that takes. 
 | `--work-item` | required | The ref the question goes to: `github:…`, or `jira:<site>/<KEY>-<n>`, where the Jira ledger records it on the ticket with the visible self-marker. |
 | `--question` | — | The question text (markdown). |
 | `--question-file` | — | Read the question from a file; `-` reads stdin. Exactly one of the two. |
-| `--default` | — | The answer to take if nobody objects, in at most 600 characters. A channel that takes button presses offers it as a one-tap reply. |
+| `--default` | — | The answer to take if nobody objects, in at most 600 characters. Control characters and other characters that do not print are dropped from it; line breaks and tabs are kept. A channel that takes button presses offers it as a one-tap reply. |
 | `--after` | — | How long to wait before the `--default` answer is taken: `45s`, `30m` or `2h`. It needs `--default`. A wait under `routing.asks.minDefaultWaitSeconds` is raised to it, and the output says so. A wait over 7 days (`168h`) is refused. The question states the default and the time; an authorized answer before that time cancels it. |
 
 ## Notes

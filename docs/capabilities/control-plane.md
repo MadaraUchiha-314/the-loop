@@ -272,7 +272,8 @@ package — there are no install extras (owner decision, PR #162).
   The route SHALL be fail-closed: no registered session or no live pane is 404 —
   a reply never spawns, respawns or resumes anything — a paused record or
   endpoint is 400, and the claimed `actor` is recorded for audit, never trusted
-  as auth.
+  as auth. For the same reason a reply through the route closes the open asks and
+  resets neither the watcher's nudge budget nor the one default per step (issue-551).
 - `GET /attention` SHALL report the wait as kind `awaiting-input`. A work item can have
   several asks open. A `session.reply_sent` or a `session.ask_answered` (an authorized
   person's comment or review, delivered) closes all of them, and a

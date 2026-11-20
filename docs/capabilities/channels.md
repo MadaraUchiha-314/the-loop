@@ -1048,7 +1048,7 @@ rules for when each fires are in [interactive-sessions](interactive-sessions.md)
 
 | Event | Slack | Ledger (GitHub or Jira comment) |
 |---|---|---|
-| `session.stalled` | One message per stall: the work item, the node, how long the session has been idle, how many nudges did not restart it, how to wake it. It mentions who must act. Status reaction 🛑. | "the session is idle": the node, the idle time, the nudges, and how to wake or attach to the session. |
+| `session.stalled` | One message per stall: the work item, the node, how long the session has been idle, how many nudges did not restart it, how to wake it. It mentions who must act. Status reaction 🛑. | "the session is idle": the node, the idle time, the nudges, and how to wake or attach to the session. For a work item's own session whose step cannot be read, both surfaces name no node and no nudges, and say that the-loop cannot tell which step it is at. |
 | `session.stall_ended` | The stall notice is edited in place to its resolved line. Status reaction returns to ⚙️. Nothing is posted. | A short follow-up comment with the idle period. GitHub cannot edit the notice in place. |
 | `session.awaiting_input` with a deadline | The short form gains a line: the time the default is taken, the minutes left and the default. | The question gains a block: the default, the time it is taken, and that an authorized answer before then wins. |
 | `session.ask_default_taken` | The question's message is edited: it keeps its words, loses its default button and gains the outcome line. Status reaction returns to ⚙️. Nothing is posted. | "default taken": the time, the default, a link to the question, and that it is not an approval. |

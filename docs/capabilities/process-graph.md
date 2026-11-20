@@ -1356,7 +1356,9 @@ flowchart TD
   session waits on one. **Known limit:** the inner loop's node is not judged. The
   watcher never nudges such a session. A stop that ended `inconclusive` owes no notice
   either. A stop that ended for another reason, followed by an idle period past the
-  threshold, gets the notice
+  threshold, gets the notice. A work item's own session is treated differently: a stop
+  of it that rule 1 allowed as `inconclusive`, followed by an idle period past the
+  threshold, gets the notice and no nudge
   ([interactive-sessions](interactive-sessions.md#session-states-and-the-watcher-issue-551)).
 - A manager-role service SHALL serve `stop-check`, `turn-start`, `wait` and `ask` as a
   worker does: for its own sessions itself, and for a member's by forwarding the call.
