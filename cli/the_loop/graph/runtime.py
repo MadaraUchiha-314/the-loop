@@ -204,6 +204,14 @@ class NodeReport:
     messages: List[str] = field(default_factory=list)
     forced: bool = False
     attempts: int = 0
+    #: The node this advance moved the pointer INTO, ``""`` when it did not move
+    #: (issue-551). Not part of :meth:`as_dict`: `check` reports verdicts, and a
+    #: claim's answer says where it landed in its own fields.
+    entered: str = ""
+    #: Whether that node's entry chain pushed its assignment into a session —
+    #: the daemon's channel. A claim's answer then leaves the assignment out, so
+    #: no session reads it twice (issue-551, R1.5).
+    assignment_delivered: bool = False
 
     @property
     def satisfied(self) -> bool:
@@ -1366,8 +1374,9 @@ class Runtime:
         state.completions[claimed] = {"at": utc_now(), "by": actor or "cli"}
         state.save(self.state_dir(item))
         report = self.advance(work_item_id, ref=ref)
-        after = WorkItemState.load(self.state_dir(item), work_item_id).current_node
-        return {
+        landed = WorkItemState.load(self.state_dir(item), work_item_id)
+        after = landed.current_node
+        answer = {
             "node": claimed,
             "status": report.status,
             "outcome": report.outcome,
@@ -1375,6 +1384,37 @@ class Runtime:
             "currentNode": after,
             "messages": report.messages,
             "reason": "",
+        }
+        if after != current and report.entered == after:
+            answer.update(self._next_assignment(item, landed, report))
+        return answer
+
+    def _next_assignment(
+        self, item: WorkItem, state: "WorkItemState", report: NodeReport
+    ) -> Dict[str, Any]:
+        """``assignment`` and ``next`` for the node a claim entered (issue-551, R1).
+
+        ``advanced to <node>`` told the claiming session where it stood and not
+        what to do there, and it ended its turn. Empty — both keys absent — when
+        the entry chain already pushed the assignment into a session (R1.5), and
+        at a terminal node, where nothing is left to assign.
+        """
+        from .hooks.assignment import claim_assignment
+
+        node = self.graph.node(report.entered)
+        if report.assignment_delivered or node.terminal:
+            return {}
+        ctx = self._context(
+            item, node, "entry", surface=self._surface(state), handoff=state.handoff
+        )
+        return {
+            "assignment": claim_assignment(ctx),
+            "next": {
+                "node": node.id,
+                "actor": node.actor,
+                "command": str(node.command or ""),
+                "continue": node.actor == "agent",
+            },
         }
 
     def advance(
@@ -1608,6 +1648,14 @@ class Runtime:
             outcome=outcome.outcome,
         )
         report.messages.append(f"advanced to {target}")
+        # Imported here: the hooks package reaches back into `the_loop.core`.
+        from .hooks.assignment import DELIVER_ASSIGNMENT
+
+        report.entered = target
+        report.assignment_delivered = any(
+            result.hook == DELIVER_ASSIGNMENT and result.data.get("delivered")
+            for result in entered.results
+        )
         # The entry chain of the node just ENTERED — attributed to that node,
         # not to the one this advance left. This is where the phase-selection
         # checklist and the phase label are posted, and where issue-194's silence

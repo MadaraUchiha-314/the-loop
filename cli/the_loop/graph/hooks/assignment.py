@@ -36,7 +36,15 @@ from ..registry import hook
 
 logger = logging.getLogger("the-loop.graph")
 
-__all__ = ["deliver_assignment", "render_assignment"]
+__all__ = [
+    "DELIVER_ASSIGNMENT",
+    "claim_assignment",
+    "deliver_assignment",
+    "render_assignment",
+]
+
+#: The hook's registered name — the runtime reads its result by it (issue-551).
+DELIVER_ASSIGNMENT = "deliver-assignment"
 
 
 def _text(name: str, /, **slots: object) -> str:
@@ -120,7 +128,24 @@ def render_assignment(ctx: HookContext) -> str:
     return "\n".join(lines)
 
 
-@hook("deliver-assignment")
+def claim_assignment(ctx: HookContext) -> str:
+    """The assignment a **claim's answer** carries for the node it entered (issue-551).
+
+    The one renderer's text, then the line a pushed assignment never needed: a
+    session reading its own command's answer is mid-turn, so it is told to keep
+    going — or, at a human gate, that it now waits and for which gate. Any other
+    node gets the assignment alone.
+    """
+    text = render_assignment(ctx)
+    actor = ctx.node.get("actor", "agent")
+    if actor == "human":
+        return text + "\n  " + _text("wait", node_id=ctx.node_id)
+    if actor == "agent":
+        return text + "\n  " + _text("continue")
+    return text
+
+
+@hook(DELIVER_ASSIGNMENT)
 def deliver_assignment(ctx: HookContext) -> HookResult:
     """Push the entered node's assignment into the loop's bound session.
 
@@ -129,7 +154,7 @@ def deliver_assignment(ctx: HookContext) -> HookResult:
     envelope. A channel that reports a failed delivery also yields a skip, with
     the reason: the assignment must never gate the node it announces.
     """
-    name = "deliver-assignment"
+    name = DELIVER_ASSIGNMENT
     deliver = ctx.config.get("assignmentDeliver")
     if not callable(deliver):
         return HookResult.skipped(

@@ -58,7 +58,7 @@ green.
   - _Depends on:_ 2
   - _Requirements:_ R4.1–R4.10, R7
   - _Test:_ T1 — `tests/test_session_state.py`, one test per arrow of the design's state diagram; T7 — `-k cycle_budget`; T10 — `-k legacy`
-- [ ] 4. Return the next assignment from a claim
+- [x] 4. Return the next assignment from a claim
   - The claim envelope gains `assignment` and `next`. A new prompt file carries the
     "continue in this turn" line; the human-gate text names the gate.
   - _Depends on:_ 1

@@ -264,9 +264,17 @@ def complete(
 ) -> Dict[str, Any]:
     """A completion claim for the current (or named) node — issue-148 semantics."""
     work_item = work_item_id(work_item)
-    return _runtime(repo, pr, pr_repo, work_item, spec_dir=spec_dir).complete(
-        work_item, ref=ref, node=node, actor=actor
-    )
+    runtime = _runtime(repo, pr, pr_repo, work_item, spec_dir=spec_dir)
+    if pr is not None:
+        # The answer carries the entered node's assignment (issue-551), and an
+        # inner loop's names its pull request — the keys the daemon's delivery
+        # sets for the same renderer (`GraphLink`).
+        runtime.config = {
+            **runtime.config,
+            "assignmentPr": pr,
+            "assignmentPrRepo": pr_repo,
+        }
+    return runtime.complete(work_item, ref=ref, node=node, actor=actor)
 
 
 def advance(
