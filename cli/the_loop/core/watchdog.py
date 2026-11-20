@@ -488,7 +488,8 @@ _RUNNING: Optional[threading.Thread] = None
 
 
 def start_watcher(
-    cli_config: Optional[Mapping[str, Any]], stop_event: threading.Event
+    cli_config: Union[Mapping[str, Any], Callable[[], Mapping[str, Any]], None],
+    stop_event: threading.Event,
 ) -> Optional[threading.Thread]:
     """The service's hook (R4.11): the watcher's thread, or ``None`` when this
     process already runs one.
@@ -498,14 +499,19 @@ def start_watcher(
     it, and a cycle that raises is logged and the next tick runs. Started
     whatever the config says: `routing.watchdog.enabled: false` stops the
     nudges and the notice, not the asks' deadlines or the end of a stall.
+
+    ``cli_config`` is the config, or a callable that returns the config as it
+    is now. The callable is asked on every tick, so a switch turned off in the
+    file takes effect on the next tick and needs no restart.
     """
     global _RUNNING
-    frozen = dict(cli_config or {})
+    current = cli_config if callable(cli_config) else None
+    fixed = {} if callable(cli_config) else dict(cli_config or {})
 
     def run() -> None:
         while not stop_event.wait(TICK_SECONDS):
             try:
-                _cycle(frozen)
+                _cycle(dict(current() or {}) if current is not None else fixed)
             except Exception:  # noqa: BLE001 — never kill the service over a tick
                 logger.exception("the watcher's cycle raised; continuing")
 

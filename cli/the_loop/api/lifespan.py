@@ -47,7 +47,7 @@ def build_lifespan(
 
     @asynccontextmanager
     async def lifespan(_app: Any = None):
-        from ..cli_config import default_cli_config_path
+        from ..cli_config import ConfigHolder, default_cli_config_path
         from ..core import watchdog
         from . import ingress as ingress_mod
 
@@ -56,7 +56,18 @@ def build_lifespan(
         # hosts, and an instance that only runs the gateway client hosts none.
         # `None` when this process already runs one; then it is not ours to stop.
         watching = threading.Event()
-        watcher = watchdog.start_watcher(cli_config, watching)
+        # A holder of the watcher's own, refreshed on its thread once a tick:
+        # the routes refresh theirs per request, on other threads.
+        holder = ConfigHolder(
+            cli_config,
+            config_path if config_path is not None else default_cli_config_path(),
+        )
+
+        def config_now() -> dict:
+            holder.refresh()
+            return holder.current
+
+        watcher = watchdog.start_watcher(config_now, watching)
         hosted: Optional[ingress_mod.HostedIngresses] = None
         if host_ingresses:
             hosted = ingress_mod.HostedIngresses(

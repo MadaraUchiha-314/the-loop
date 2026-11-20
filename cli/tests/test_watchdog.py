@@ -737,3 +737,90 @@ def test_a_cycle_that_raises_is_logged_and_the_next_tick_runs(monkeypatch):
     finally:
         stop.set()
         thread.join(5)
+
+
+def test_the_watcher_reads_the_config_of_each_tick(world, monkeypatch):
+    """Requirement: R4.12 — `routing.watchdog.enabled: false` stops the nudges
+    without a restart: the thread asks for the config on every tick."""
+    live = {"routing": {"watchdog": {"enabled": True, "idleSeconds": 600}}}
+    ticks = []
+
+    def cycle(config):
+        ticks.append(config["routing"]["watchdog"]["enabled"])
+        world.cycle(
+            watchdog_config=WatchdogConfig.from_mapping(config["routing"]["watchdog"])
+        )
+
+    idle(world)
+    world.at(10)
+    monkeypatch.setattr(watchdog, "TICK_SECONDS", 0.01)
+    monkeypatch.setattr(watchdog, "_cycle", cycle)
+    stop = threading.Event()
+    thread = watchdog.start_watcher(lambda: live, stop)
+    assert thread is not None
+    try:
+        for _ in range(300):
+            if world.pasted():
+                break
+            stop.wait(0.01)
+        assert len(world.pasted()) == 1
+        live = {"routing": {"watchdog": {"enabled": False, "idleSeconds": 600}}}
+        seen = len(ticks)
+        for _ in range(300):
+            if len(ticks) > seen + 1:
+                break
+            stop.wait(0.01)
+        world.at(25)  # the second nudge would be owed now
+        seen = len(ticks)
+        for _ in range(300):
+            if len(ticks) > seen + 2:
+                break
+            stop.wait(0.01)
+    finally:
+        stop.set()
+        thread.join(5)
+    assert ticks[0] is True and ticks[-1] is False
+    assert len(world.pasted()) == 1
+
+
+def test_the_services_watcher_follows_the_config_file(tmp_path, monkeypatch):
+    """Requirement: R4.12 — the service's watcher follows the file the service
+    was started from, as its routes do."""
+    import asyncio
+    import time
+
+    import yaml
+
+    from the_loop.api.lifespan import build_lifespan
+    from the_loop.cli_config import load_cli_config
+
+    path = tmp_path / "cli-config.yaml"
+
+    def write(enabled):
+        config = load_cli_config(tmp_path / "absent.yaml")
+        config.setdefault("state", {})["root"] = str(tmp_path / ".the-loop")
+        config.setdefault("routing", {})["watchdog"] = {"enabled": enabled}
+        path.write_text(yaml.safe_dump(config))
+
+    write(True)
+    seen = []
+    monkeypatch.setattr(watchdog, "TICK_SECONDS", 0.01)
+    monkeypatch.setattr(
+        watchdog,
+        "_cycle",
+        lambda config: seen.append(config["routing"]["watchdog"]["enabled"]),
+    )
+
+    async def until(value):
+        deadline = time.monotonic() + 5
+        while value not in seen and time.monotonic() < deadline:
+            await asyncio.sleep(0.01)
+
+    async def serve():
+        async with build_lifespan(load_cli_config(path), config_path=path)(None):
+            await until(True)
+            write(False)
+            await until(False)
+
+    asyncio.run(serve())
+    assert seen[0] is True and seen[-1] is False
