@@ -4197,7 +4197,9 @@ class Dispatcher:
                 owner=session.work_item,
             )
             if respawned:
-                self._record_answer(endpoint, self._person_behind(routed))
+                self._record_answer(
+                    session, endpoint, routed, self._person_behind(routed)
+                )
             return respawned
         result = self.tmux.deliver(
             endpoint, prompt, timeout=self.config.dispatch_timeout_seconds
@@ -4217,7 +4219,9 @@ class Dispatcher:
                 owner=session.work_item,
             )
             if respawned:
-                self._record_answer(endpoint, self._person_behind(routed))
+                self._record_answer(
+                    session, endpoint, routed, self._person_behind(routed)
+                )
             return respawned
         ok, error, verb = result.ok, result.error, "delivered into tmux session"
 
@@ -4238,7 +4242,7 @@ class Dispatcher:
                 gh_event=routed.event,
                 delivery_id=routed.delivery_id or None,
             )
-            self._record_answer(endpoint, person)
+            self._record_answer(session, endpoint, routed, person)
             self.registry.touch(
                 key,
                 delivery_id=routed.delivery_id or None,
@@ -4298,41 +4302,61 @@ class Dispatcher:
             return ""
         return actor
 
-    def _record_answer(self, endpoint: Session, person: str) -> None:
-        """Write `session.ask_answered` when ``person``'s delivered event reached
-        a conversation with an open ask (issue-551, R6.3).
+    def _record_answer(
+        self, session: Session, endpoint: Session, routed: RoutedEvent, person: str
+    ) -> None:
+        """Write `session.ask_answered` for every open ask ``person``'s delivered
+        event answers.
+
+        An ask is logged under the ref the session named when it asked — the
+        work item or one of its pull requests — while the event is delivered to
+        whichever conversation routing picked. So the open asks of all three are
+        closed: the session's own work item, the conversation that received the
+        event, and the issue or pull request the person wrote on. A person spoke
+        on this work item, and a default taken over their words is the worse
+        mistake.
 
         Called only after a delivery succeeded. Whether an ask is open is the
         derivation's answer, read from the log this process writes; the log is
-        read only for a person's event, never for a CI event or a label.
+        read once, and only for a person's event, never for a CI event or a
+        label.
         """
         if not person:
             return
         from ..core import sessionstate  # core imports this module
 
-        ref = endpoint.work_item.ref
+        refs = [session.work_item.ref, endpoint.work_item.ref]
+        refs += [item.ref for item in routed.work_items if _item_kind(item, routed)]
         try:
             path = eventlog.current_path()
             if path is None:
                 return
-            state = sessionstate.derive(
-                sessionstate.load(path).get(ref, []),
-                now=datetime.now(timezone.utc),
-                watchdog=self.config.watchdog,
-                asks=self.config.asks,
-                work_item=ref,
-            )
+            grouped = sessionstate.load(path)
+            now = datetime.now(timezone.utc)
+            states = [
+                sessionstate.derive(
+                    grouped.get(ref, []),
+                    now=now,
+                    watchdog=self.config.watchdog,
+                    asks=self.config.asks,
+                    work_item=ref,
+                )
+                for ref in dict.fromkeys(refs)
+            ]
         except Exception as exc:  # noqa: BLE001 — the answer is already delivered
-            logger.warning("cannot read the open ask of %s: %s", ref, exc)
+            logger.warning(
+                "cannot read the open asks of %s: %s", session.work_item.ref, exc
+            )
             return
-        if state.open_ask is None:
-            return
-        eventlog.emit(
-            "session.ask_answered",
-            work_item=ref,
-            ask_id=state.open_ask.ask_id,
-            actor=person,
-        )
+        for state in states:
+            if state.open_ask is None:
+                continue
+            eventlog.emit(
+                "session.ask_answered",
+                work_item=state.work_item,
+                ask_id=state.open_ask.ask_id,
+                actor=person,
+            )
 
     # -- the handoff pick-up (issue-517) -----------------------------------------
 
