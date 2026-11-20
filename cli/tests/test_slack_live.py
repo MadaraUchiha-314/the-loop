@@ -204,8 +204,9 @@ def _has_preview(message: Mapping[str, Any]) -> bool:
 
 
 def _reactions(client: Any, channel: str, ts: str) -> List[str]:
-    response = client.reactions_get(channel=channel, timestamp=ts, full=True)
-    message = response.get("message") or {}
+    # Read from the message itself: ``reactions.get`` needs ``reactions:read``,
+    # a scope the shipped manifest does not request.
+    message = _message(client, channel, ts)
     return sorted(str(r.get("name")) for r in message.get("reactions") or [])
 
 
@@ -237,7 +238,9 @@ def test_live_post_edit_react_and_delete(client, channel, tmp_path_factory):
       Given the bot token and a dedicated test channel
       When a short message and its long form (a table, a task list, nested lists,
         a code block that splits, defused sequences) are delivered, then edited
-      Then every long-form part is a markdown block, in order, marked (n/m)
+      Then every long-form part reads back as blocks Slack drew from markdown
+        (Slack converts a markdown block to rich_text, header and table blocks),
+        the table as a table block, in order, marked (n/m)
       And no message carries a link preview, after the post or after the edit
       And no broadcast or user mention reaches Slack live
       And the status reaction is added, swapped and removed
@@ -282,6 +285,9 @@ def test_live_post_edit_react_and_delete(client, channel, tmp_path_factory):
         everything = json.dumps([parent, *replies])
         observed["top block types"] = _block_types(parent)
         observed["part block types"] = [_block_types(r) for r in replies]
+        observed["table drawn as a table block"] = any(
+            "table" in types for types in observed["part block types"]
+        )
         observed["parts read back"] = len(replies)
         observed["part order"] = marks
         observed["preview after post"] = [_has_preview(m) for m in [parent, *replies]]
@@ -334,9 +340,12 @@ def test_live_post_edit_react_and_delete(client, channel, tmp_path_factory):
             _delete(client, channel, posted)
 
     assert observed["top block types"][0] == "section"
-    assert all(types == ["markdown"] for types in observed["part block types"]), (
-        observed["part block types"]
-    )
+    # Slack stores a markdown block as the blocks it drew from it: no part is
+    # empty, and the table reached Slack as a real table (R2.2).
+    assert all(types for types in observed["part block types"]), observed[
+        "part block types"
+    ]
+    assert observed["table drawn as a table block"], observed["part block types"]
     assert observed["parts read back"] == total
     assert observed["part order"] == [f"({n}/{total})" for n in range(1, total + 1)]
     assert not any(observed["preview after post"])
