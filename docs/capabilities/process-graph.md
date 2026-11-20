@@ -257,7 +257,8 @@ There are exactly **two** runtime concepts and **one** contract between them.
     the offline `pr-spec-current` hook SHALL gate leaving `pr-spec`, leaving
     `reviewer-briefing`, and leaving the outer `implementation`. It re-derives
     applicability and recomputes the chain digest (front matter stripped) on every
-    evaluation, never trusting the record's own claims. A single-PR work item SHALL pass
+    evaluation, never trusting the record's own claims. A `spec-only` record older than
+    the PR's inner `implementation` run SHALL block. A single-PR work item SHALL pass
     vacuously.
   - Which **model** a work item's sessions run on, and at what **effort**, SHALL be
     declared per work item at `phase-selection` too (issue-358,

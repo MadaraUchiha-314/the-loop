@@ -65,9 +65,11 @@ from a conversation at the stage it reached (issue-517).
   to that PR, in its own branch, derived from the approved chain and citing it item by
   item (`[wi:R2.3]`, `[wi:design#<slug>]`, `[wi:TP-T2]`, `[wi:task-4]`). A PR spec SHALL
   carry no `status` — it is never approved on its own — and SHALL merge with its PR. It is
-  written with `/the-loop:derive-pr-spec` and recorded with `the-loop graph pr-spec`; a
-  changed chain blocks the PR's review until it is re-derived or an authorized person
-  declares it still valid (issue-543, [decision-153](../decisions/decision-153.md)).
+  written with `/the-loop:derive-pr-spec`, committed, and recorded with `the-loop graph
+  pr-spec` before it is pushed; a changed chain blocks the PR's review until it is
+  re-derived or an authorized person comments `pr-spec still-valid` on the PR after the
+  change. A grant (`allow-disclosure <owner>/<repo>`, `pr-spec still-valid`) SHALL count
+  only as a line of its own (issue-543, [decision-153](../decisions/decision-153.md)).
 - Where each artifact is **iterated with humans** SHALL be a durable, reviewable surface —
   never a terminal. For the outer loop the **work item** declares which, at
   `phase-selection`: the work item itself (the default — comments on the ticket, so an
