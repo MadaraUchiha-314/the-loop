@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-543",
-  "currentNode": "self-review",
+  "currentNode": "critic-review",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -117,10 +117,18 @@
     },
     "self-review": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-11-19T21:54:27+00:00",
-      "exitedAt": "",
+      "exitedAt": "2026-11-20T00:32:12+00:00",
       "lastBlock": "`validate-artifacts` did not pass:\n- required artifact is missing (docs/specs/issue-543/evidence/self-review.md)",
+      "forced": false
+    },
+    "critic-review": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-11-20T00:32:12+00:00",
+      "exitedAt": "",
+      "lastBlock": "",
       "forced": false
     }
   },
@@ -363,6 +371,10 @@
     },
     "verification": {
       "at": "2026-11-19T21:54:27+00:00",
+      "by": "cli"
+    },
+    "self-review": {
+      "at": "2026-11-20T00:32:12+00:00",
       "by": "cli"
     }
   },
