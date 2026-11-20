@@ -217,6 +217,7 @@ def _split_line(line: str, room: int) -> List[str]:
     """One line too long for ``room``, cut at spaces (never inside a word when
     a space exists within reach). Linear: each cut looks back at most ``room``."""
     pieces: List[str] = []
+    room = max(room, 1)  # a cut always moves forward
     while len(line) > room:
         cut = line.rfind(" ", 0, room + 1)
         if cut <= 0:
@@ -287,6 +288,11 @@ def _oversized(
     opener = lines[0]
     closer = _fence_of(opener)
     body = lines[1:-1] if closed and len(lines) > 1 else lines[1:]
+    if len(opener) * 2 > room:
+        # an info string too long to repeat on every piece: it goes in the
+        # body as text, so every word is kept and the fence stays short
+        body = [opener.lstrip()[len(closer) :], *body]
+        opener = closer
     overhead = len(opener) + len(closer) + 2
     chunks = _chunk_lines(body, first_room, room, overhead)
     return ["\n".join([opener, *chunk, closer]) if chunk else "" for chunk in chunks]

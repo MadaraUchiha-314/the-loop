@@ -47,6 +47,7 @@ __all__ = [
     "post_message",
     "retry_after",
     "summary_of",
+    "with_retry",
 ]
 
 logger = logging.getLogger("the-loop.channels")
@@ -65,6 +66,16 @@ DEFAULT_RETRY_AFTER_S = 1.0
 
 #: The longest single wait honoured, so a malformed header cannot park the worker.
 MAX_RETRY_AFTER_S = 60.0
+
+#: Slack's answers to ``chat.update`` that mean the message cannot be edited
+#: any more (deleted, not the bot's, past its edit window). Only these make an
+#: edit fall back to a fresh post; any other failure (a 429 after its retries,
+#: a timeout) raises, so the outbox retries the edit instead of duplicating it.
+UPDATE_GONE_ERRORS = (
+    "message_not_found",
+    "cant_update_message",
+    "edit_window_closed",
+)
 
 
 @dataclass(frozen=True)
@@ -132,13 +143,18 @@ def plan_message(
     edit_parts: Sequence[str] = (),
     short_source: str = "",
     tables_as_code: int = 0,
+    parts_text: str = "",
 ) -> MessagePlan:
     """The plan: the short message at ``top_thread``, then each of ``parts`` as a
     ``markdown`` block at ``parts_thread``. Every message's ``text`` fallback is
-    the short form (R2.7). No ``parts_thread`` means no long form is posted."""
+    the short form (R2.7); a part's is ``parts_text`` when given, the short form
+    without its preamble, so a mention reaches only the top message (R7.4). No
+    ``parts_thread`` means no long form is posted."""
     planned = (
         tuple(
-            PlannedMessage(short_text, (markdown_block(part),), parts_thread)
+            PlannedMessage(
+                parts_text or short_text, (markdown_block(part),), parts_thread
+            )
             for part in parts
         )
         if parts_thread
@@ -213,6 +229,15 @@ def _with_retry(
             logger.info("slack: %s rate-limited; retrying in %.1fs", what, wait)
             sleep(wait)
     raise ChannelError(f"slack: {what} failed")  # pragma: no cover — loop returns
+
+
+def with_retry(
+    call: Callable[[], Any], what: str, sleep: Callable[[float], None] = time.sleep
+) -> Mapping[str, Any]:
+    """The 429 retry every Slack call the channel makes outside :func:`deliver`
+    uses: ``call()``, a 429 waits and calls again; any other failure raises
+    :class:`ChannelError`."""
+    return _with_retry(call, what, sleep)
 
 
 def post_message(
@@ -293,7 +318,7 @@ def deliver(
         thread = top if part.thread_ts == THREAD_OF_TOP else part.thread_ts
         ts = ""
         if index < len(reuse):
-            ts = _edit_part(client, plan.channel, reuse[index], part)
+            ts = _edit_part(client, plan.channel, reuse[index], part, sleep)
             calls += 1
         if not ts:
             response = _with_retry(
@@ -326,21 +351,41 @@ def deliver(
     return Delivered(plan.channel, top, tuple(landed), calls, edited)
 
 
-def _edit_part(client: Any, channel: str, ts: str, part: PlannedMessage) -> str:
+def _edit_part(
+    client: Any,
+    channel: str,
+    ts: str,
+    part: PlannedMessage,
+    sleep: Callable[[float], None],
+) -> str:
     """Edit the long-form reply at ``ts`` to hold ``part``; ``""`` when it is gone
     or cannot be edited, so the caller posts it fresh instead (R6.3). An edit
     takes no unfurl flags: the reply was posted with them (design.md stage 4)."""
-    try:
-        _ok(
-            client.chat_update(
-                channel=channel, ts=ts, text=part.text, blocks=list(part.blocks)
-            ),
-            "edit",
-        )
+    if _update(
+        client,
+        lambda: client.chat_update(
+            channel=channel, ts=ts, text=part.text, blocks=list(part.blocks)
+        ),
+        sleep,
+    ):
         return ts
-    except Exception as exc:  # noqa: BLE001 — a stale reply is recoverable
-        logger.debug("slack: chat.update of reply %s failed (%s); posting", ts, exc)
-        return ""
+    logger.debug("slack: reply %s can no longer be edited; posting", ts)
+    return ""
+
+
+def _update(
+    client: Any, call: Callable[[], Any], sleep: Callable[[float], None]
+) -> bool:
+    """``call()`` (a ``chat.update``) with the 429 retry. ``False`` when Slack
+    says the message cannot be edited any more (:data:`UPDATE_GONE_ERRORS`);
+    any other failure raises :class:`ChannelError`, so nothing is posted twice."""
+    try:
+        _with_retry(call, "edit", sleep)
+        return True
+    except ChannelError as exc:
+        if any(error in str(exc) for error in UPDATE_GONE_ERRORS):
+            return False
+        raise
 
 
 def _edit_top(
@@ -349,21 +394,18 @@ def _edit_top(
     """Edit the message at ``plan.edit_ts``; if it is gone or cannot be edited,
     post a fresh one and adopt its ts (issue-393 B5: a lost progress message never
     wedges the phase). Returns ``(ts, edited)``."""
-    try:
-        _ok(
-            client.chat_update(
-                channel=plan.channel,
-                ts=plan.edit_ts,
-                text=plan.top.text,
-                blocks=list(plan.top.blocks),
-            ),
-            "edit",
-        )
+    if _update(
+        client,
+        lambda: client.chat_update(
+            channel=plan.channel,
+            ts=plan.edit_ts,
+            text=plan.top.text,
+            blocks=list(plan.top.blocks),
+        ),
+        sleep,
+    ):
         return plan.edit_ts, True
-    except Exception as exc:  # noqa: BLE001 — a stale ts is recoverable
-        logger.debug(
-            "slack: chat.update at %s failed (%s); posting fresh", plan.edit_ts, exc
-        )
+    logger.debug("slack: %s can no longer be edited; posting fresh", plan.edit_ts)
     response = _with_retry(
         lambda: post_message(
             client,

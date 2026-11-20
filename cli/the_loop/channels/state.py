@@ -1120,7 +1120,9 @@ def _delivery_record(info: Dict[str, Any]) -> Dict[str, Any]:
         "replyThread": _ts_or_empty(info.get("replyThread")),
         # What was posted per event id (issue-549): a replay posts only the
         # missing parts. The newest POSTED_CAP events are kept.
-        "posted": _posted_map(info.get("posted")),
+        "posted": _posted_map(
+            info.get("posted"), live=_str_map(info.get("progressTs")).values()
+        ),
         # The status message and the status reaction the-loop put on it
         # (issue-549 R8): ``{channel, ts, emoji}``, so only a reaction it added
         # itself is ever removed.
@@ -1193,10 +1195,14 @@ def _status_record(value: Any) -> Dict[str, str]:
     return {"channel": channel, "ts": ts, "emoji": emoji}
 
 
-def _posted_map(value: Any) -> Dict[str, Dict[str, Any]]:
+def _posted_map(value: Any, live: Any = ()) -> Dict[str, Dict[str, Any]]:
     """The per-event posted record, coerced and capped to the newest
     :data:`POSTED_CAP` events. A malformed entry is dropped: the worst it costs
-    is a duplicate message on a replay, never a crash."""
+    is a duplicate message on a replay, never a crash.
+
+    ``live`` names the messages still edited in place (the progress messages):
+    the newest record of each is kept past the cap, because a later edit reads
+    it to find the message's replies (R6.2)."""
     if not isinstance(value, dict):
         return {}
     out: Dict[str, Dict[str, Any]] = {}
@@ -1211,8 +1217,17 @@ def _posted_map(value: Any) -> Dict[str, Dict[str, Any]]:
                 p for p in (parts if isinstance(parts, list) else []) if _ts_or_empty(p)
             ],
         }
-    while len(out) > POSTED_CAP:
-        out.pop(next(iter(out)), None)
+    live_tops = {str(ts) for ts in live if ts}
+    newest: Dict[str, str] = {}
+    for event_id, entry in out.items():
+        if entry["top"] in live_tops:
+            newest[entry["top"]] = event_id
+    pinned = set(newest.values())
+    for event_id in list(out):
+        if len(out) <= POSTED_CAP + len(pinned):
+            break
+        if event_id not in pinned:
+            out.pop(event_id)
     return out
 
 

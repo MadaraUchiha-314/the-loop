@@ -65,6 +65,7 @@ from .delivery import (
     plan_message,
     post_message,
     summary_of,
+    with_retry,
 )
 from .render import LongForm, render_long_form
 from .shortform import build_short_form, long_form_adds
@@ -2642,6 +2643,11 @@ class SlackBotChannel:
         mentions = ""
         if wait and wait not in memory["announced"]:
             mentions = mention_line(self._mention_ids())
+            if not mentions and self.config.authorized_users:
+                # nobody resolved (a directory lookup that failed): the wait is
+                # not recorded as announced, so the next message of it mentions
+                # them again, rather than nobody for good
+                wait = ""
         recap = recap_line(
             memory["changes"],
             last_human=memory["lastHuman"],
@@ -2766,6 +2772,7 @@ class SlackBotChannel:
             ),
             short_source=short.source,
             tables_as_code=long_form.tables_as_code,
+            parts_text=(build_short_form(event).fallback if preamble.strip() else ""),
         )
 
     def _parts_under(self, event: Event, channel_id: str, ts: str) -> Tuple[str, ...]:
@@ -3098,12 +3105,17 @@ class SlackBotChannel:
                 }
             )
         error = ""
+        client = self._client()
         try:
-            self._client().chat_update(
-                channel=channel_id,
-                ts=ts,
-                text=f"{short}\n{line}" if short else line,
-                blocks=blocks,
+            with_retry(
+                lambda: client.chat_update(
+                    channel=channel_id,
+                    ts=ts,
+                    text=f"{short}\n{line}" if short else line,
+                    blocks=blocks,
+                ),
+                "close the gate",
+                self._sleep,
             )
         except Exception as exc:  # SlackApiError and transport errors alike
             error = str(exc)

@@ -200,3 +200,54 @@ def test_defuse_unsafe_reference_definition():
     out = defuse("[go][1]\n\n[1]: javascript:alert(1)\n[2]: https://example.com")
     assert "\\[1]: javascript:alert(1)" in out  # defines nothing
     assert "\n[2]: https://example.com" in out  # a safe one is kept
+
+
+# -- self-review round 1: link forms the first pattern did not take ---------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        '[x](javascript:alert(1) "t")',
+        "[a [b] c](javascript:alert(1))",
+        "[x]( javascript:alert(1))",
+        "[x](<javascript:alert(1)> 't')",
+    ],
+)
+def test_abuse_unsafe_link_forms_render_as_text(text):
+    """Abuse case 4: a link with a title, nested brackets or a space before its
+    target is shown as text, like the plain form."""
+    out = defuse(text)
+    assert "](" not in out
+    assert "javascript:alert(1)" in out  # every word kept
+    assert defuse(out) == out
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["[x]:\n  javascript:alert(1)", "> [r]: javascript:alert(1)"],
+)
+def test_abuse_unsafe_reference_definitions_define_nothing(text):
+    """Abuse case 4: a definition inside a quote, or with its target on the next
+    line, is escaped so no reference link can point at it."""
+    out = defuse(text)
+    assert "\\[" in out
+    assert defuse(out) == out
+
+
+def test_a_safe_link_with_a_title_stays_a_link():
+    assert defuse('[docs](https://example.com "title")') == (
+        '[docs](https://example.com "title")'
+    )
+
+
+@pytest.mark.parametrize(
+    "text, live",
+    [("[lbl]([a](!channel))", "<!channel"), ("x [l]([a](@U123ABC)) y", "<@U123")],
+)
+def test_abuse_a_nested_link_never_becomes_a_live_sequence(text, live):
+    """Abuse cases 1, 2: a link nested in a link's target is text after defuse,
+    and the mrkdwn conversion that follows never draws it as ``<target|label>``."""
+    from the_loop.channels.mrkdwn import to_mrkdwn
+
+    assert live not in to_mrkdwn(defuse(text))

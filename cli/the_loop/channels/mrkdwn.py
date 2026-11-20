@@ -100,7 +100,18 @@ def _inline_rules(text: str) -> str:
     text = _BOLD.sub(r"*\1*", text)
     text = _BOLD_UNDERSCORE.sub(r"*\1*", text)
     text = _STRIKE.sub(r"~\1~", text)
-    return _LINK.sub(r"<\2|\1>", text)
+    return _LINK.sub(_link, text)
+
+
+def _link(match: "re.Match[str]") -> str:
+    """A markdown link as Slack's ``<url|label>`` only when its target is an
+    ``http``, ``https`` or ``mailto`` URL. Anything else (``!channel``, ``@U…``,
+    a link nested in a label that defuse left as text) stays text, so this step
+    never makes a control sequence (abuse cases 1, 2, 4)."""
+    label, target = match.group(1), match.group(2)
+    if not re.match(r"(?:https?://|mailto:)", target, re.IGNORECASE):
+        return match.group(0)
+    return f"<{target}|{label}>"
 
 
 def _inline(text: str) -> str:

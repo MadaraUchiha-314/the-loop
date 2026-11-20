@@ -244,3 +244,94 @@ def test_a_message_that_is_gone_gets_a_new_post_and_its_whole_long_form():
     assert not delivered.edited
     new_top = delivered.top
     assert all(p["thread_ts"] == new_top for _, p in client.calls[2:])
+
+
+# -- self-review round 1 (issue-549): an edit Slack rate-limits is retried ------------
+
+
+class FlakyEditClient(EditClient):
+    """``chat.update`` answers with the queued errors first, then succeeds."""
+
+    def __init__(self, update_errors):
+        super().__init__()
+        self.update_errors = list(update_errors)
+
+    def chat_update(self, **params):
+        self.calls.append(("update", params))
+        if self.update_errors:
+            raise self.update_errors.pop(0)
+        return {"ok": True, "ts": params["ts"]}
+
+
+def test_a_rate_limited_edit_of_the_top_is_retried_never_posted_fresh():
+    """A 429 on the progress edit waits and edits again: no second progress
+    message (non-functional: idempotent retries)."""
+    client = FlakyEditClient([_ratelimited("0")])
+    delivered = deliver(client, _edit_plan(["a"], ["1700.2"]), sleep=lambda _s: None)
+    kinds = [kind for kind, _ in client.calls]
+    assert kinds == ["update", "update", "update"]
+    assert delivered.top == "1700.1" and delivered.parts == ("1700.2",)
+
+
+def test_a_rate_limited_edit_of_a_reply_is_retried_in_place():
+    """A 429 on a reply's edit keeps the reply where it is: no copy at the end
+    of the thread, no stale part left behind."""
+    client = FlakyEditClient([])
+    plan = _edit_plan(["a", "b"], ["1700.2", "1700.3"])
+    real = client.chat_update
+    seen = []
+
+    def update(**params):
+        if params["ts"] == "1700.2" and not seen:
+            seen.append(1)
+            client.calls.append(("update", params))
+            raise _ratelimited("0")
+        return real(**params)
+
+    client.chat_update = update
+    delivered = deliver(client, plan, sleep=lambda _s: None)
+    assert "post" not in [kind for kind, _ in client.calls]
+    assert delivered.parts == ("1700.2", "1700.3")
+
+
+def test_an_edit_that_fails_for_another_reason_raises_and_posts_nothing():
+    """Only Slack saying the message cannot be edited falls back to a fresh
+    post; a timeout raises, so the outbox retries the edit."""
+    client = FlakyEditClient([TimeoutError("read timed out")])
+    with pytest.raises(ChannelError):
+        deliver(client, _edit_plan(["a"], ["1700.2"]), sleep=lambda _s: None)
+    assert [kind for kind, _ in client.calls] == ["update"]
+
+
+def test_a_part_carries_the_short_form_without_the_mentions():
+    """R7.4: the mentions open the top message only; a long-form part's text
+    fallback is the short form without the preamble."""
+    plan = plan_message(
+        event_id="ev-3",
+        channel="C1",
+        short_text="<@U1> <@U2>\nShort.",
+        short_blocks=[],
+        parts=["one", "two"],
+        parts_thread=THREAD_OF_TOP,
+        parts_text="Short.",
+    )
+    assert plan.top.text.startswith("<@U1>")
+    assert [part.text for part in plan.parts] == ["Short.", "Short."]
+
+
+def test_the_posted_memory_keeps_a_live_progress_message_s_record():
+    """R6.2 (self-review round 1): past the cap, the newest record of a progress
+    message still edited in place is kept, so an edit after many other events
+    still finds its replies and never re-posts its long form."""
+    from the_loop.channels.state import POSTED_CAP, _posted_map
+
+    records = {
+        "progress-1": {"channel": "C1", "top": "1700.1", "parts": ["1700.2"]},
+        "progress-2": {"channel": "C1", "top": "1700.1", "parts": ["1700.2"]},
+    }
+    for n in range(POSTED_CAP + 5):
+        records[f"other-{n}"] = {"channel": "C1", "top": f"1800.{n + 1}", "parts": []}
+    kept = _posted_map(records, live=["1700.1"])
+    assert "progress-2" in kept and "progress-1" not in kept
+    assert len(kept) == POSTED_CAP + 1
+    assert len(_posted_map(records)) == POSTED_CAP

@@ -12,6 +12,7 @@ Spec: docs/specs/issue-549/{requirements,design}.md (R1.1, R2.1–R2.6, abuse ca
 from __future__ import annotations
 
 import math
+import pytest
 import re
 import time
 
@@ -266,3 +267,23 @@ def test_abuse_adversarial_block_sizes_stay_bounded():
     text = "\n\n".join(_paragraph(n, 5600) for n in range(12))
     form = render_long_form(text)
     assert len(form.parts) <= 2 * math.ceil(len(text) / LONG_FORM_PART_CHARS)
+
+
+# -- self-review round 1: a fence opener longer than a part -----------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["```" + "a" * 11000 + "\nbody\n```", "```" + "a" * 12000 + "\n```"],
+)
+def test_a_code_block_with_an_oversized_info_string_splits_and_keeps_every_word(
+    text,
+):
+    """R1.1, R2.4, abuse case 3: an info string longer than a part ends, within
+    the budget, with every character kept (no hang, nothing dropped)."""
+    started = time.monotonic()
+    long_form = render_long_form(text)
+    assert time.monotonic() - started < 5
+    assert long_form.parts
+    assert all(len(part) <= LONG_FORM_PART_CHARS for part in long_form.parts)
+    assert sum(part.count("a") for part in long_form.parts) >= text.count("a")

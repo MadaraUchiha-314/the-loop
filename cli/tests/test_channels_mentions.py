@@ -452,3 +452,57 @@ def test_abuse_unresolvable_identity_no_mention(tmp_path, monkeypatch):
     assert result.ok
     text = _short_text(client.posted[-1])
     assert "<@" not in text and "👋" not in text
+
+
+def test_a_failed_lookup_mentions_on_the_next_message_of_the_wait(
+    tmp_path, monkeypatch
+):
+    """R7.1, R7.3 (self-review round 1): a directory lookup that fails posts the
+    message with no mention, and does not count the wait as announced, so the
+    next message of the same wait mentions the person."""
+    from the_loop.channels.base import Event
+
+    client, bot = _mention_channel(
+        tmp_path, monkeypatch, authorized=("@dana",), users={"dana": "U0DANA"}
+    )
+    real = bot.directory
+
+    def broken():
+        raise RuntimeError("users.list: ratelimited")
+
+    monkeypatch.setattr(bot, "directory", broken)
+    bot.post(_awaiting())
+    assert "<@" not in _short_text(client.posted[-1])
+
+    monkeypatch.setattr(bot, "directory", real)
+    bot.post(
+        Event(event_type="comment.agent", work_item="github:o/r#7", text="Drafted.")
+    )
+    posted = len(client.posted)
+    bot.post(_awaiting(text="Approve the design? (again)", event_id="e2"))
+    assert len(client.posted) == posted + 1
+    assert _short_text(client.posted[-1]).startswith("👋 <@U0DANA>\n")
+
+
+def test_a_long_form_reply_carries_no_mention(tmp_path, monkeypatch):
+    """R7.4 (self-review round 1): the mention opens the awaiting message only;
+    its long-form replies' text fallback holds none."""
+    from the_loop.channels.render import LONG_FORM_PART_CHARS
+
+    from test_channels import cli_config
+    from the_loop.workchannels import CollaborationChannelStore
+
+    client, bot = _mention_channel(tmp_path, monkeypatch)
+    CollaborationChannelStore(
+        Path(cli_config(tmp_path)["state"]["root"]) / "portable"
+    ).add("github:o/r#7", "slack@C0ROOM7", actor="octocat", source="cli")
+    body = "\n\n".join(["Paragraph " + "x" * 400] * (LONG_FORM_PART_CHARS // 300))
+    bot.post(_awaiting(text=body))
+
+    def is_part(post):
+        return any(b.get("type") == "markdown" for b in post["blocks"] or [])
+
+    parts = [p for p in client.posted if is_part(p)]
+    assert parts, "the long form is posted as replies"
+    assert all("<@" not in p["text"] for p in parts)
+    assert any("<@UHUMAN>" in p["text"] for p in client.posted if not is_part(p))

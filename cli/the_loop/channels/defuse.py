@@ -52,9 +52,15 @@ MARKDOWN_LINK_RE = re.compile(
 )
 
 #: A reference definition, ``[1]: target``, which makes ``[label][1]`` a link.
+#: Inside block quotes too (``> [1]: …``), and with the target on the next line.
 _DEFINITION_RE = re.compile(
-    r"^( {0,3})\[([^\]\n]+)\]:[ \t]*<?([^\s<>]+)>?", re.MULTILINE
+    r"^((?:[ \t]*>)*[ \t]{0,3})\[([^\]\n]+)\]:[ \t]*(?:\n[ \t]*)?<?([^\s<>]+)>?",
+    re.MULTILINE,
 )
+
+#: Any ``](`` that still opens a link the pattern above did not take whole (a
+#: title, nested brackets, a space before the target): the target that follows.
+_LINK_OPENING_RE = re.compile(r"\]\([ \t]*<?([^\s()<>]*)")
 
 #: The link schemes that stay links. Any other scheme, and a link with none,
 #: is shown as text.
@@ -103,7 +109,14 @@ def keep_safe_links(text: str) -> str:
         # `\[` makes the line text: no reference link can point at it
         return match.group(1) + "\\" + match.group(0)[len(match.group(1)) :]
 
+    def opening(match: "re.Match[str]") -> str:
+        if _is_safe(match.group(1)):
+            return match.group(0)
+        # `] (` opens no link: the label and target stay as text (fail closed)
+        return "] (" + match.group(0)[2:]
+
     text = MARKDOWN_LINK_RE.sub(link, text)
+    text = _LINK_OPENING_RE.sub(opening, text)
     text = _DEFINITION_RE.sub(definition, text)
     return _AUTOLINK.sub(r"\1", text)
 
