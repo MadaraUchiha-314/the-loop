@@ -142,10 +142,16 @@ issue-551: UNMET (at implementation)
 | `working (turn running since 14:02)` | A turn is running. |
 | `idle at <node> since 14:10 (4 min)` | The turn ended with work still to do. |
 | `STALLED at <node> since 14:10 (25 min, 2 nudges)` | Idle past [`routing.watchdog.idleSeconds`](/config/cli/routing-options#watchdog-idleseconds). |
-| `asked 14:10; waiting for an answer` | An open [`ask`](/cli/commands/ask). With a deadline: `asked 14:10; default “…” at 14:40`. |
+| `asked 14:10; waiting for an answer` | The session waits on an open [`ask`](/cli/commands/ask). With a deadline: `asked 14:10; default “…” at 14:40`. |
+| `…; asked 14:10, default “…” at 14:40` | Appended to any other line while an open ask has a default that will be taken. A session that asked with `--after` carries on working, so this is how its default is seen. |
 | `waiting for “CI on PR 12” until 14:40` | A declared [`wait`](/cli/commands/wait). |
 | `waiting: <what>` | A human gate, background work, or a wait the graph reports. |
 | `not watched` | The session has no turn record, because its harness hooks are not installed. |
+
+With several asks open, the line shows the one whose default is due first and ends with
+`+N more`. A default and a question are the session's own words: each is printed as one
+line, with line breaks and control characters turned into spaces, and cut to 80
+characters.
 
 Times are in this machine's zone, with the date when it is another day's. With
 `--format json` the report carries the same as `session`: `state` (`working`, `waiting`,

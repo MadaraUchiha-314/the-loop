@@ -1295,7 +1295,8 @@ flowchart TD
   4. The pointer's node reports `pass` or `skip`: **allow**, reason `exit-met`.
   5. The pointer's node reports `wait`: **allow**, reason `graph-wait`.
   6. The pointer's node reports `block`: **allow** WHEN the work item has an open ask
-     (`open-ask`), a declared wait made in this turn that has not lapsed
+     that carries an ask id (`open-ask`; an ask recorded by an older version, with no
+     id, excuses no stop), a declared wait made in this turn that has not lapsed
      (`declared-wait`), or background work the harness's payload lists as still running
      (`background-work`). Otherwise **refuse**, reason `work-owed`.
 - Background work SHALL be read from the harness's payload, never from the session's
@@ -1328,7 +1329,12 @@ flowchart TD
   per-session credential.
 - For a pull request's own session the service SHALL read the outer loop under the id
   that the pull request's ref names, in that session's checkout. It does not read the
-  pull request's inner loop.
+  pull request's inner loop. That id has no outer loop there, so the pointer cannot be
+  resolved and the stop is allowed as `inconclusive` (rule 1), with no node on record.
+  **Known limit:** the inner loop's node is not judged, and the watcher sends such a
+  session neither a nudge nor a notice.
+- A manager-role service SHALL serve `stop-check`, `turn-start`, `wait` and `ask` as a
+  worker does: for its own sessions itself, and for a member's by forwarding the call.
 - CI's `check --recompute`, which reads no pointer, stays the backstop.
 
 ## Design

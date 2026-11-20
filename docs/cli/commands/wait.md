@@ -27,7 +27,7 @@ the wait again. One wait cannot excuse every later stop until it ends.
 | Flag | Default | Meaning |
 |------|---------|---------|
 | `--work-item` | required | The session's own work item: `github:…` or `jira:<site>/<KEY>-<n>`. |
-| `--for` | required | What the session waits for, in a few words. At most 200 characters. Shown on the status surfaces. |
+| `--for` | required | What the session waits for, in a few words. At most 200 characters. Recorded as one line of printable characters and shown on the status surfaces only; it is posted to no channel. |
 | `--until` | required | How long the wait lasts: a whole number and one unit, as in `45s`, `30m` or `2h`. |
 
 ## What it refuses
@@ -47,4 +47,6 @@ Each refusal exits non-zero, says why, and records nothing.
 
 - It runs through the control-plane service when one answers, as
   [`ask`](/cli/commands/ask) does. A session the daemon spawned never runs it in-process.
+  A manager-role service serves it too, and forwards it to the member that manages the
+  work item.
 - To wait on a person, use [`ask`](/cli/commands/ask). A declared wait pages nobody.

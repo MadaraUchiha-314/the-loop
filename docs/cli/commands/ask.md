@@ -27,7 +27,8 @@ One verb, three effects — in this order:
    ticket (the daemon forwards it, and records `session.ask_answered` when the author
    is authorized) or straight into the session's pane via
    `POST /api/v1/sessions/reply`, which emits `session.reply_sent`. Either record
-   closes the wait.
+   closes every open ask of the work item. An authorized comment on the work item or on
+   any of its pull requests counts, wherever the question was asked.
 
 If the post fails, the exit code is 1 and the failure is printed — but the wait is
 **still recorded** (`comment_posted: false`, level `warning`): the agent is
@@ -49,7 +50,8 @@ the-loop ask --work-item github:OWNER/REPO#N --question "Rename the flag to --un
   the same time, and tells the session to carry on with work that does not depend on
   the answer.
 - **An authorized answer before the deadline wins.** It is delivered as usual and the
-  default is not taken. A reply from someone who is not authorized changes nothing.
+  default is not taken. It closes every open ask of the work item, not only the latest.
+  A reply from someone who is not authorized changes nothing.
 - **At the deadline** the daemon tells the session to proceed with its default, posts
   "default taken" where the question was asked, and closes the ask
   (`session.ask_default_taken`). This is not an approval: no human gate accepts a
@@ -60,6 +62,16 @@ the-loop ask --work-item github:OWNER/REPO#N --question "Rename the flag to --un
   [`routing.asks.minDefaultWaitSeconds`](/config/cli/routing-options#asks-mindefaultwaitseconds)
   (default 30 minutes). A shorter `--after` is raised to it, and both the output and
   the question say so.
+
+- **One default per step.** After a default was taken with nobody answering, another ask
+  with `--after` is refused until the work item moves to its next step or an authorized
+  person answers. Ask again without `--after` and wait for a person.
+- **A question that reached nobody has no default.** If the comment could not be posted
+  and no channel took the question, the ask is recorded without a deadline and the
+  output says the default will not be taken.
+
+A session can have several asks open at once. Each keeps its own deadline, and
+[`check`](/cli/commands/check) shows the one due first.
 
 A question asked without `--after` waits for a person, however long that takes. It gets
 **one reminder** where it was asked, after

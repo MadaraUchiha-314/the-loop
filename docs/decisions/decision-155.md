@@ -76,6 +76,17 @@ gateway client had none.
 - **A session without the hooks is not watched.** It has no turn record, the watcher
   leaves it alone, and every status surface says `not watched`.
 - **A restart loses nothing and repeats nothing**, because nothing is held in memory.
+- **No event log, no watcher.** The record of an act is the only memory of it. With the
+  event log off or unwritable the watcher does nothing, and says so once in the service
+  log, because an act it could not record would be repeated on every tick.
+- **A pull request's own session is watched for its asks only.** The Stop check reads
+  the outer loop, cannot place such a session on a node, and records its stops as
+  `inconclusive`. A stop the-loop cannot place owes no nudge and no notice. Judging the
+  inner loop's node is left for a separate work item.
+- **A person's word closes every open ask.** An authorized comment on the work item or
+  on one of its pull requests cancels every default open there, whichever question it
+  was written under. One default may be taken per step: a second ask with a deadline at
+  the same step is refused, so a session cannot go on without a person indefinitely.
 - **The status surfaces cannot disagree with the watcher**, because they share the
   derivation.
 - **The binding check is not authentication.** The service authenticates no caller

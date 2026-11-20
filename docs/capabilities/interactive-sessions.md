@@ -388,15 +388,23 @@ stateDiagram-v2
 - **Working**: the last turn record is a start.
 - **Waiting**: the last turn ended for a reason that is still in effect.
   - `human-gate`, `complete` and `graph-wait` have no time limit.
-  - `open-ask` lasts until the ask is closed: by a reply, by an authorized person's
-    delivered event, or by its default being taken. The status surfaces show this
-    state as `asked`.
+  - `open-ask` lasts until every open ask is closed. A session can have several asks
+    open at once. A reply, or an authorized person's delivered comment or review,
+    closes all of them. A default being taken closes the one ask it names. The status
+    surfaces show this state as `asked`.
   - `declared-wait` lasts until the wait's stated end.
   - `background-work` lasts `routing.watchdog.maxWaitSeconds` from the turn's end.
 - **Idle**: the turn ended and no reason is in effect. Idle starts at the moment the
   reason lapsed, not at the turn's end. A turn that ended with `exit-met`,
   `inconclusive` or `gate-gave-up` is idle from its end.
-- **Stalled**: idle for `routing.watchdog.idleSeconds` or longer.
+- **Stalled**: idle for `routing.watchdog.idleSeconds` or longer. One case never
+  becomes a stall: a turn that ended `inconclusive` with no node on record. The Stop
+  gate could not tell where the work item stands, so nothing says work is owed. The
+  session stays idle, and the surfaces say that the-loop cannot tell where it stands.
+- WHEN the pointer moves after the last turn record, and no turn has started since,
+  THEN the state SHALL follow the pointer. The session is idle at the new node from
+  the moment of the move (reason `pointer-moved`), or waiting when the new node is a
+  person's.
 - **Not watched**: the session has no turn record. Its harness hooks are not
   installed, so the watcher leaves it alone and every surface says `not watched`.
 
@@ -405,7 +413,14 @@ stateDiagram-v2
 - The watcher SHALL run as one thread of the control-plane service, on a fixed
   30-second tick, whichever ingress is on (webhook receiver, poller or gateway). It
   SHALL look at every live session in the registry, and at each pull request's own
-  session beside it.
+  session beside it. A manager-role service runs it for its own sessions, as a worker
+  does.
+- The watcher SHALL read the config again on every tick. A change to `routing.watchdog`
+  or `routing.asks` in the file takes effect on the next tick, with no restart.
+- The watcher remembers an act only through its record in the event log. WHEN the event
+  log is off, or the service writes to a file other than the one the watcher reads,
+  THEN the cycle SHALL do nothing, and one warning in the service log SHALL say so.
+  WHEN the record of one act cannot be written THEN that act SHALL NOT happen.
 - WHEN a session is stalled THEN the watcher SHALL paste a nudge into it and record
   `session.nudged`. It SHALL nudge again each idle threshold after its last nudge, up
   to `routing.watchdog.maxNudges` nudges.
@@ -435,9 +450,12 @@ stateDiagram-v2
 - WHEN the stalled session's node cannot be resolved, or its tmux session is gone, THEN
   the watcher SHALL send the notice without a nudge.
 - A pull request's own session SHALL be judged on its own turn records. The watcher
-  SHALL send it no nudge, because the node facts it reads are the outer loop's. WHEN
-  that session stalls THEN the watcher SHALL send the notice at the idle threshold. The
-  end of a stall and the ask deadlines apply to it as to any session.
+  SHALL send it no nudge, because the node facts it reads are the outer loop's. The
+  Stop gate cannot place such a session on a node, so its turns end `inconclusive`
+  with no node, and a stop the-loop cannot place owes no notice either. The ask
+  deadlines and the end of a stall apply to it as to any session. **Known limit:** the
+  node of a pull request's inner loop is not judged, so a pull request's own session
+  that goes idle with inner-loop work owed is not nudged and no person is told.
 - IF `routing.watchdog.enabled` is `false` THEN the watcher SHALL send no nudge and no
   notice. The Stop gate, the turn records, the end of a stall and the ask deadlines
   below SHALL still work.
@@ -451,14 +469,36 @@ stateDiagram-v2
   gate reads the record, so a default never answers a human gate.
 - The ask SHALL close exactly once. WHEN the session cannot be told (it is paused, or the
   paste fails) THEN the record SHALL still be written, with `delivered: false`.
-- WHEN an authorized person's event is delivered to a session with an open ask THEN
-  the dispatcher SHALL record `session.ask_answered`, which closes the ask and cancels
-  its default. A comment the dispatcher refuses writes nothing, so an unauthorized
-  reply never stops a default. An answer that arrives after the default was taken is
-  delivered as any comment is.
+- A session MAY have several asks open at once. Each has its own id, its own deadline
+  and its own reminder. A default being taken SHALL close the one ask it names.
+- WHEN an authorized person's comment or review is delivered THEN the dispatcher SHALL
+  record `session.ask_answered` for the work item and for each of its pull requests
+  that the delivery belongs to and that has an open ask: the session's own work item,
+  the conversation that received the event, and the issue or pull request the person
+  wrote on. The record SHALL close **every** open ask of that ref and cancel their
+  defaults. So an ask made with `--work-item` naming a pull request is closed by an
+  answer on that pull request, and by one on its work item when both are in the same
+  delivery. A person spoke, and a default taken over their words is the worse mistake.
+- A comment the dispatcher refuses writes nothing, so an unauthorized reply never
+  stops a default. An answer that arrives after the default was taken is delivered as
+  any comment is.
 - WHEN an ask with no deadline has been open for `routing.asks.reminderSeconds` THEN
   the watcher SHALL record `session.ask_reminded` and publish it, once per ask.
 - A default without a readable deadline SHALL never be taken.
+- WHEN the question reached nobody (the comment was not posted and no channel took it)
+  THEN the ask SHALL be recorded without a deadline, its default SHALL never be taken,
+  and the command's output SHALL say so.
+- **One default per step.** WHEN a default was taken for a work item and neither the
+  pointer has moved nor an authorized person's comment, review or reply has reached the
+  session since THEN `the-loop ask` SHALL refuse another ask that carries `--after`,
+  and SHALL tell the session to ask without `--after` and wait for a person. An ask
+  without `--after` SHALL always be accepted. Without this a session could go on with
+  no person for as long as it kept asking.
+- An ask recorded without an `ask_id` (asked by a version before this one) SHALL stay
+  visible as an open question. It SHALL excuse no stop, its default SHALL never be
+  taken and it SHALL get no reminder.
+- `the-loop ask` SHALL refuse a `--default` longer than 600 characters and an `--after`
+  longer than 7 days.
 
 #### The declared wait
 

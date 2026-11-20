@@ -133,6 +133,11 @@ self-learning/ML capabilities.
   `--after` without `--default` SHALL exit 2 and post nothing. A wait under
   `routing.asks.minDefaultWaitSeconds` SHALL be raised to it, and the output and the
   question SHALL say so. A duration is a whole number and one unit: `45s`, `30m`, `2h`.
+  A `--default` over 600 characters and an `--after` over 7 days SHALL exit 2 and post
+  nothing. So SHALL an ask with `--after` at a step where a default was already taken
+  with nobody answering: the output says to ask without `--after` and wait for a
+  person. WHEN the question reached nobody THEN no default SHALL be taken, and the
+  output SHALL say so.
   What happens at the deadline, and the one reminder for an ask with no deadline, are
   the watcher's rules:
   [interactive-sessions](interactive-sessions.md#session-states-and-the-watcher-issue-551).
@@ -149,7 +154,11 @@ self-learning/ML capabilities.
   [process-graph](process-graph.md#the-stop-gate-issue-429-issue-551).
 - `the-loop check <work item>` SHALL print one `session:` line WHEN a live session on
   this machine works the item (issue-551): `working`, `idle`, `STALLED`, `asked`,
-  `waiting` or `not watched`, with the node, the time and the detail. The JSON report
+  `waiting` or `not watched`, with the node, the time and the detail. WHEN an open ask
+  has a default that will be taken THEN the line SHALL end with it in every state, as
+  in `working (turn running since 12:03); asked 12:01, default “Move it.” at 12:31`,
+  with `+N more` when other asks are open. A question, a default and a wait's condition
+  SHALL be printed as one line of printable characters, cut to fit. The JSON report
   SHALL carry the same as a `session` object with `state`, `node`, `since`, `detail` and
   `summary`. `the-loop sessions list` SHALL show the same state in a **State** column,
   and carry the object per session in its JSON.

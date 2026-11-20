@@ -1065,13 +1065,19 @@ rules for when each fires are in [interactive-sessions](interactive-sessions.md)
   question SHALL say so.
 - **The default answer is session-written text and SHALL be drawn as inert words.**
   It is capped at 600 characters when asked. On Slack it is flattened to one line of at
-  most 200 characters, its links are drawn as words, and it is defused. On the ledger
-  it is flattened to one line, its markdown punctuation is escaped and its `@` mentions
-  are broken so that they notify nobody.
+  most 200 characters, its links are drawn as words, and it is defused. Slack's mrkdwn
+  has no escape character, so `*`, `_`, `~` and the backtick are drawn as look-alike
+  characters that style nothing. On the ledger it is flattened to one line, its
+  markdown punctuation is escaped and its `@` mentions are broken so that they notify
+  nobody. On both, a bare address is broken with a zero-width space inside `://` and
+  after `www`, so neither GitHub nor Slack links it.
+- WHEN a stall ends THEN the Slack status reaction SHALL return to ⚙️ whenever a notice
+  had been posted, also when the notice cannot be edited. The notice is forgotten only
+  after it was edited, so a replay of the event can still edit it.
 - Every comment the ledger writes for these events SHALL carry the agent-comment
   marker, so no gate reads it as an answer.
 - A declared wait's condition SHALL NOT be published on a channel. It is capped at 200
-  characters and shown on the status surfaces only.
+  characters, flattened to one printable line and shown on the status surfaces only.
 
 ### Jira
 

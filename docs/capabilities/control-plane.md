@@ -273,12 +273,16 @@ package — there are no install extras (owner decision, PR #162).
   a reply never spawns, respawns or resumes anything — a paused record or
   endpoint is 400, and the claimed `actor` is recorded for audit, never trusted
   as auth.
-- `GET /attention` SHALL report the wait as kind `awaiting-input`: open until the
-  ask is closed by a `session.reply_sent`, by a `session.ask_answered` (an authorized
-  person's event delivered to the session) or by a `session.ask_default_taken`
-  (issue-551). The dashboard's `awaitingInput` model applies the same rule, so the two
-  surfaces cannot disagree. WHEN the ask has a deadline THEN the row SHALL also carry
-  `default` and `defaultAt`. A work
+- `GET /attention` SHALL report the wait as kind `awaiting-input`. A work item can have
+  several asks open. A `session.reply_sent` or a `session.ask_answered` (an authorized
+  person's comment or review, delivered) closes all of them, and a
+  `session.ask_default_taken` closes the one it names (issue-551). The dashboard's
+  `awaitingInput` model applies the same rule, so the two surfaces cannot disagree. A
+  work item gets **one** row: the ask whose default is due first, else the most recent,
+  with `(+N more)` when others are open. WHEN that ask has a deadline THEN the row SHALL
+  also carry `default` and `defaultAt`. The question and the default are a session's
+  own words, so the row shows each as one line of printable characters, the question
+  cut to 80. A work
   item whose portable record carries an `ended` section (issue-329) SHALL report
   neither `awaiting-input` nor `armed-without-session`: nobody is waiting for the
   answer. The dashboard applies the same rule to the same record.
@@ -287,7 +291,13 @@ package — there are no install extras (owner decision, PR #162).
   node, the idle time and the nudges sent, and carries the time the idle period began
   as `at`. It appears at the idle threshold, which is before the stall notice goes out.
   `declared-wait` is informational: the condition and the time the wait ends. Neither
-  row is stored. Each leaves the list when the state does, with no person's action.
+  row is stored. Each leaves the list when the state does, with no person's action. A
+  pull request's own session counts as live once it has a terminal of its own.
+- `POST /sessions/ask`, `/sessions/wait`, `/sessions/stop-check` and
+  `/sessions/turn-start` SHALL be served by a manager as by a worker (issue-551): the
+  manager resolves the instance that manages the ref, runs the operation itself for its
+  own, and forwards it to the member otherwise. The ask body's `default` is at most 600
+  characters, and a `defaultAfterSeconds` over 604800 (7 days) is refused with 400.
 - The check report (`POST /graph/check`, the `check_work_item` MCP tool) SHALL carry a
   `session` object WHEN a live session on this machine works the item (issue-551):
   `state` (`working`, `waiting`, `asked`, `idle`, `stalled` or `not-watched`), `node`,

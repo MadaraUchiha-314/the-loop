@@ -160,7 +160,9 @@ Shows each session's status — `paused` included — and its last control comma
 | `not watched` | The session has no turn record, because its harness hooks are not installed. The watcher leaves it alone. |
 
 JSON output carries the same as a `session` object per row (`state`, `node`, `since`,
-`detail`, `summary`). When
+`detail`, `summary`). While an open ask has a default that will be taken, `detail` and
+`summary` end with it in every state, as [`check`](/cli/commands/check#the-session-line)
+prints it; the table's **State** column stays the one word. When
 any running session holds a credential from
 [`env.sessionCredentials`](/config/cli/#env-sessioncredentials), a **Credentials** column
 lists it as `NAME@fingerprint`, never the value
