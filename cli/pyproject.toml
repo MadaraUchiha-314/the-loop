@@ -89,4 +89,5 @@ pythonpath = ["."]
 testpaths = ["tests"]
 markers = [
     "routed: exercises the CLI→service transport path against a live service (issue-161)",
+    "live_slack: posts to a real Slack workspace; skipped unless THE_LOOP_LIVE_SLACK=1 (issue-549 T4)",
 ]

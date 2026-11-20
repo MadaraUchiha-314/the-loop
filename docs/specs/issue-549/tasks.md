@@ -223,7 +223,7 @@ Tests are named so the T8 `-k` filter in `testing-plan.md` finds the abuse cases
   - _Depends on:_ 4, 9, 12, 14, 15
   - _Requirements:_ R1.5, R9.4
   - _Test:_ T12 — markdownlint in `uv run pre-commit run --all-files`
-- [ ] 19. The live Slack test and the full suite.
+- [x] 19. The live Slack test and the full suite.
   - Add `tests/test_slack_live.py` with the `live_slack` marker (skipped unless
     `THE_LOOP_LIVE_SLACK=1`): post, read back, edit, read back, react, delete.
   - Run the whole suite and pre-commit.
