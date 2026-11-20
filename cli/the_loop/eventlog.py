@@ -139,6 +139,7 @@ _EVENT_NAMES: Tuple[str, ...] = (
     "channel.dropped",
     "channel.caught_up",
     "channel.heartbeat",
+    "channels.short_form_missing",
     "channel.split_suspected",
     "channel.split_cleared",
     "channel.command_received",
