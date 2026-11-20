@@ -77,17 +77,14 @@ class AskCommand(Command):
         )
 
     def run(self, args: argparse.Namespace) -> int:
-        after = None
-        if args.after:
-            # Refused here, before anything is read or sent (issue-551 R6.6). The
-            # operator's minimum is the service's to apply: it holds the config.
-            try:
-                after = parse_duration(args.after)
-                if not args.default_answer.strip():
-                    raise ValueError(strings.t("core.sessions.ask.after-needs-default"))
-            except ValueError as exc:
-                print(strings.t("cli.ask.run.error", exc=exc), file=sys.stderr)
-                return 2
+        # Refused here, before anything is read or sent. The operator's minimum
+        # is the service's to apply: it holds the config.
+        try:
+            after = parse_duration(args.after) if args.after else None
+            core_sessions.check_default(args.default_answer, after)
+        except ValueError as exc:
+            print(strings.t("cli.ask.run.error", exc=exc), file=sys.stderr)
+            return 2
         eventlog.configure_from_file("ask")
         if args.question_file:
             try:

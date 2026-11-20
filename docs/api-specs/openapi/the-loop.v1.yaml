@@ -2782,7 +2782,8 @@ components:
           type: string
           title: Default
           description: The affirmative answer to take if the human does not object
-            (issue-393 R12.1); offered as a one-tap reply.
+            (issue-393 R12.1); offered as a one-tap reply. At most 600 characters.
+          maxLength: 600
           default: ''
         defaultAfterSeconds:
           anyOf:
@@ -2793,7 +2794,7 @@ components:
           description: How long to wait for an answer before `default` is taken
             (issue-551). It needs `default`. A value under the operator's minimum
             (`routing.asks.minDefaultWaitSeconds`) is raised to it, and the answer
-            says so. null/omitted means the default is never taken by itself.
+            says so. A value over 604800 (7 days) is refused with 400. null/omitted means the default is never taken by itself.
         actor:
           type: string
           title: Actor

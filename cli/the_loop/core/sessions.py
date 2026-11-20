@@ -762,6 +762,49 @@ def close_session(
 #: it is capped (issue-551, design § Security design).
 MAX_DEFAULT_LENGTH = 600
 
+#: The longest wait before a default is taken: 7 days. A longer one is a typing
+#: mistake more often than a plan, and a wait without bound has no time a clock
+#: can hold.
+MAX_DEFAULT_WAIT_SECONDS = 7 * 24 * 3600
+
+
+def check_default(default_answer: str, after_seconds: Optional[int]) -> str:
+    """The default answer, trimmed, once it and its wait are acceptable.
+
+    ``ValueError`` — with the sentence the session is shown — for a default over
+    :data:`MAX_DEFAULT_LENGTH`, a wait that is not a whole number of seconds
+    from 1 to :data:`MAX_DEFAULT_WAIT_SECONDS`, and a wait with no default to
+    take. The command runs this before it sends anything, and :func:`ask_session`
+    runs it again: the service is not obliged to trust its caller.
+    """
+    default_answer = (default_answer or "").strip()
+    if len(default_answer) > MAX_DEFAULT_LENGTH:
+        raise ValueError(
+            strings.t(
+                "core.sessions.ask.default-too-long",
+                length=len(default_answer),
+                limit=MAX_DEFAULT_LENGTH,
+            )
+        )
+    if after_seconds is None:
+        return default_answer
+    if (
+        isinstance(after_seconds, bool)
+        or not isinstance(after_seconds, int)
+        or after_seconds < 1
+    ):
+        raise ValueError(strings.t("core.sessions.ask.wait-not-positive"))
+    if after_seconds > MAX_DEFAULT_WAIT_SECONDS:
+        raise ValueError(
+            strings.t(
+                "core.sessions.ask.wait-too-long",
+                limit=durations.in_words(MAX_DEFAULT_WAIT_SECONDS),
+            )
+        )
+    if not default_answer:
+        raise ValueError(strings.t("core.sessions.ask.after-needs-default"))
+    return default_answer
+
 
 def ask_session(
     ref: str,
@@ -797,26 +840,10 @@ def ask_session(
     work_item = WorkItemRef.parse(ref)  # ValueError on a malformed ref
     if not question or not question.strip():
         raise ValueError("the question is empty; nothing to ask")
-    default_answer = (default_answer or "").strip()
-    if len(default_answer) > MAX_DEFAULT_LENGTH:
-        raise ValueError(
-            strings.t(
-                "core.sessions.ask.default-too-long",
-                length=len(default_answer),
-                limit=MAX_DEFAULT_LENGTH,
-            )
-        )
+    default_answer = check_default(default_answer, default_after_seconds)
     requested = default_after_seconds
     wait: Optional[int] = None
     if requested is not None:
-        if (
-            isinstance(requested, bool)
-            or not isinstance(requested, int)
-            or requested < 1
-        ):
-            raise ValueError(strings.t("core.sessions.ask.wait-not-positive"))
-        if not default_answer:
-            raise ValueError(strings.t("core.sessions.ask.after-needs-default"))
         minimum = AsksConfig.from_mapping(
             _routing(config).get("asks") or {}
         ).min_default_wait_seconds

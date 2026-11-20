@@ -73,8 +73,8 @@ A question asked without `--after` waits for a person, however long that takes. 
 | `--work-item` | required | The ref the question goes to: `github:…`, or `jira:<site>/<KEY>-<n>`, where the Jira ledger records it on the ticket with the visible self-marker. |
 | `--question` | — | The question text (markdown). |
 | `--question-file` | — | Read the question from a file; `-` reads stdin. Exactly one of the two. |
-| `--default` | — | The answer to take if nobody objects. A channel that takes button presses offers it as a one-tap reply. |
-| `--after` | — | How long to wait before the `--default` answer is taken: `45s`, `30m` or `2h`. It needs `--default`. A wait under `routing.asks.minDefaultWaitSeconds` is raised to it, and the output says so. The question states the default and the time; an authorized answer before that time cancels it. |
+| `--default` | — | The answer to take if nobody objects, in at most 600 characters. A channel that takes button presses offers it as a one-tap reply. |
+| `--after` | — | How long to wait before the `--default` answer is taken: `45s`, `30m` or `2h`. It needs `--default`. A wait under `routing.asks.minDefaultWaitSeconds` is raised to it, and the output says so. A wait over 7 days (`168h`) is refused. The question states the default and the time; an authorized answer before that time cancels it. |
 
 ## Notes
 
@@ -85,6 +85,8 @@ A question asked without `--after` waits for a person, however long that takes. 
   working in a cloud session that has no daemon. A session the daemon spawned holds no
   credential, so there it exits 2 without a service.
 - An empty question or malformed ref exits 2 and posts/records nothing. So does
-  `--after` without `--default`, and an `--after` that is not a duration.
+  `--after` without `--default`, an `--after` that is not a duration or is longer than
+  7 days, and a `--default` longer than 600 characters. The default is posted on the
+  thread and pasted back into the session, so it has to be a sentence or two.
 - The stamp is idempotent: a question that already carries the marker is not
   double-stamped.

@@ -47,6 +47,7 @@ from pydantic import BaseModel, Field
 from .. import eventlog, sessioncreds
 from ..cli_config import ConfigHolder
 from ..core.github_ops import DEFAULT_LOG_LINES
+from ..core.sessions import MAX_DEFAULT_LENGTH
 from ..workitem import WorkItemRef
 from ..yamlpatch import SpliceError
 from . import stream as api_stream
@@ -179,9 +180,11 @@ class SessionAskBody(BaseModel):
     ref: str
     question: str
     summary: str = ""
-    default: str = ""
-    # How long before `default` is taken (issue-551 R6). Raised to the operator's
-    # `routing.asks.minDefaultWaitSeconds` when it is under it.
+    # Posted on the thread and pasted back into the session, so it is short.
+    default: str = Field(default="", max_length=MAX_DEFAULT_LENGTH)
+    # How long before `default` is taken. Raised to the operator's
+    # `routing.asks.minDefaultWaitSeconds` when it is under it, and refused over
+    # 7 days.
     defaultAfterSeconds: Optional[int] = Field(default=None, ge=1)
     # Recorded on the event for the audit trail; never trusted as authentication
     # (decision-059: the gateway owns auth).

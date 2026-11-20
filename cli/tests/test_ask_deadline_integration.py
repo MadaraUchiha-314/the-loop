@@ -762,3 +762,60 @@ def test_a_question_that_reached_nobody_has_no_default_to_take(
     state = _state_after(log_path, late)
     assert state.open_ask is not None
     assert "take-default" not in [due.act for due in state.due]
+
+
+def test_a_wait_longer_than_seven_days_is_refused(config, posted, log_path, capsys):
+    """
+    Feature: A question can carry a default and a deadline
+    Scenario: the requested wait is longer than the-loop accepts
+      When a session asks with a wait of more than 7 days, or of a size no clock holds
+      Then the ask is refused with a message naming the limit
+      And nothing is posted or recorded
+      And a wait of exactly 7 days is accepted
+
+    Requirement: docs/specs/issue-551/requirements.md#R6.6
+    """
+    week = 7 * 24 * 3600
+    for seconds in (week + 1, 10**30):
+        with pytest.raises(ValueError) as refused:
+            _ask(config, default_after_seconds=seconds)
+        assert "7 days" in str(refused.value)
+
+    code = main(
+        ["ask", "--work-item", REF, "--question", "A or B?"]
+        + ["--default", "A", "--after", "9" * 30 + "h"]
+    )
+    assert code == 2
+    assert "7 days" in capsys.readouterr().err
+    assert not posted
+    assert not _records(log_path, "session.awaiting_input")
+
+    assert _ask(config, default_after_seconds=week)["defaultAfterSeconds"] == week
+
+
+def test_an_over_long_default_is_refused_before_it_is_sent(
+    config, posted, log_path, capsys
+):
+    """
+    Feature: A question can carry a default and a deadline
+    Scenario: the command is given a default answer longer than 600 characters
+      Then it fails with the length and the limit, and nothing is posted or recorded
+      And the service's body model refuses the same text
+
+    Requirement: docs/specs/issue-551/design.md § Security design
+    """
+    code = main(
+        ["ask", "--work-item", REF, "--question", "A or B?", "--default", "x" * 601]
+    )
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "601" in err and "600" in err
+    assert not posted and not _records(log_path, "session.awaiting_input")
+
+    from pydantic import ValidationError
+
+    from the_loop.api.routes import SessionAskBody
+
+    SessionAskBody(ref=REF, question="A or B?", default="x" * 600)
+    with pytest.raises(ValidationError):
+        SessionAskBody(ref=REF, question="A or B?", default="x" * 601)
