@@ -279,7 +279,7 @@ class TestFeedbackText:
         monkeypatch.chdir(tmp_path)
         monkeypatch.setenv("THE_LOOP_WORK_ITEM", "issue-1")
         monkeypatch.setattr(gate, "ask_service", lambda *a, **k: None)
-        monkeypatch.setattr(gate, "run_check", lambda _: report(ok=False))
+        monkeypatch.setattr(gate, "run_check", lambda *_: report(ok=False))
         gate.main(["gate", "codex"])
         out = capsys.readouterr().out
         assert json.loads(out) == {"decision": "block", "reason": "missing X"}
@@ -358,7 +358,7 @@ class TestMain:
         for key, value in (env or {}).items():
             monkeypatch.setenv(key, value)
         monkeypatch.setattr(gate, "ask_service", lambda *a, **k: None)
-        monkeypatch.setattr(gate, "run_check", lambda _: data)
+        monkeypatch.setattr(gate, "run_check", lambda *_: data)
         return gate.main(["gate", "claude"])
 
     def test_no_work_item_is_a_no_op(self, gate, monkeypatch):
@@ -427,7 +427,7 @@ class TestMain:
         monkeypatch.chdir(tmp_path)
         monkeypatch.setenv("THE_LOOP_WORK_ITEM", "issue-1")
         monkeypatch.setattr(gate, "ask_service", lambda *a, **k: None)
-        monkeypatch.setattr(gate, "run_check", lambda _: report(ok=False))
+        monkeypatch.setattr(gate, "run_check", lambda *_: report(ok=False))
         assert gate.main(["gate", "cursor"]) == 0
         assert "followup_message" in capsys.readouterr().out
 
@@ -490,6 +490,9 @@ class FakeCli:
         if argv[1] == "check":
             return subprocess.CompletedProcess(argv, 0, json.dumps(self.check), "")
         answer = ALLOWED if "--gave-up" in argv else self.stop_check
+        if isinstance(answer, list):
+            # One answer per call, in order; the last one repeats.
+            answer = answer.pop(0) if len(answer) > 1 else answer[0]
         if isinstance(answer, BaseException):
             raise answer
         if isinstance(answer, subprocess.CompletedProcess):
@@ -657,6 +660,65 @@ class TestTheGateAsksTheService:
         graph = [("requirements-approval", "wait"), ("design", "pass")]
         cli = FakeCli(failed(2), check=walked("design", graph))
         assert run(cli) == 0
+
+    SATISFIED = [("requirements-approval", "wait"), ("design", "pass")]
+
+    def test_a_fallback_that_allows_asks_the_service_once_more(
+        self, gate, run, tmp_path, capsys
+    ):
+        """Requirement: R4.5, R4.6 — the service was down for a moment. Nothing
+        recorded this turn's end, and the session would read as working for
+        ever. One more try: when it answers, it records the end."""
+        self.counter(gate, tmp_path).write_text("1")
+        cli = FakeCli([failed(2), ALLOWED], check=walked("design", self.SATISFIED))
+        assert run(cli, payload='{"background_tasks": []}') == 0
+        assert cli.verbs() == ["sessions", "check", "sessions"]
+        stop_checks = [(a, k) for a, k in cli.calls if a[1] == "sessions"]
+        assert len(stop_checks) == 2
+        assert all("--gave-up" not in argv for argv, _ in stop_checks)
+        assert stop_checks[1][1]["input"] == '{"background_tasks": []}'
+        assert 0 < stop_checks[1][1]["timeout"] <= 5
+        assert not self.counter(gate, tmp_path).exists()
+        assert capsys.readouterr().err == ""
+
+    def test_the_second_answer_is_the_verdict_when_it_refuses(self, run, capsys):
+        """The fallback knows of no ask and no wait; the service does."""
+        cli = FakeCli([failed(2), REFUSAL], check=walked("design", self.SATISFIED))
+        assert run(cli) == 2
+        assert capsys.readouterr().err == REFUSAL["text"] + "\n(attempt 1/3)\n"
+
+    def test_a_service_still_down_lets_the_fallbacks_allow_stand(self, run):
+        cli = FakeCli(failed(2), check=walked("design", self.SATISFIED))
+        assert run(cli) == 0
+        assert cli.verbs() == ["sessions", "check", "sessions"]
+        cli = FakeCli(failed(2), check=None)
+        assert run(cli, harness="codex") == 0
+
+    def test_a_fallback_that_blocks_does_not_ask_again(self, run):
+        cli = FakeCli([failed(2), ALLOWED], check=walked("design", PAST_A_GATE))
+        assert run(cli) == 2
+        assert cli.verbs() == ["sessions", "check"]
+
+    def test_the_hook_stays_inside_the_harness_minute(self, gate, run, monkeypatch):
+        """Every call times out, and the clock runs as if each used its whole
+        timeout: the timeouts handed out sum to no more than the budget."""
+        clock = [1000.0]
+        monkeypatch.setattr(gate.time, "monotonic", lambda: clock[0])
+        given = []
+
+        def slow(argv, **kwargs):
+            given.append(kwargs["timeout"])
+            clock[0] += kwargs["timeout"]
+            if argv[1] == "check":
+                return subprocess.CompletedProcess(
+                    argv, 0, json.dumps(walked("design", self.SATISFIED)), ""
+                )
+            raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
+
+        cli = FakeCli(ALLOWED)
+        cli.run = slow
+        assert run(cli) == 0
+        assert len(given) == 3 and sum(given) <= gate.HOOK_BUDGET_SECONDS <= 55
 
     def test_the_fallback_gives_up_without_recording_anything(self, run, capsys):
         """It knows nothing of the service, so it reports nothing to it."""

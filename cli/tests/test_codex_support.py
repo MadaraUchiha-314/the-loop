@@ -295,7 +295,7 @@ def test_codex_stop_hook_returns_valid_json_and_continues_only_for_gate_debt(
     gate = load_gate()
     monkeypatch.setenv("THE_LOOP_WORK_ITEM", REF)
     monkeypatch.setattr(gate, "ask_service", lambda *a, **k: None)
-    monkeypatch.setattr(gate, "run_check", lambda _: report(not blocked))
+    monkeypatch.setattr(gate, "run_check", lambda *_: report(not blocked))
     monkeypatch.setattr(gate, "attempts_path", lambda *args: tmp_path / "attempts")
     assert gate.main(["gate", "codex"]) == 0
     result = json.loads(capsys.readouterr().out)
@@ -717,7 +717,7 @@ def test_codex_stop_attempt_cap_still_returns_valid_json(tmp_path, monkeypatch, 
     monkeypatch.setenv("THE_LOOP_WORK_ITEM", REF)
     monkeypatch.setenv("THE_LOOP_GATE_MAX_ATTEMPTS", "1")
     monkeypatch.setattr(gate, "ask_service", lambda *a, **k: None)
-    monkeypatch.setattr(gate, "run_check", lambda _: report(False))
+    monkeypatch.setattr(gate, "run_check", lambda *_: report(False))
     monkeypatch.setattr(gate, "attempts_path", lambda *args: tmp_path / "attempts")
     assert gate.main(["gate", "codex"]) == 0
     assert json.loads(capsys.readouterr().out)["decision"] == "block"

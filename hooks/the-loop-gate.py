@@ -39,6 +39,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 DEFAULT_MAX_ATTEMPTS = 3
@@ -48,6 +49,19 @@ CHECK_TIMEOUT_SECONDS = 30
 #: inside the 60 seconds a harness gives this hook.
 STOP_CHECK_TIMEOUT_SECONDS = 20
 GAVE_UP_TIMEOUT_SECONDS = 10
+#: The second try at the service, after the fallback allowed a stop.
+RETRY_TIMEOUT_SECONDS = 5
+#: All the time this hook may spend in the CLI, whatever path it takes. Every
+#: call's timeout is cut to what is left of it, and a call with under a second
+#: left is not made.
+HOOK_BUDGET_SECONDS = 55
+
+
+def time_left(deadline: float | None, cap: float) -> float:
+    """``cap``, or what is left until ``deadline`` when that is less."""
+    if deadline is None:
+        return cap
+    return max(0.0, min(cap, deadline - time.monotonic()))
 
 
 def attempts_path(work_item: str, repo: str) -> Path:
@@ -89,7 +103,9 @@ def read_payload() -> str:
         return ""
 
 
-def ask_service(work_item: str, payload: str) -> dict | None:
+def ask_service(
+    work_item: str, payload: str, timeout: float = STOP_CHECK_TIMEOUT_SECONDS
+) -> dict | None:
     """The service's verdict on this stop, or ``None`` when there is none to use.
 
     ``None`` sends the caller to :func:`run_check` (issue-551, version skew). It
@@ -101,13 +117,15 @@ def ask_service(work_item: str, payload: str) -> dict | None:
     # A value shaped like a flag would be read as one, not as the work item.
     if work_item.startswith("-") or not shutil.which("the-loop"):
         return None
+    if timeout < 1:
+        return None
     try:
         proc = subprocess.run(
             ["the-loop", "sessions", "stop-check", "--work-item", work_item],
             input=payload,
             capture_output=True,
             text=True,
-            timeout=STOP_CHECK_TIMEOUT_SECONDS,
+            timeout=timeout,
         )
         if proc.returncode != 0:
             return None
@@ -119,12 +137,14 @@ def ask_service(work_item: str, payload: str) -> dict | None:
     return answer
 
 
-def report_give_up(work_item: str) -> None:
+def report_give_up(work_item: str, timeout: float = GAVE_UP_TIMEOUT_SECONDS) -> None:
     """Tell the service the cap let this stop through (issue-551, R3.6).
 
     It records the turn's end as ``gate-gave-up``, which the idle watcher then
     covers. Best effort: the stop is already allowed, so a failure changes nothing.
     """
+    if timeout < 1:
+        return
     try:
         subprocess.run(
             [
@@ -137,13 +157,13 @@ def report_give_up(work_item: str) -> None:
             ],
             stdin=subprocess.DEVNULL,
             capture_output=True,
-            timeout=GAVE_UP_TIMEOUT_SECONDS,
+            timeout=timeout,
         )
     except (OSError, subprocess.SubprocessError):
         pass
 
 
-def run_check(work_item: str) -> dict | None:
+def run_check(work_item: str, timeout: float = CHECK_TIMEOUT_SECONDS) -> dict | None:
     """Ask the CLI where the work item stands. ``None`` means "cannot tell".
 
     The fallback for a CLI or a service that cannot answer ``stop-check``
@@ -156,14 +176,14 @@ def run_check(work_item: str) -> dict | None:
     that position, so a pointer moved forward past a broken node still finds it
     (issue-429). Every verdict is evaluated from the artifacts.
     """
-    if not shutil.which("the-loop"):
+    if not shutil.which("the-loop") or timeout < 1:
         return None
     try:
         proc = subprocess.run(
             ["the-loop", "check", work_item, "--format", "json", "--recompute"],
             capture_output=True,
             text=True,
-            timeout=CHECK_TIMEOUT_SECONDS,
+            timeout=timeout,
         )
     except (OSError, subprocess.SubprocessError):
         return None
@@ -308,6 +328,7 @@ def emit(harness: str, text: str) -> int:
 
 def main(argv: list[str]) -> int:
     harness = argv[1] if len(argv) > 1 else "claude"
+    deadline = time.monotonic() + HOOK_BUDGET_SECONDS
     work_item = os.environ.get("THE_LOOP_WORK_ITEM", "").strip()
     if not work_item:
         if harness == "codex":
@@ -320,17 +341,29 @@ def main(argv: list[str]) -> int:
         maximum = DEFAULT_MAX_ATTEMPTS
     maximum = max(1, maximum)
 
-    answer = ask_service(work_item, read_payload())
+    payload = read_payload()
+    answer = ask_service(
+        work_item, payload, time_left(deadline, STOP_CHECK_TIMEOUT_SECONDS)
+    )
+    node = None
+    if answer is None:
+        # Version skew, or no service: judge `the-loop check` here.
+        report = run_check(work_item, time_left(deadline, CHECK_TIMEOUT_SECONDS))
+        node = blocking_node(report) if report is not None else None
+        if node is None:
+            # The fallback records nothing, and a turn's end that is never
+            # recorded leaves the session looking as if it still worked. The
+            # service may have been away for a moment only, so it is asked
+            # once more. Its verdict then stands, and an allow records the end.
+            answer = ask_service(
+                work_item, payload, time_left(deadline, RETRY_TIMEOUT_SECONDS)
+            )
+            if answer is None and report is None:
+                if harness == "codex":
+                    print("{}")
+                return 0
     if answer is not None:
         node = answer if answer["verdict"] == "refuse" else None
-    else:
-        # Version skew, or no service (issue-551): judge `the-loop check` here.
-        report = run_check(work_item)
-        if report is None:
-            if harness == "codex":
-                print("{}")
-            return 0
-        node = blocking_node(report)
 
     counter = attempts_path(work_item, os.getcwd())
     if node is None:
@@ -358,7 +391,7 @@ def main(argv: list[str]) -> int:
         if message:
             print(message, file=sys.stderr)
         if answer is not None:
-            report_give_up(work_item)
+            report_give_up(work_item, time_left(deadline, GAVE_UP_TIMEOUT_SECONDS))
         return 0
 
     if answer is not None:
