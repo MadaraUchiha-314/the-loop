@@ -1176,6 +1176,137 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/sessions/stop-check:
+    post:
+      summary: Stop Check Session
+      operationId: stopCheckSession
+      description: |-
+        Decide whether a session's turn may end (issue-551). Served for the
+        harness's Stop hook, through `the-loop sessions stop-check`. The service
+        decides, because the verdict needs the event log (open asks, declared
+        waits) and the hook must stay a clock.
+
+        The answer carries `verdict` (`allow` | `refuse`) and `reason`.
+
+        On `allow`, `reason` is one of `human-gate`, `complete`, `exit-met`,
+        `graph-wait`, `open-ask`, `declared-wait`, `background-work`,
+        `inconclusive` and `gate-gave-up`, and `session.turn_ended` is recorded
+        with it. A work item or a pointer that cannot be resolved is answered
+        `allow` with `inconclusive`. `gaveUp` records a stop the hook allowed
+        after its own attempts ran out: the answer is `allow` with `gate-gave-up`.
+
+        On `refuse`, the answer also carries `node` (the agent-owned node that
+        owes work), `messages` (a list of strings, the unmet checks) and `command`
+        (the command that resumes the node; empty when the node names none) and
+        `text` (the refusal as the harness hands it back to the session). `reason`
+        is `work-owed`. Nothing is recorded.
+
+        `backgroundWork` is what the harness's own Stop payload reports, never the
+        session's word.
+
+        400 on a malformed ref. 404 when no live session is registered for the
+        work item: a work item the calling session is not bound to is refused,
+        and nothing is read or recorded.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionStopCheckBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Stopchecksession
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/sessions/turn-start:
+    post:
+      summary: Turn Start Session
+      operationId: turnStartSession
+      description: |-
+        Record that a session's turn started (issue-551): `session.turn_started`
+        is emitted with the work item and the node its pointer is on. Served for
+        the harness's turn-start hook, through `the-loop sessions turn-start`.
+
+        While this is a session's last turn record the session is `working`, and
+        the watcher sends it nothing. A turn's start is also the only thing that
+        ends a stall. The answer carries `node`, empty when the pointer cannot be
+        read.
+
+        400 on a malformed ref. 404 when no live session is registered for the
+        work item: a work item the calling session is not bound to is refused,
+        and nothing is recorded.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionTurnStartBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Turnstartsession
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/sessions/wait:
+    post:
+      summary: Wait Session
+      operationId: waitSession
+      description: |-
+        Record a declared wait (issue-551): the session states what it waits for
+        and for how long, and `session.wait_declared` is emitted. Served for
+        `the-loop wait`, so that a session the daemon spawned can declare a wait
+        through the service.
+
+        A wait covers one stop, the one that ends the turn it was made in. When it
+        ends, the session is idle from that moment.
+
+        The answer carries `until`: the time the wait ends, ISO-8601 in UTC.
+
+        400 on a malformed ref, on an empty `condition`, on `seconds` over the
+        operator's wait limit (`routing.watchdog.maxWaitSeconds`), and when the
+        work item's pointer is on a human-owned node. 404 when no live session is
+        registered for the work item: a work item the calling session is not
+        bound to is refused. Nothing is recorded on a refusal.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionWaitBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Waitsession
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/standing-sessions:
     get:
       summary: List Standing Sessions
@@ -2692,6 +2823,75 @@ components:
       - ref
       - text
       title: SessionReplyBody
+    SessionStopCheckBody:
+      properties:
+        instance:
+          type: string
+          title: Instance
+          default: ''
+          description: Which instance this operation is for (issue-374); empty means this one.
+        ref:
+          type: string
+          title: Ref
+        backgroundWork:
+          type: boolean
+          title: Backgroundwork
+          description: Whether the harness's Stop payload lists background work
+            that is still running. A harness that gives no such list sends false.
+          default: false
+        gaveUp:
+          type: boolean
+          title: Gaveup
+          description: The hook allowed this stop after its own attempts ran out;
+            the stop is recorded with the reason `gate-gave-up`.
+          default: false
+      type: object
+      required:
+      - ref
+      title: SessionStopCheckBody
+    SessionTurnStartBody:
+      properties:
+        instance:
+          type: string
+          title: Instance
+          default: ''
+          description: Which instance this operation is for (issue-374); empty means this one.
+        ref:
+          type: string
+          title: Ref
+      type: object
+      required:
+      - ref
+      title: SessionTurnStartBody
+    SessionWaitBody:
+      properties:
+        instance:
+          type: string
+          title: Instance
+          default: ''
+          description: Which instance this operation is for (issue-374); empty means this one.
+        ref:
+          type: string
+          title: Ref
+        condition:
+          type: string
+          maxLength: 200
+          title: Condition
+          description: What the session waits for, in its own words. Shown on the
+            status surfaces, after the channel's defusing of mentions, links and
+            markup.
+        seconds:
+          type: integer
+          minimum: 1
+          title: Seconds
+          description: How long the wait lasts. Refused over the operator's wait
+            limit (`routing.watchdog.maxWaitSeconds`).
+      type: object
+      required:
+      - ref
+      - condition
+      - seconds
+      title: SessionWaitBody
     WorkItemCommentBody:
       properties:
         ref:

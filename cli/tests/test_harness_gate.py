@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -418,3 +420,133 @@ def test_the_gate_never_trusts_stored_graph_state(gate, monkeypatch):
     monkeypatch.setattr(gate.subprocess, "run", fake_run)
     gate.run_check("issue-1")
     assert "--recompute" in seen["cmd"]
+
+
+# -- issue-551: the turn-start hook ------------------------------------------------
+
+HOOKS_DIR = GATE.parent
+TURN_START = HOOKS_DIR / "the-loop-turn-start.py"
+REF = "github:octo/repo#7"
+
+
+@pytest.fixture
+def turn_start():
+    spec = importlib.util.spec_from_file_location("the_loop_turn_start", TURN_START)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.fixture
+def cli_calls(turn_start, monkeypatch):
+    """A `the-loop` that is on PATH and records how it was run."""
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append((argv, kwargs))
+
+    monkeypatch.setattr(turn_start.shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(turn_start.subprocess, "run", run)
+    return calls
+
+
+def _run_hook_process(tmp_path, harness, work_item=REF):
+    """The script as a harness runs it, with no `the-loop` anywhere on PATH."""
+    empty = tmp_path / "empty-bin"
+    empty.mkdir()
+    env = {"PATH": str(empty)}
+    if work_item:
+        env["THE_LOOP_WORK_ITEM"] = work_item
+    return subprocess.run(
+        [sys.executable, str(TURN_START), harness],
+        env=env,
+        input='{"hook_event_name": "UserPromptSubmit", "prompt": "go on"}',
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+
+def test_the_turn_start_hook_is_stdlib_only():
+    source = TURN_START.read_text(encoding="utf-8")
+    assert "import the_loop" not in source
+    assert "from the_loop" not in source
+
+
+@pytest.mark.parametrize("harness", ["claude", "codex"])
+def test_turn_start_without_cli_is_a_silent_no_op(tmp_path, harness):
+    """No CLI on PATH: exit 0 and not one byte, or the harness would read it as
+    context for the prompt."""
+    proc = _run_hook_process(tmp_path, harness)
+    assert (proc.returncode, proc.stdout, proc.stderr) == (0, "", "")
+
+
+def test_turn_start_without_cli_still_lets_cursor_submit(tmp_path):
+    proc = _run_hook_process(tmp_path, "cursor")
+    assert proc.returncode == 0 and proc.stderr == ""
+    assert json.loads(proc.stdout) == {"continue": True}
+
+
+def test_turn_start_without_a_work_item_runs_nothing(
+    turn_start, cli_calls, monkeypatch, capsys
+):
+    monkeypatch.delenv("THE_LOOP_WORK_ITEM", raising=False)
+    assert turn_start.main(["hook", "claude"]) == 0
+    assert cli_calls == [] and capsys.readouterr().out == ""
+
+
+def test_turn_start_runs_the_verb_for_the_sessions_work_item(
+    turn_start, cli_calls, monkeypatch, capsys
+):
+    monkeypatch.setenv("THE_LOOP_WORK_ITEM", REF)
+    assert turn_start.main(["hook", "claude"]) == 0
+    ((argv, kwargs),) = cli_calls
+    assert argv == ["the-loop", "sessions", "turn-start", "--work-item", REF]
+    assert 0 < kwargs["timeout"] <= 10
+    captured = capsys.readouterr()
+    assert (captured.out, captured.err) == ("", "")
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [OSError("gone"), subprocess.TimeoutExpired("the-loop", 10), RuntimeError("x")],
+)
+def test_turn_start_survives_a_failing_cli(turn_start, monkeypatch, capsys, failure):
+    def fail(argv, **kwargs):
+        raise failure
+
+    monkeypatch.setenv("THE_LOOP_WORK_ITEM", REF)
+    monkeypatch.setattr(turn_start.shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(turn_start.subprocess, "run", fail)
+    assert turn_start.main(["hook", "codex"]) == 0
+    captured = capsys.readouterr()
+    assert (captured.out, captured.err) == ("", "")
+
+
+def test_turn_start_never_passes_a_flag_as_the_work_item(
+    turn_start, cli_calls, monkeypatch
+):
+    monkeypatch.setenv("THE_LOOP_WORK_ITEM", "--registry-dir=/tmp/x")
+    assert turn_start.main(["hook", "claude"]) == 0
+    assert cli_calls == []
+
+
+@pytest.mark.parametrize(
+    "manifest, event, harness",
+    [
+        ("hooks/hooks.json", "UserPromptSubmit", "claude"),
+        ("hooks/codex-hooks.json", "UserPromptSubmit", "codex"),
+        (".cursor/hooks.json", "beforeSubmitPrompt", "cursor"),
+    ],
+)
+def test_every_harness_manifest_declares_the_turn_start_hook(manifest, event, harness):
+    """A hook nothing wires up is a file, not a record of a turn."""
+    entries = json.loads((HOOKS_DIR.parent / manifest).read_text())["hooks"][event]
+    commands = [
+        hook["command"] for entry in entries for hook in (entry.get("hooks") or [entry])
+    ]
+    assert any(
+        command.endswith(f'the-loop-turn-start.py" {harness}') for command in commands
+    )
+    assert TURN_START.exists()

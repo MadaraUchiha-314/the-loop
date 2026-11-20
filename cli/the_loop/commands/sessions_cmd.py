@@ -42,10 +42,13 @@ docs/specs/issue-161/design.md §2.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import getpass
+import io
 import json
 import logging
 import os
+import select
 import sys
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -54,11 +57,11 @@ from .base import Command, register
 from ..poller.daemon import _build_dispatcher
 from ..webhook.daemon import _state_layout
 from .. import cli_config, eventlog, strings
-from ..client.routing import routed, service_error
+from ..client.routing import harness_routed, routed, service_error
 from ..control import CLEANUP, PAUSE, RESUME, START, STOP, ControlStore
 from ..core import sessions as core_sessions
 from ..reset import WORKSPACE, reset_work_item, work_items_with_state
-from ..runner import TmuxRunner
+from ..runner import WORK_ITEM_ENV_VAR, TmuxRunner
 from ..sessions import Session, SessionRegistry, WorkItemRef
 from ..state import legacy_layout
 from ..webhook.dispatcher import RoutingConfig
@@ -95,6 +98,67 @@ def _control_store(args: argparse.Namespace) -> ControlStore:
 def _cli_config() -> dict:
     """The operator's CLI config, as core's surfaces expect to receive it."""
     return cli_config.load_cli_config(cli_config.default_cli_config_path())
+
+
+def _foreign_work_item(ref: str) -> str:
+    """Why ``ref`` is refused here, or ``""`` when it is this session's own.
+
+    The daemon names a session's work item in its environment
+    (``THE_LOOP_WORK_ITEM``). The hook verbs and `the-loop wait` act on that one
+    only (issue-551, design § Security design), so another ref is refused
+    before anything is sent. A session with no such variable is checked by the
+    service alone, against the session registry.
+    """
+    own = os.environ.get(WORK_ITEM_ENV_VAR, "").strip()
+    if not own:
+        return ""
+    try:
+        if WorkItemRef.parse(own).ref == WorkItemRef.parse(ref).ref:
+            return ""
+    except ValueError:
+        if own == ref.strip():
+            return ""
+    return strings.t("cli.sessions.foreign-work-item", ref=ref, own=own)
+
+
+#: A background task in one of these states is over. Anything else a harness
+#: lists is still running.
+_FINISHED_TASK_STATES = frozenset(
+    {"completed", "failed", "killed", "cancelled", "canceled", "stopped", "done"}
+)
+
+
+def _background_work(stream: Any) -> bool:
+    """Whether the harness's Stop payload on ``stream`` lists running background
+    work (issue-551, R3.2.4).
+
+    Claude Code's payload carries ``background_tasks``, a list of objects with a
+    ``status``. Everything else means "no": a terminal, an empty or unreadable
+    stream, a payload of another shape, a task with no status. Never waits on a
+    stream that has nothing to read.
+    """
+    try:
+        if stream is None or stream.isatty():
+            return False
+        try:
+            # A pipe nobody writes to would block `read()` for the whole turn.
+            if not select.select([stream], [], [], 1.0)[0]:
+                return False
+        except (OSError, ValueError, TypeError):
+            pass  # not a selectable stream (a test's buffer, Windows): read it
+        payload = json.loads(stream.read() or "null")
+    except (OSError, ValueError):
+        return False
+    tasks = payload.get("background_tasks") if isinstance(payload, dict) else None
+    if not isinstance(tasks, list):
+        return False
+    return any(
+        isinstance(task, dict)
+        and isinstance(task.get("status"), str)
+        and task["status"].strip().lower() not in _FINISHED_TASK_STATES
+        and bool(task["status"].strip())
+        for task in tasks
+    )
 
 
 def _render(result: Dict[str, Any]) -> int:
@@ -325,6 +389,31 @@ class SessionsCommand(Command):
         link.add_argument("--portable-dir", default=portable_dir)
         link.set_defaults(_action=self._link_pr)
 
+        stop_check = actions.add_parser(
+            "stop-check", help=strings.t("cli.sessions.stop-check.help")
+        )
+        stop_check.add_argument(
+            "--work-item",
+            required=True,
+            help=strings.t("cli.sessions.work-item.help"),
+        )
+        stop_check.add_argument(
+            "--gave-up",
+            action="store_true",
+            help=strings.t("cli.sessions.stop-check.gave-up.help"),
+        )
+        stop_check.set_defaults(_action=self._stop_check)
+
+        turn_start = actions.add_parser(
+            "turn-start", help=strings.t("cli.sessions.turn-start.help")
+        )
+        turn_start.add_argument(
+            "--work-item",
+            required=True,
+            help=strings.t("cli.sessions.work-item.help"),
+        )
+        turn_start.set_defaults(_action=self._turn_start)
+
         lst = actions.add_parser("list", help=strings.t("cli.sessions.list.help"))
         lst.add_argument("--status", choices=["active", "paused", "closed"])
         lst.add_argument("--format", choices=["table", "json"], default="table")
@@ -547,6 +636,70 @@ class SessionsCommand(Command):
         except Exception as exc:  # noqa: BLE001 — mapped, or re-raised below
             return self._report(exc)
         return _render(result)
+
+    def _stop_check(self, args: argparse.Namespace) -> int:
+        """Ask whether this session's turn may end (issue-551, R3).
+
+        For the harness's Stop hook, which pipes its own payload in. One fact is
+        read from it and forwarded: whether the harness lists background work
+        still running. The answer is printed as JSON; `allow` and `refuse` both
+        exit 0, and only a check that could not be made exits non-zero.
+        """
+        from ..core import stopcheck
+
+        foreign = _foreign_work_item(args.work_item)
+        if foreign:
+            print(foreign, file=sys.stderr)
+            return 2
+        background = _background_work(sys.stdin)
+        try:
+            result = harness_routed(
+                lambda connection: connection.post(
+                    "/sessions/stop-check",
+                    {
+                        "ref": args.work_item,
+                        "backgroundWork": background,
+                        "gaveUp": bool(args.gave_up),
+                    },
+                ),
+                lambda: stopcheck.stop_check(
+                    args.work_item,
+                    config=_cli_config(),
+                    background_work=background,
+                    gave_up=args.gave_up,
+                ),
+            )
+        except LookupError as exc:
+            print(strings.t("cli.sessions.error", error=exc), file=sys.stderr)
+            return 1
+        except Exception as exc:  # noqa: BLE001 — mapped, or re-raised below
+            return self._report(exc)
+        print(json.dumps(result))
+        return 0
+
+    def _turn_start(self, args: argparse.Namespace) -> int:
+        """Record that this session's turn started (issue-551, R4.5).
+
+        For the harness's turn-start hook, so it runs before every turn of every
+        session. It must never break or delay one: every failure is swallowed,
+        nothing is printed, and the exit code is always 0.
+        """
+        from ..core import stopcheck
+
+        if _foreign_work_item(args.work_item):
+            return 0
+        try:
+            # Its only output would be the routing notes on stderr.
+            with contextlib.redirect_stderr(io.StringIO()):
+                harness_routed(
+                    lambda connection: connection.post(
+                        "/sessions/turn-start", {"ref": args.work_item}
+                    ),
+                    lambda: stopcheck.turn_start(args.work_item, config=_cli_config()),
+                )
+        except Exception:  # noqa: BLE001 — a hook's bookkeeping never fails a turn
+            logger.debug("turn start not recorded", exc_info=True)
+        return 0
 
     def _list(self, args: argparse.Namespace) -> int:
         try:

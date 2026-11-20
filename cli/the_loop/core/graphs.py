@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from ..graph.bootstrap import build_runtime
 from ..graph import runtime as graph_runtime
@@ -250,6 +250,45 @@ def check(
     if stamp is None:
         return report
     return archive.archived_report(work_item, named.strip(), stamp, report["statePath"])
+
+
+def _node_facts(node: Any) -> Dict[str, Any]:
+    return {"actor": node.actor, "command": node.command, "terminal": node.terminal}
+
+
+def stop_report(
+    repo: str, work_item: str, spec_dir: str = ""
+) -> Tuple[Dict[str, Any], Dict[str, Dict[str, Any]]]:
+    """What the stop check judges (issue-551): the recomputed report of the outer
+    loop, and every node's ``actor``, ``command`` and ``terminal`` by node id.
+
+    The report is the one ``the-loop check --recompute`` gives. The node facts
+    come from the graph definition, never from work-item state, which the
+    session being judged can write. Raises ``ValueError`` for a ``repo`` that is
+    not a directory.
+    """
+    work_item = work_item_id(work_item)
+    runtime = _runtime(repo, work_item=work_item, spec_dir=spec_dir)
+    report = runtime.status(work_item, recompute=True).as_dict()
+    return report, {node.id: _node_facts(node) for node in runtime.graph.ordered()}
+
+
+def pointer(repo: str, work_item: str, spec_dir: str = "") -> Dict[str, Any]:
+    """The node work-item state places the outer loop at (issue-551): ``node``
+    and that node's ``actor``, ``command`` and ``terminal``. ``{}`` when the
+    work item was never entered or the pointer names no node of its graph.
+
+    A position, never a verdict: no exit chain runs.
+    """
+    from ..graph.state import WorkItemState
+
+    work_item = work_item_id(work_item)
+    runtime = _runtime(repo, work_item=work_item, spec_dir=spec_dir)
+    state_dir = runtime.state_dir(runtime.work_item(work_item))
+    node = runtime.graph.nodes.get(
+        WorkItemState.load(state_dir, work_item).current_node
+    )
+    return {"node": node.id, **_node_facts(node)} if node is not None else {}
 
 
 def complete(

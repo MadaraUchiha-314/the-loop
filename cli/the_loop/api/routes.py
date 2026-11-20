@@ -42,7 +42,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Header, Query, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.routing import APIRoute
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .. import eventlog, sessioncreds
 from ..cli_config import ConfigHolder
@@ -194,6 +194,32 @@ class SessionReplyBody(BaseModel):
     # as authentication (decision-059: the gateway owns auth).
     actor: str = ""
     comment: bool = True
+    # Which instance this is for (issue-374 R2.6): empty means this one.
+    instance: str = ""
+
+
+class SessionWaitBody(BaseModel):
+    ref: str
+    # What the session waits for, in its own words (issue-551 R4.7).
+    condition: str = Field(max_length=200)
+    # Refused over the operator's `routing.watchdog.maxWaitSeconds`.
+    seconds: int = Field(ge=1)
+    # Which instance this is for (issue-374 R2.6): empty means this one.
+    instance: str = ""
+
+
+class SessionStopCheckBody(BaseModel):
+    ref: str
+    # What the harness's own Stop payload reports, never the session's word.
+    backgroundWork: bool = False
+    # The hook allowed this stop after its own attempts ran out (issue-551 R3.6).
+    gaveUp: bool = False
+    # Which instance this is for (issue-374 R2.6): empty means this one.
+    instance: str = ""
+
+
+class SessionTurnStartBody(BaseModel):
+    ref: str
     # Which instance this is for (issue-374 R2.6): empty means this one.
     instance: str = ""
 
@@ -779,6 +805,37 @@ def build_router(
             actor=body.actor,
             instance=body.instance,
         )
+
+    @router.post(
+        f"{API_PREFIX}/sessions/wait",
+        operation_id="waitSession",
+    )
+    def wait_session(body: SessionWaitBody) -> Dict[str, Any]:
+        body = scrubbed(body, "condition")
+        return facade.wait_session(
+            body.ref, body.condition, body.seconds, instance=body.instance
+        )
+
+    @router.post(
+        f"{API_PREFIX}/sessions/stop-check",
+        operation_id="stopCheckSession",
+    )
+    def stop_check_session(body: SessionStopCheckBody) -> Dict[str, Any]:
+        # Served for the Stop hook (issue-551): the verdict needs the event log's
+        # asks and waits, which a session the daemon spawned does not hold.
+        return facade.stop_check_session(
+            body.ref,
+            background_work=body.backgroundWork,
+            gave_up=body.gaveUp,
+            instance=body.instance,
+        )
+
+    @router.post(
+        f"{API_PREFIX}/sessions/turn-start",
+        operation_id="turnStartSession",
+    )
+    def turn_start_session(body: SessionTurnStartBody) -> Dict[str, Any]:
+        return facade.turn_start_session(body.ref, instance=body.instance)
 
     @router.post(
         f"{API_PREFIX}/sessions/reply",

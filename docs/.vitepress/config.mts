@@ -118,6 +118,7 @@ const cliSidebar = [
       { text: "standing", link: "/cli/commands/standing" },
       { text: "instances", link: "/cli/commands/instances" },
       { text: "ask", link: "/cli/commands/ask" },
+      { text: "wait", link: "/cli/commands/wait" },
       { text: "comment", link: "/cli/commands/comment" },
       { text: "ticket", link: "/cli/commands/ticket" },
       { text: "handoff", link: "/cli/commands/handoff" },

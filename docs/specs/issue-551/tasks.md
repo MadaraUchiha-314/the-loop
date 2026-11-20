@@ -35,7 +35,7 @@ session on its own initiative).
 Every task is test-first: the named test goes red before the code that makes it
 green.
 
-- [ ] 1. Put the contract first
+- [x] 1. Put the contract first
   - Add to `docs/api-specs/openapi/the-loop.v1.yaml`: `defaultAfterSeconds` on the
     ask; the wait, stop-check and turn-start endpoints; `assignment` and `next` on
     the claim response; `session` on the check response; the two attention kinds.
@@ -64,7 +64,7 @@ green.
   - _Depends on:_ 1
   - _Requirements:_ R1
   - _Test:_ T1 — `tests/test_graph_claim_assignment.py`; T2 — `Scenario: a claim returns the next assignment and says to continue`, `Scenario: an advance the daemon drives delivers the assignment once`
-- [ ] 5. Decide a stop in the service
+- [x] 5. Decide a stop in the service
   - The stop check, in the design's order, behind `the-loop sessions stop-check` and
     its endpoint. It records `session.turn_ended` with the reason on every allow,
     and on `--gave-up`. It refuses a work item the calling session is not bound to.
@@ -73,7 +73,7 @@ green.
   - _Depends on:_ 1, 3
   - _Requirements:_ R3.1–R3.5, R3.7, R3.8
   - _Test:_ T1 — `tests/test_stop_check.py`; T2 — `Scenario: a stop with work owed is refused past an approved gate` (the P3 regression), `Scenario: a stop with an open ask is allowed`; T8 — `foreign_work_item`
-- [ ] 6. Record a turn's start
+- [x] 6. Record a turn's start
   - `the-loop sessions turn-start` and its endpoint. A new stdlib-only hook script
     calls it and always exits 0. The Claude Code, Codex and Cursor hook manifests
     gain the entry.
@@ -88,7 +88,7 @@ green.
   - _Depends on:_ 5
   - _Requirements:_ R3.3, R3.4, R3.6, R3.7
   - _Test:_ T2 — `tests/test_gate_pointer_integration.py`, `Scenario: the gate gives up after its attempts and records why`; T10 — `tests/test_harness_gate.py` fallback cases; T8 — abuse case 7
-- [ ] 8. Add the declared wait
+- [x] 8. Add the declared wait
   - `the-loop wait` and its endpoint. Refused over the wait limit and on a
     human-owned node. The condition is capped at 200 characters. A wait covers the
     one stop that ends the turn it was made in.
