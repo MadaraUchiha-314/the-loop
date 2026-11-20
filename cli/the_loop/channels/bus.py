@@ -48,6 +48,7 @@ from .base import (
     PublishResult,
     load_channels,
     load_ledger,
+    new_event_id,
 )
 from .events import is_recorded
 
@@ -65,7 +66,13 @@ def publish(
     record: Optional[bool] = None,
     ledger: Optional[Ledger] = None,
 ) -> PublishResult:
-    """Record ``event`` on the ledger (when the catalog says so), then fan it out."""
+    """Record ``event`` on the ledger (when the catalog says so), then fan it out.
+
+    The event gets its id here when it has none (issue-549): every channel and
+    the outbox see the same one, so a replay is recognisable as this event.
+    """
+    if not event.event_id:
+        event = replace(event, event_id=new_event_id())
     book = ledger if ledger is not None else load_ledger(cli_config)
     should_record = is_recorded(event.event_type) if record is None else bool(record)
     recorded: Optional[PostResult] = None

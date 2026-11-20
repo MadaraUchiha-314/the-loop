@@ -55,7 +55,7 @@ Tests are named so the T8 `-k` filter in `testing-plan.md` finds the abuse cases
     `tests/test_channels.py::test_casefold_binding_first_wins`; T8 —
     `test_casefold_scope_number_and_host_stay_distinct`; T10 — two bindings differing
     only in case resolve to the first (red→green)
-- [ ] 2. An event id on every bus event, kept across outbox replay.
+- [x] 2. An event id on every bus event, kept across outbox replay.
   - Mint the id at publish in `channels/bus.py` / `channels/base.py` (`Event`); store it
     in `channels/outbox.py` entries; an entry written before this change gets one on
     read.

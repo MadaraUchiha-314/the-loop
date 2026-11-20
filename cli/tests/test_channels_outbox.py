@@ -109,8 +109,15 @@ def test_an_event_no_channel_took_is_queued_with_everything_needed_to_repost(
 
 def test_an_event_round_trips_through_the_file(tmp_path):
     """R1.4 — what comes back out is what the channel would have been handed."""
+    # The bus mints the id before anything is queued (issue-549), so a queued
+    # event always carries one.
     original = an_event(
-        "work-item.reply", source="slack", text="ship it", actor=PERSON, summary="s"
+        "work-item.reply",
+        source="slack",
+        text="ship it",
+        actor=PERSON,
+        summary="s",
+        event_id="ev-1",
     )
     outbox.remember(original, refused(), config(tmp_path))
     restored = outbox._event_from(outbox.entries(config(tmp_path))[0]["event"])
@@ -330,3 +337,69 @@ def test_a_channel_error_is_the_entrys_failure(tmp_path):
 
     assert outbox.drain(cfg, channels=[Angry()])["delivered"] == 0
     assert outbox.entries(cfg)[0]["lastError"] == "slack: boom"
+
+
+# -- the event id (issue-549, non-functional: idempotent retries) -----------------
+
+
+def test_publish_mints_an_event_id(tmp_path):
+    from the_loop.channels.bus import publish
+
+    channel = FakeChannel()
+    publish(an_event(), channels=[channel], record=False)
+    publish(an_event(), channels=[channel], record=False)
+    first, second = (event.event_id for event in channel.posted)
+    assert first and second and first != second
+
+
+def test_publish_keeps_an_event_id_it_was_given(tmp_path):
+    from the_loop.channels.bus import publish
+
+    channel = FakeChannel()
+    publish(an_event(event_id="ev-1"), channels=[channel], record=False)
+    assert channel.posted[0].event_id == "ev-1"
+
+
+def test_event_id_survives_replay(tmp_path):
+    """The id minted at publish is the id the drain hands the channel, on every
+    attempt, so delivery can tell a retry from a new event."""
+    cfg = config(tmp_path)
+    outbox.remember(an_event(event_id="ev-42"), refused(), cfg)
+    assert outbox.entries(cfg)[0]["event"]["eventId"] == "ev-42"
+    down = FakeChannel(fail="ratelimited")
+    outbox.drain(cfg, channels=[down])
+    up = FakeChannel()
+    outbox.drain(cfg, channels=[up], now=outbox._utcnow() + timedelta(days=1))
+    assert [event.event_id for event in up.posted] == ["ev-42"]
+
+
+def test_an_event_queued_without_an_id_gets_one(tmp_path):
+    cfg = config(tmp_path)
+    outbox.remember(an_event(), refused(), cfg)
+    assert outbox.entries(cfg)[0]["event"]["eventId"]
+
+
+def test_legacy_outbox_entry_without_id_replays(tmp_path):
+    """T10: an entry written before the event id still replays, with an id that
+    is the same on every read, so two attempts are one event."""
+    cfg = config(tmp_path)
+    path = outbox.path_for(cfg)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    legacy = {
+        "at": "2026-01-01T00:00:00Z",
+        "attempts": 0,
+        "channels": ["slack"],
+        "event": {
+            "eventType": "session.awaiting_input",
+            "workItem": "github:o/r#7",
+            "text": "A or B?",
+            "source": "cli",
+        },
+    }
+    path.write_text(json.dumps({"version": 1, "pending": {"k1": legacy}}))
+    first = outbox.entries(cfg)[0]["event"]["eventId"]
+    assert first and outbox.entries(cfg)[0]["event"]["eventId"] == first
+    channel = FakeChannel()
+    assert outbox.drain(cfg, channels=[channel])["delivered"] == 1
+    assert [event.text for event in channel.posted] == ["A or B?"]
+    assert channel.posted[0].event_id == first

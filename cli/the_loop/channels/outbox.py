@@ -43,7 +43,7 @@ from typing import Any, Dict, Iterator, List, Mapping, Optional, Sequence, Tuple
 
 from .. import eventlog, runlock
 from ..identity import Principal
-from .base import Channel, ChannelError, Event, PostResult
+from .base import Channel, ChannelError, Event, PostResult, new_event_id
 
 logger = logging.getLogger("the-loop.channels")
 
@@ -373,6 +373,12 @@ def _load(path: Path) -> Dict[str, Dict[str, Any]]:
     for key, value in pending.items():
         if isinstance(key, str) and isinstance(value, Mapping):
             book[key] = _entry(value)
+            event = book[key]["event"]
+            if event and not event.get("eventId"):
+                # Written before issue-549: the id is derived from the entry's own
+                # key, so it is the same on every read and two attempts are one
+                # event, whether or not a save has written it back yet.
+                event["eventId"] = f"outbox-{key}"
     return dict(sorted(book.items()))  # the id sorts by the time it was queued
 
 
@@ -472,6 +478,8 @@ def _event_payload(event: Event) -> Dict[str, Any]:
         "detail": {str(k): str(v) for k, v in dict(event.detail or {}).items()},
         "source": event.source,
         "summary": event.summary,
+        # Minted here for an event that skipped the bus, so every entry has one.
+        "eventId": event.event_id or new_event_id(),
         "actor": (
             {"ids": event.actor.to_dict(), "name": event.actor.name}
             if event.actor
@@ -500,6 +508,7 @@ def _event_from(payload: Mapping[str, Any]) -> Optional[Event]:
         source=str(payload.get("source") or "loop"),
         actor=_actor_from(payload.get("actor")),
         summary=str(payload.get("summary") or ""),
+        event_id=str(payload.get("eventId") or ""),
     )
 
 
