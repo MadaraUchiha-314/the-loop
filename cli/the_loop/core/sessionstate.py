@@ -427,13 +427,15 @@ def derive(
             if reason in _UNLIMITED_WAITS:
                 state = "waiting"
             elif reason == "open-ask":
-                if open_asks:
+                # An ask without an id excuses no stop, so it holds no wait.
+                counted = tuple(ask for ask in open_asks if not ask.legacy)
+                if counted:
                     # The wait ends when the last ask closes. That has a time
-                    # only when every open ask has a default.
-                    ends = [parse_ts(ask.default_at) for ask in open_asks]
+                    # only when every such ask has a default.
+                    ends = [parse_ts(ask.default_at) for ask in counted]
                     known = [end for end in ends if end is not None]
                     if len(known) == len(ends):
-                        until = _stamp_of(open_asks, max(known))
+                        until = _stamp_of(counted, max(known))
                     state = "waiting"
                 else:
                     idle = _later(at, ask_closed)

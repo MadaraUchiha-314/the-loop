@@ -778,6 +778,42 @@ def test_legacy_ask_without_an_id_is_shown_and_owes_nothing():
     assert state_at([ask(0, ask_id="a1")], 5).open_asks[0].legacy is False
 
 
+def test_legacy_ask_without_an_id_does_not_hold_an_open_ask_wait():
+    """An ask recorded before asks had ids does not excuse a stop, so it does
+    not keep a turn that ended on a question waiting either: once the new
+    ask's default is taken, the session is idle from then, and then stalled.
+
+    Requirement: R6.10, R4.1
+    """
+    log = [
+        ask(-600),
+        started(0),
+        ask(1, ask_id="a1", default="Move it.", default_at=stamp(31)),
+        ended(2, "open-ask"),
+    ]
+    waiting = state_at(log, 5)
+    assert (waiting.state, waiting.until) == ("waiting", stamp(31))
+    log.append(ev(31, "session.ask_default_taken", ask_id="a1", default="Move it."))
+    log.append(
+        ev(
+            31.1,
+            "session.ask_default_taken",
+            ask_id="a1",
+            default="Move it.",
+            delivered=False,
+        )
+    )
+    idle = state_at(log, 35)
+    assert (idle.state, idle.idle_since) == ("idle", stamp(31))
+    assert [a.legacy for a in idle.open_asks] == [True]
+    late = state_at(log, 45)
+    assert late.state == "stalled"
+    assert late.due == (Due("nudge", stall_id=stall_id(31)),)
+    # Only an old ask on record: the turn's reason names no ask that counts.
+    alone = state_at([ask(-600), started(0), ended(2, "open-ask")], 5)
+    assert (alone.state, alone.idle_since) == ("idle", stamp(2))
+
+
 def test_a_reminder_is_owed_once_for_an_ask_without_a_default():
     """Requirement: R6.7."""
     log = [ask(0, ask_id="a1")]
