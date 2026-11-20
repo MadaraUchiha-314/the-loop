@@ -998,7 +998,12 @@ def ask_session(
         messages.append(
             {
                 "stream": "out",
-                "text": strings.t("core.sessions.ask.recorded-wait"),
+                # With a deadline the session carries on; without one it waits.
+                "text": (
+                    strings.t("core.sessions.ask.recorded-wait")
+                    if wait is None
+                    else strings.t("core.sessions.ask.recorded-with-default")
+                ),
             }
         )
     else:

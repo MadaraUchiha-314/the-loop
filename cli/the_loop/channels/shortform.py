@@ -35,6 +35,7 @@ from .voice import room_lead
 
 __all__ = [
     "SESSION_EVENTS",
+    "SHORT_ONLY_EVENTS",
     "SUMMARY_MAX_CHARS",
     "ShortForm",
     "build_short_form",
@@ -43,6 +44,7 @@ __all__ = [
     "default_line",
     "is_session_authored",
     "long_form_adds",
+    "quoted_default",
     "sentence_ends",
     "sentences",
 ]
@@ -248,20 +250,28 @@ def default_line(event: Any) -> str:
     from ..core.sessionstate import parse_ts  # core imports the channels
 
     detail = getattr(event, "detail", None) or {}
-    default = " ".join(str(detail.get("default") or "").split())
+    default = quoted_default(str(detail.get("default") or ""))
     moment = parse_ts(detail.get("default_at"))
     if not default or moment is None:
         return ""
-    if len(default) > DEFAULT_QUOTE_CHARS:
-        default = default[: DEFAULT_QUOTE_CHARS - 1].rstrip() + "…"
     after = str(detail.get("default_after") or "")
     return strings.t(
         "channels.shortform.default-line",
         time=moment.strftime("%H:%M UTC"),
         # A minute that has begun is counted, so the wait is never understated.
         minutes=-(-int(after) // 60) if after.isdigit() else "?",
-        default=defuse(MARKDOWN_LINK_RE.sub(r"\1 (\2\3)", default)),
+        default=default,
     )
+
+
+def quoted_default(text: str) -> str:
+    """A default answer as Slack may quote it (issue-551, abuse case 6): one
+    line, within :data:`DEFAULT_QUOTE_CHARS`, its links drawn as words, defused.
+    ``""`` for an empty one."""
+    default = " ".join(text.split())
+    if len(default) > DEFAULT_QUOTE_CHARS:
+        default = default[: DEFAULT_QUOTE_CHARS - 1].rstrip() + "…"
+    return defuse(MARKDOWN_LINK_RE.sub(r"\1 (\2\3)", default))
 
 
 def build_short_form(
@@ -358,9 +368,24 @@ def _normalise(text: str) -> str:
     return " ".join(text.split())
 
 
+#: The watcher's messages (issue-551): each is its short form and nothing else.
+#: Their ``text`` is the same statement worded for the ticket, not a long form.
+SHORT_ONLY_EVENTS = frozenset(
+    {
+        "session.stalled",
+        "session.stall_ended",
+        "session.ask_default_taken",
+        "session.ask_reminded",
+    }
+)
+
+
 def long_form_adds(event: Any, short: ShortForm) -> bool:
     """Whether ``event``'s long form says more than ``short`` (R3.3): False when
-    it is empty once defused, or when the short form already holds all of it."""
+    it is empty once defused, when the short form already holds all of it, or
+    for an event that is only ever its short form."""
+    if str(getattr(event, "event_type", "") or "") in SHORT_ONLY_EVENTS:
+        return False
     text = str(getattr(event, "text", "") or "")
     drawn = _normalise(_draw(text))
     if not drawn:

@@ -310,6 +310,32 @@ def test_a_short_wait_is_raised_to_the_minimum_and_reported(config, posted, log_
     assert "asked for 5 minutes" in posted[0]
 
 
+def test_the_output_says_to_carry_on_only_when_the_ask_has_a_deadline(
+    config, posted, log_path
+):
+    """
+    Feature: A question can carry a default and a deadline
+    Scenario: the command's output after an ask with a deadline, and without one
+      When a session asks with a default and a wait
+      Then the output says to carry on, and does not say to stop
+      When a session asks with no wait
+      Then the output says to stop and wait
+
+    Requirement: docs/specs/issue-551/requirements.md#R6.9
+    """
+
+    def out(result):
+        return " ".join(m["text"] for m in result["messages"] if m["stream"] == "out")
+
+    with_deadline = out(_ask(config, default_after_seconds=MINIMUM))
+    assert "carry on" in with_deadline
+    assert "stop and wait" not in with_deadline
+
+    without = out(_ask(config, default_answer="", default_after_seconds=None))
+    assert "stop and wait" in without
+    assert "carry on" not in without
+
+
 def test_an_over_long_default_is_refused(config, posted, log_path):
     """
     Feature: A question can carry a default and a deadline
@@ -463,3 +489,174 @@ def test_abuse_a_default_with_markup_is_quoted_as_words_on_github(
     assert "\\*\\*now\\*\\*" in quoted
     assert "<!" not in quoted
     assert body.count(SELF_COMMENT_MARKER) == 1
+
+
+# -- the deadline passes: the watcher (issue-551, task 11) ------------------------
+
+from the_loop.authz import SELF_COMMENT_MARKER  # noqa: E402
+
+
+def _watch(tmp_path, log_path, tmux, now, comments):
+    """One tick of a brand-new watcher at ``now``: the real cycle over the same
+    log and registry, the fake pane, and the real ledger writing to ``comments``.
+    Built from nothing but the log and the registry, so each call is a restart."""
+    from the_loop.channels import bus
+    from the_loop.channels.github import GitHubLedger
+    from the_loop.core import watchdog
+
+    def post_comment(item, body, api=None):
+        comments.append(body)
+        url = f"https://github.com/octo/repo/issues/15#issuecomment-{len(comments) + 1}"
+        return True, "", url
+
+    ledger = GitHubLedger({}, post_comment=post_comment)
+    watchdog.run_cycle(
+        now=now,
+        registry=SessionRegistry(tmp_path / "sessions"),
+        log_path=log_path,
+        watchdog=WatchdogConfig(),
+        asks=AsksConfig(min_default_wait_seconds=MINIMUM, reminder_seconds=7200),
+        deliver=tmux.deliver,
+        publish=lambda event, record=None: bus.publish(
+            event, channels=[], ledger=ledger, record=record
+        ),
+        resolve=lambda endpoint, node: {},
+    )
+
+
+def test_a_default_is_taken_at_its_deadline_once_across_a_restart(
+    tmp_path, config, posted, log_path, deliver
+):
+    """
+    Feature: A question can carry a default and a deadline
+    Scenario: a default is taken at its deadline, once, across a restart
+      Given a session that asked with a default answer and a wait of 30 minutes
+      When the watcher runs before the deadline
+      Then nothing is pasted, posted or recorded
+      When the deadline passes with no authorized answer
+      Then the session is told to proceed with its own default, quoted as data
+      And a comment on the thread says the default was taken, and that it approves nothing
+      And session.ask_default_taken is recorded and the ask is closed
+      When the daemon restarts and the watcher runs again
+      Then nothing is pasted, posted or recorded a second time
+
+    Requirement: docs/specs/issue-551/requirements.md#R6.2 R6.10
+    """
+    _, tmux = deliver
+    comments = []
+    _ask(config)
+    (asked,) = _records(log_path, "session.awaiting_input")
+    deadline = _ts(asked["default_at"])
+
+    _watch(tmp_path, log_path, tmux, deadline - timedelta(seconds=1), comments)
+    assert tmux.delivers == [] and comments == []
+    assert not _records(log_path, "session.ask_default_taken")
+
+    _watch(tmp_path, log_path, tmux, deadline + timedelta(seconds=1), comments)
+
+    ((ref, pasted),) = tmux.delivers
+    assert ref == REF
+    assert "nobody answered your question" in pasted
+    assert "This is not an approval of anything" in pasted
+    assert pasted.endswith("```text\nMove T5 to after merge.\n```")
+    (taken,) = _records(log_path, "session.ask_default_taken")
+    assert (taken["work_item"], taken["ask_id"]) == (REF, asked["ask_id"])
+    assert taken["default"] == "Move T5 to after merge." and taken["delivered"] is True
+    (comment,) = comments
+    assert "**default taken**" in comment
+    assert "[the question above](" + asked["comment_url"] + ")" in comment
+    assert f"by {deadline.strftime('%H:%M UTC')}" in comment
+    assert "stated default: “Move T5 to after merge.”" in comment
+    assert (
+        "This is not an approval of anything. An answer now still reaches the session."
+        in comment
+    )
+    assert comment.count(SELF_COMMENT_MARKER) == 1
+    assert _state_after(log_path, deadline + timedelta(minutes=1)).open_ask is None
+
+    for later in (1, 2, 600):
+        _watch(tmp_path, log_path, tmux, deadline + timedelta(minutes=later), comments)
+    assert len(tmux.delivers) == 1 and len(comments) == 1
+    assert len(_records(log_path, "session.ask_default_taken")) == 1
+
+
+def test_an_answer_after_the_default_still_reaches_the_session(
+    tmp_path, config, posted, log_path, deliver
+):
+    """
+    Feature: A question can carry a default and a deadline
+    Scenario: an answer after the default still reaches the session
+      Given a session whose default was taken at its deadline
+      When the-loop's own "default taken" comment comes back as an event
+      Then it is dropped before delivery
+      When an authorized user answers the question afterwards
+      Then the answer is delivered to the session as a comment
+      And no second record closes the ask, and the default is not taken again
+
+    Requirement: docs/specs/issue-551/requirements.md#R6.4
+    """
+    comment, tmux = deliver
+    comments = []
+    _ask(config)
+    (asked,) = _records(log_path, "session.awaiting_input")
+    late = _ts(asked["default_at"]) + timedelta(seconds=1)
+    _watch(tmp_path, log_path, tmux, late, comments)
+    assert len(tmux.delivers) == 1
+
+    assert comment(AUTHORIZED, comments[0], "d-1") is None
+    assert len(tmux.delivers) == 1
+
+    comment(AUTHORIZED, "No, keep T5 before merge.", "d-2")
+
+    assert wait_until(lambda: _records(log_path, "dispatch.succeeded"))
+    assert len(tmux.delivers) == 2
+    assert "No, keep T5 before merge." in tmux.delivers[1][1]
+    (delivered,) = _records(log_path, "dispatch.succeeded")
+    assert delivered["actor"] == AUTHORIZED
+    assert not _records(log_path, "session.ask_answered")
+    _watch(tmp_path, log_path, tmux, late + timedelta(minutes=5), comments)
+    assert len(_records(log_path, "session.ask_default_taken")) == 1
+    assert len(tmux.delivers) == 2 and len(comments) == 1
+
+
+def test_a_question_with_no_default_is_reminded_once(
+    tmp_path, config, posted, log_path, deliver
+):
+    """
+    Feature: A question can carry a default and a deadline
+    Scenario: a question with no default is reminded once
+      Given a session that asked without a default
+      When the question has been open for less than the reminder interval
+      Then nothing is posted
+      When it has been open for the reminder interval
+      Then one reminder is posted on the question's thread, and recorded
+      And nothing is pasted into the session, which keeps waiting
+      When the watcher runs again, after a restart and hours later
+      Then no second reminder is posted
+
+    Requirement: docs/specs/issue-551/requirements.md#R6.7 R6.10
+    """
+    _, tmux = deliver
+    comments = []
+    core_sessions.ask_session(REF, "Rotate the signing key now?", config=config)
+    (asked,) = _records(log_path, "session.awaiting_input")
+    opened = _ts(asked["ts"])
+
+    _watch(tmp_path, log_path, tmux, opened + timedelta(minutes=119), comments)
+    assert comments == [] and not _records(log_path, "session.ask_reminded")
+
+    _watch(tmp_path, log_path, tmux, opened + timedelta(minutes=121), comments)
+
+    (reminded,) = _records(log_path, "session.ask_reminded")
+    assert (reminded["work_item"], reminded["ask_id"]) == (REF, asked["ask_id"])
+    (comment,) = comments
+    assert "**still waiting**" in comment
+    assert "The session has waited 2 hours 1 minute for an answer to" in comment
+    assert "It has no default" in comment
+    assert comment.count(SELF_COMMENT_MARKER) == 1
+
+    for hours in (3, 10, 100):
+        _watch(tmp_path, log_path, tmux, opened + timedelta(hours=hours), comments)
+    assert len(comments) == 1 and len(_records(log_path, "session.ask_reminded")) == 1
+    assert tmux.delivers == []
+    assert _state_after(log_path, opened + timedelta(hours=100)).open_ask is not None

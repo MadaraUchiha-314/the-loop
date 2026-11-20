@@ -91,6 +91,20 @@ EVENTS: Dict[str, EventSpec] = {
         origin="cli",
         recorded=True,  # its record IS the question comment
     ),
+    # issue-551: what the watcher says. Each one's record IS its comment on the
+    # work item, marked as the-loop's own, so no gate reads it as an answer.
+    # A stall that nobody was told about ends off the ledger: its publisher
+    # says so (`record=False`).
+    "session.stalled": EventSpec(_DESCRIPTIONS["session.stalled"], recorded=True),
+    "session.stall_ended": EventSpec(
+        _DESCRIPTIONS["session.stall_ended"], recorded=True
+    ),
+    "session.ask_default_taken": EventSpec(
+        _DESCRIPTIONS["session.ask_default_taken"], recorded=True
+    ),
+    "session.ask_reminded": EventSpec(
+        _DESCRIPTIONS["session.ask_reminded"], recorded=True
+    ),
     "decision-pending": EventSpec(_DESCRIPTIONS["decision-pending"]),
     "phase-approval-pending": EventSpec(_DESCRIPTIONS["phase-approval-pending"]),
     "pr-review-pending": EventSpec(_DESCRIPTIONS["pr-review-pending"]),

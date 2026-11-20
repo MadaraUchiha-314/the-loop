@@ -513,6 +513,21 @@ def _hermetic_graph_integration(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _hermetic_watchdog(monkeypatch):
+    """No test's service types into a real session (issue-551).
+
+    Every lifespan starts the watcher's thread, and its cycle resolves the
+    session registry and the tmux server from the config it was given — under
+    test that can be the developer's own, live sessions included. The thread
+    still starts and stops; its tick does nothing. The watcher's own tests call
+    ``watchdog.run_cycle`` with fakes, or put their own ``_cycle`` here.
+    """
+    from the_loop.core import watchdog
+
+    monkeypatch.setattr(watchdog, "_cycle", lambda config: None)
+
+
+@pytest.fixture(autouse=True)
 def _hermetic_lifecycle_hooks():
     """No lifecycle-hook runner leaks between tests (issue-344).
 

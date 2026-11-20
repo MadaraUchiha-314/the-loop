@@ -111,7 +111,7 @@ green.
   - _Depends on:_ 1, 2, 3
   - _Requirements:_ R6.1, R6.3, R6.5, R6.6
   - _Test:_ T1 — `tests/test_durations.py -k minimum`; T2 — `tests/test_ask_deadline_integration.py`: `Scenario: an answer cancels the default`; T8 — abuse case 1
-- [ ] 11. Run the watcher in the control-plane service
+- [x] 11. Run the watcher in the control-plane service
   - One thread on a 30-second tick, started and stopped with the service. Each
     cycle: nudge within the node visit's budget, publish `session.stalled` when the
     budget is spent, record `stall_ended`, take ask defaults, send ask reminders.
@@ -122,7 +122,7 @@ green.
   - _Depends on:_ 3, 10
   - _Requirements:_ R4.1–R4.6, R4.9–R4.12, R6.2, R6.4, R6.7, R6.10
   - _Test:_ T2 — `tests/test_watchdog_integration.py`: `Scenario: an idle session is nudged, then a person is told once`, `Scenario: a restart repeats no nudge and no notice`, `Scenario: a stall ends when the session takes a turn, and the notice is edited`, `Scenario: a switched-off watchdog sends nothing and the gate still holds`; `tests/test_ask_deadline_integration.py`: `Scenario: a default is taken at its deadline, once, across a restart`, `Scenario: an answer after the default still reaches the session`, `Scenario: a question with no default is reminded once`; T8 — abuse cases 2, 5, `nudge_is_fixed`
-- [ ] 12. Post and edit the messages
+- [x] 12. Post and edit the messages
   - Slack and GitHub render `session.stalled`, `session.stall_ended`,
     `session.ask_default_taken` and `session.ask_reminded` with the wording of
     `design/messages.html`. The stall notice is remembered per stall id and edited
@@ -147,7 +147,7 @@ green.
   - _Depends on:_ 6, 7, 11
   - _Requirements:_ R3, R4, R4.11
   - _Test:_ T4 — `tests/test_idle_watchdog_e2e.py`
-- [ ] 15. Rewrite the skill and the prompts
+- [x] 15. Rewrite the skill and the prompts
   - `reference/context.md` (the daemon row and the paragraph under it), `SKILL.md`,
     `commands/work-on.md`, `reference/collaboration.md` (the three ask cases, the
     legitimate stops, "take the step you announce"), and the interaction prompt.

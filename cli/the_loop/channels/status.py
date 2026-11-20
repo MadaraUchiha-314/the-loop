@@ -55,7 +55,11 @@ _WAITING_EVENTS = frozenset(
     {"session.awaiting_input", "decision-pending", *APPROVAL_EVENTS}
 )
 _COMPLETE_EVENTS = frozenset({"work-item-complete", "work-item.closed"})
-_BLOCKED_EVENTS = frozenset({"conflict-escalated"})
+# A stalled session (issue-551) is blocked until a person wakes it.
+_BLOCKED_EVENTS = frozenset({"conflict-escalated", "session.stalled"})
+#: The session moves again (issue-551): its stall ended, or an ask's deadline
+#: passed and it went ahead with its default.
+_WORKING_EVENTS = frozenset({"session.stall_ended", "session.ask_default_taken"})
 _LIFECYCLE = frozenset({"phase.started", "phase.progress", "phase.completed"})
 _TERMINAL_NODES = frozenset({"complete", "done"})
 _BLOCKED_NODES = frozenset({"escalated"})
@@ -72,14 +76,14 @@ def state_for(event: Any) -> str:
 
     * complete — ``work-item-complete``, ``work-item.closed``, or a phase event
       at the terminal ``complete``/``done`` node;
-    * blocked — ``conflict-escalated``, the ``escalated`` node, an event type
-      ending in ``failed``, or a failed outcome or status;
+    * blocked — ``conflict-escalated``, a stalled session, the ``escalated``
+      node, an event type ending in ``failed``, or a failed outcome or status;
     * waiting — the session's question, a decision, an approval gate, a gate's
       lifecycle line (its node's actor is a human);
     * in review — a phase event at a node or phase named for review
       (self-review, critic-review, security-review, needs-review, …);
     * working — any other phase start or step, an acknowledged gate answer,
-      the session-started notice.
+      the session-started notice, a stall that ended, an ask's default taken.
 
     A ``phase.completed`` short of the end says nothing: the next
     ``phase.started`` follows it and sets the state.
@@ -100,6 +104,8 @@ def state_for(event: Any) -> str:
         return BLOCKED
     if event_type in _WAITING_EVENTS:
         return WAITING
+    if event_type in _WORKING_EVENTS:
+        return WORKING
     if event_type in _LIFECYCLE:
         if node in _TERMINAL_NODES or (
             event_type == "phase.completed" and bool(detail.get("terminal"))

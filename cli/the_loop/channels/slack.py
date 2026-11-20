@@ -55,7 +55,7 @@ from .events import (
     PUBLISHABLE_EVENTS,
     SUBSCRIBABLE_EVENTS,
 )
-from . import placement, room_policy, status as status_reactor
+from . import placement, room_policy, sessionnotes, status as status_reactor
 from .preamble import Preamble, change_of, mention_line, recap_line, wait_key
 from .delivery import (
     THREAD_OF_TOP,
@@ -1939,6 +1939,27 @@ def gate_answered_line(node: str, outcome: str, by: str) -> str:
     )
 
 
+#: The watcher's follow-up events (issue-551), and the event whose message each
+#: one is about: a channel subscribed to the opener hears the follow-up.
+_FOLLOW_UPS: Dict[str, str] = {
+    sessionnotes.STALL_ENDED: sessionnotes.STALLED,
+    sessionnotes.ASK_DEFAULT_TAKEN: "session.awaiting_input",
+    sessionnotes.ASK_REMINDED: "session.awaiting_input",
+}
+
+
+def _note_key(event: Event) -> str:
+    """Where the message of ``event`` is remembered so it can be edited later
+    (issue-551): a stall notice by its stall, a question by its ask. ``""``
+    for any other event."""
+    detail = event.detail or {}
+    if event.event_type == sessionnotes.STALLED and detail.get("stall_id"):
+        return sessionnotes.stall_key(str(detail["stall_id"]))
+    if event.event_type == "session.awaiting_input" and detail.get("ask_id"):
+        return sessionnotes.ask_key(str(detail["ask_id"]))
+    return ""
+
+
 def gate_node_of(action: Mapping[str, Any]) -> str:
     """The gate node a pressed Approve / Request changes button names through
     its block (issue-549 abuse case 8), or ``""`` for a message posted before
@@ -2356,6 +2377,12 @@ class SlackBotChannel:
             return event_type in self.config.subscribe or any(
                 name in self.config.subscribe for name in APPROVAL_EVENTS
             )
+        # The same rule for the watcher's follow-ups (issue-551): a channel that
+        # posts the stall notice hears its end, and one that posts the question
+        # hears its reminder and its default being taken.
+        opener = _FOLLOW_UPS.get(event_type)
+        if opener and opener in self.config.subscribe:
+            return True
         return event_type in self.config.subscribe
 
     def wants(self, event_type: str) -> bool:
@@ -2938,11 +2965,21 @@ class SlackBotChannel:
         """
         if event.event_type == GATE_ANSWERED:
             return self._close_gate(event)
+        detail = event.detail or {}
+        if event.event_type == sessionnotes.STALL_ENDED:
+            return self._close_note(
+                event, sessionnotes.stall_key(str(detail.get("stall_id") or ""))
+            )
+        if event.event_type == sessionnotes.ASK_DEFAULT_TAKEN:
+            return self._close_note(
+                event, sessionnotes.ask_key(str(detail.get("ask_id") or ""))
+            )
         if not self.home_for(event.work_item):
             raise self._no_channel(event.work_item)
         client = self._client()
         bound: Optional[Tuple[str, str]] = None
         reply_to = ""
+        question_ts = ""
         if event.work_item:
             with ChannelState.locked(self.state_path, self.stores) as state:
                 before = state.conversation_for(event.work_item)
@@ -2950,6 +2987,11 @@ class SlackBotChannel:
                 if before == bound and state.backfilled:
                     state.save(self.state_path)  # a 13.0.1 file, now keyed (R3.4)
                 reply_to = self._reply_thread(state, event, bound)
+                if event.event_type == sessionnotes.ASK_REMINDED:
+                    asked = sessionnotes.ask_key(str(detail.get("ask_id") or ""))
+                    question_ts = state.delivery_for(event.work_item)["gateTs"].get(
+                        asked, ""
+                    )
         # A declared room is a channel-mode binding: `thread_ts == ""` with a
         # channel (issue-378). The conversational rules (issue-393 B4) apply only
         # where the operator kept the agentic room style.
@@ -2983,7 +3025,9 @@ class SlackBotChannel:
             # an ack threads under its gate's message; an answer to a mention
             # goes in the mention's thread (issue-507); either way the long form
             # follows the short message in that thread (R4.3)
-            thread = decision.ts if threaded else reply_to
+            # and the reminder goes under the question it is about, when this
+            # channel posted that question (issue-551, R6.7)
+            thread = decision.ts if threaded else (question_ts or reply_to)
             kind = placement.ROOM_MENTION_THREAD if thread else placement.ROOM
         else:
             # the central channel: everything is a reply in the item's one thread
@@ -3022,6 +3066,9 @@ class SlackBotChannel:
             self._remember_event(event, preamble)
             if decision.rule == "gate-pending" and delivered.top:
                 self._remember_gate(event, channel_id, plan.top.text)
+            note = _note_key(event)
+            if note and delivered.top:
+                self._remember_note(event, note, channel_id, plan.top.text)
         try:
             self._after_delivery(event, kind, plan, delivered, client)
         except Exception as exc:  # noqa: BLE001 — never fails a delivery
@@ -3135,6 +3182,109 @@ class SlackBotChannel:
             edited=not error,
             error=error or None,
         )
+        return ok
+
+    def _remember_note(
+        self, event: Event, key: str, channel_id: str, text: str
+    ) -> None:
+        """Keep what a stall notice or a question says and where (issue-551), as
+        an open gate's message is kept, so it can be edited when the stall ends
+        or the default is taken. A work item has one open question: remembering
+        a new one forgets the one before it."""
+        try:
+            with ChannelState.locked(self.state_path, self.stores) as state:
+                changes: Dict[str, Any] = {
+                    key: {"channel": channel_id, "text": text, "url": event.url}
+                }
+                stale: Dict[str, Any] = {}
+                if key.startswith("ask:"):
+                    held = state.delivery_for(event.work_item)["gateTs"]
+                    stale = {k: None for k in held if k.startswith("ask:") and k != key}
+                state.remember_delivery(
+                    event.work_item, gateMessage={**stale, **changes}
+                )
+                if stale:
+                    state.remember_delivery(event.work_item, gateTs=stale)
+                state.save(self.state_path)
+        except Exception as exc:  # noqa: BLE001 — memory is best-effort
+            logger.debug("slack: could not remember %s (%s)", key, exc)
+
+    def _close_note(self, event: Event, key: str) -> PostResult:
+        """Edit a remembered message to how it ended (issue-551): the stall
+        notice to its resolved form (R4.5), the question to "default taken"
+        (R6.2). The status reaction returns to working.
+
+        Nothing is posted, ever: a stall with no remembered notice was fixed by
+        a nudge before anyone was told, and is left unsaid. The stall notice is
+        replaced by its resolved line. The question keeps its words, loses its
+        default button and gains the outcome line, as an answered gate does.
+        """
+        ok = PostResult(channel=self.name, ok=True)
+        if not event.work_item:
+            return ok
+        with ChannelState.locked(self.state_path, self.stores) as state:
+            memory = state.delivery_for(event.work_item)
+            ts = memory["gateTs"].get(key, "")
+            note = dict(memory["gateMessage"].get(key) or {})
+            bound = state.conversation_for(event.work_item)
+            if ts:
+                state.remember_delivery(
+                    event.work_item, gateTs={key: None}, gateMessage={key: None}
+                )
+                state.save(self.state_path)
+        in_room = bool(bound and bound[0] and not bound[1])
+        kind = placement.ROOM if in_room else placement.CENTRAL
+        stall = event.event_type == sessionnotes.STALL_ENDED
+        channel_id = note.get("channel") or (bound[0] if bound else "")
+        if not ts or not channel_id:
+            if not stall:
+                # The session moved on whether or not its question was here.
+                self._react_status(event, kind, ("", ""))
+            return ok
+        line = build_short_form(event).text
+        short = "" if stall else str(note.get("text") or "")
+        blocks: List[Dict[str, Any]] = []
+        if short:
+            blocks.append(_mrkdwn_section(short))
+            blocks.append({"type": "context", "elements": [_mrkdwn(line)]})
+        else:
+            blocks.append(_mrkdwn_section(line))
+        url = note.get("url") or ""
+        if url:
+            blocks.append(
+                {
+                    "type": "actions",
+                    "elements": _message_actions(
+                        Event(
+                            event_type=event.event_type,
+                            work_item=event.work_item,
+                            text="",
+                            url=url,
+                        )
+                    ),
+                }
+            )
+        try:
+            client = self._client()
+            with_retry(
+                lambda: client.chat_update(
+                    channel=channel_id,
+                    ts=ts,
+                    text=f"{short}\n{line}" if short else line,
+                    blocks=blocks,
+                ),
+                "close the note",
+                self._sleep,
+            )
+        except Exception as exc:  # SlackApiError and transport errors alike
+            logger.warning(
+                "slack: could not edit the message of %s on %s: %s",
+                key,
+                event.work_item,
+                exc,
+            )
+            return ok
+        self._react_status(event, kind, ("", ""), client)
         return ok
 
     def delete_message(self, channel_id: str, ts: str) -> bool:

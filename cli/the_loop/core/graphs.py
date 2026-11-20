@@ -352,6 +352,20 @@ def pointer(repo: str, work_item: str, spec_dir: str = "") -> Dict[str, Any]:
     return {"node": node.id, **_node_facts(node)} if node is not None else {}
 
 
+def node_facts(
+    repo: str, work_item: str, node: str, spec_dir: str = ""
+) -> Dict[str, Any]:
+    """One node's ``actor``, ``command`` and ``terminal`` from the definition of
+    the work item's outer loop (issue-551); ``{}`` for a node it does not have.
+
+    What the watcher's nudge names. Like :func:`stop_report`'s facts it reads
+    the graph definition only: no exit chain runs and no state is believed.
+    """
+    work_item = work_item_id(work_item)
+    found = _runtime(repo, work_item=work_item, spec_dir=spec_dir).graph.nodes.get(node)
+    return _node_facts(found) if found is not None else {}
+
+
 def complete(
     repo: str,
     work_item: str,

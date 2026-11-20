@@ -1,9 +1,10 @@
 """What the control plane needs *running*, not merely importable (issue-212 D3).
 
-Two things need a live process rather than an imported module: the MCP SDK's session
+Three things need a live process rather than an imported module: the MCP SDK's session
 manager (it runs a task group for the process's duration — without it, the first POST to
-``/mcp`` fails) and the hosted ingresses (issue-231: the poller and the webhook receiver
-as threads inside this process).
+``/mcp`` fails), the hosted ingresses (issue-231: the poller and the webhook receiver
+as threads inside this process) and the watcher (issue-551: one thread that notices an
+idle session, whichever ingresses are hosted).
 
 :func:`create_app` used to compose both inline. They live here instead because Starlette
 does **not** run a mounted sub-application's lifespan, so an embedder mounting the-loop
@@ -13,9 +14,14 @@ for it. The standalone service and :class:`the_loop.sdk.TheLoop` call the same f
 
 from __future__ import annotations
 
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Optional, Union
+
+#: How long shutdown waits for a watcher's cycle in flight. The thread is a
+#: daemon thread: one that is still pasting does not hold the process up.
+_WATCHER_JOIN_SECONDS = 5.0
 
 
 def build_lifespan(
@@ -42,8 +48,15 @@ def build_lifespan(
     @asynccontextmanager
     async def lifespan(_app: Any = None):
         from ..cli_config import default_cli_config_path
+        from ..core import watchdog
         from . import ingress as ingress_mod
 
+        # The watcher (issue-551, R4.11) runs with the service, not with an
+        # ingress: every deployment has this process, whichever ingresses it
+        # hosts, and an instance that only runs the gateway client hosts none.
+        # `None` when this process already runs one; then it is not ours to stop.
+        watching = threading.Event()
+        watcher = watchdog.start_watcher(cli_config, watching)
         hosted: Optional[ingress_mod.HostedIngresses] = None
         if host_ingresses:
             hosted = ingress_mod.HostedIngresses(
@@ -58,6 +71,9 @@ def build_lifespan(
                 async with mcp_app.router.lifespan_context(mcp_app):
                     yield
         finally:
+            watching.set()
+            if watcher is not None:
+                watcher.join(_WATCHER_JOIN_SECONDS)
             if hosted is not None:
                 hosted.stop()
 

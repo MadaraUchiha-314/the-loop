@@ -1718,7 +1718,8 @@
                 "type": "string"
               },
               "default": [
-                "session.awaiting_input"
+                "session.awaiting_input",
+                "session.stalled"
               ],
               "description": "The event types this channel RECEIVES, as `channels.slack.subscribe` — e.g. work-item.started, phase.started, phase.completed, session.awaiting_input, work-item.closed. `the-loop channels status` prints the catalog."
             },
@@ -1765,9 +1766,10 @@
                 "type": "string"
               },
               "default": [
-                "session.awaiting_input"
+                "session.awaiting_input",
+                "session.stalled"
               ],
-              "description": "The event types this channel RECEIVES (was `events` before issue-309). session.awaiting_input is the ask (`the-loop ask`); the graph's notification events (phase-approval-pending, pr-review-pending, decision-pending, security-sign-off-pending, conflict-escalated, work-item-complete), the loop's lifecycle events (phase.started, phase.completed — every phase of every graph, published by the runtime as the `loop:<phase>` label changes; work-item.closed — the issue closed or the pull request merged, issue-378) and the ledger's comment events (comment.agent — the agent's own comments; comment.human — an authorized user's or collaborator's) are the rest of the catalog — add the ones you want. `the-loop channels status` prints the catalog with ticks."
+              "description": "The event types this channel RECEIVES (was `events` before issue-309). session.awaiting_input is the ask (`the-loop ask`) and session.stalled the notice that a session stopped with work still to do (issue-551): the two that need a person, and the default; the graph's notification events (phase-approval-pending, pr-review-pending, decision-pending, security-sign-off-pending, conflict-escalated, work-item-complete), the loop's lifecycle events (phase.started, phase.completed — every phase of every graph, published by the runtime as the `loop:<phase>` label changes; work-item.closed — the issue closed or the pull request merged, issue-378) and the ledger's comment events (comment.agent — the agent's own comments; comment.human — an authorized user's or collaborator's) are the rest of the catalog — add the ones you want. `the-loop channels status` prints the catalog with ticks."
             },
             "publish": {
               "type": "array",
