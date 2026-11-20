@@ -929,9 +929,10 @@ def test_the_first_post_opens_a_root_and_replies_into_it(tmp_path, monkeypatch):
     assert root["blocks"][-1]["elements"][0]["url"] == "https://github.com/o/r/issues/7"
     assert "github:o/r#7" in root["text"]
     assert reply["thread_ts"] == "1700.000001" == result.thread
-    # issue-549 R3.4: no summary, so the short form is built from the question
+    # issue-549 R3.4: no summary, so the short form is built from the question;
+    # R7.1: an awaiting message opens with the authorized user's mention
     assert reply["blocks"][0]["text"]["text"].startswith(
-        "Should I use approach A or B?"
+        "👋 <@UHUMAN>\nShould I use approach A or B?"
     )
     assert reply["text"] == reply["blocks"][0]["text"]["text"]  # R2.7
     record = _conversation(_state_with_stores(_state_path(tmp_path)), "github:o/r#7")

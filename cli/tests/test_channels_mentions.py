@@ -336,3 +336,119 @@ def test_threads_prints_what_each_conversation_hears(tmp_path, monkeypatch, caps
     assert _threads_command(tmp_path, monkeypatch, "threads") == 0
     out = capsys.readouterr().out
     assert "listen" in out.splitlines()[0]
+
+
+# -- issue-549 task 14: an awaiting message mentions who must act (R7) -------------
+
+
+def _mention_channel(tmp_path, monkeypatch, authorized=("UHUMAN",), users=None):
+    import json
+    import time
+
+    from test_channels import FakeSlackClient, make_channel
+
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    if users is not None:
+        path = tmp_path / "state" / "local" / "slack-directory.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps({"users": {"names": dict(users), "fetchedAt": time.time()}})
+        )
+    client = FakeSlackClient()
+    return client, make_channel(tmp_path, client, authorized=authorized)
+
+
+def _awaiting(event_type="phase-approval-pending", text="Approve the design?", **kw):
+    from the_loop.channels.base import Event
+
+    return Event(
+        event_type=event_type,
+        work_item="github:o/r#7",
+        text=text,
+        detail=kw.pop("detail", {"node": "design-approval"}),
+        **kw,
+    )
+
+
+def _short_text(post):
+    return post["blocks"][0]["text"]["text"]
+
+
+def test_once_per_wait(tmp_path, monkeypatch):
+    """R7.1, R7.3: the gate's message mentions the authorized user; the same
+    wait announced again mentions no one; once the work item moves on, a gate
+    that reopens is a new wait and mentions again."""
+    from the_loop.channels.base import Event
+
+    client, bot = _mention_channel(tmp_path, monkeypatch)
+
+    bot.post(_awaiting())
+    assert _short_text(client.posted[-1]).startswith("👋 <@UHUMAN>\n")
+
+    bot.post(
+        Event(event_type="comment.agent", work_item="github:o/r#7", text="Drafted.")
+    )
+    posted = len(client.posted)
+    bot.post(_awaiting(text="Approve the design? (again)", event_id="e2"))
+    assert len(client.posted) == posted + 1  # announced again…
+    assert "<@UHUMAN>" not in _short_text(client.posted[-1])  # …with no mention
+
+    bot.post(_awaiting("session.awaiting_input", "A or B?", detail={}))
+    assert "<@UHUMAN>" in client.posted[-1]["text"]  # a question is its own wait
+    bot.post(_awaiting("session.awaiting_input", "A  or B?", detail={}))
+    assert "<@UHUMAN>" not in client.posted[-1]["text"]  # the same one, again
+
+    bot.post(
+        Event(
+            event_type="gate.acknowledged",
+            work_item="github:o/r#7",
+            text="Changes requested; revising.",
+            detail={"node": "design-approval", "ack": "true"},
+        )
+    )
+    bot.post(_awaiting(event_id="e3"))
+    assert _short_text(client.posted[-1]).startswith("👋 <@UHUMAN>\n")
+
+
+def test_a_question_mentions_and_a_comment_never_does(tmp_path, monkeypatch):
+    """R7.1, R7.4: the session's question is an awaiting message; an agent
+    comment, a progress line and a completion are not."""
+    from the_loop.channels.base import Event
+
+    client, bot = _mention_channel(tmp_path, monkeypatch)
+    bot.post(_awaiting("session.awaiting_input", "A or B?", detail={}))
+    assert "<@UHUMAN>" in client.posted[-1]["text"]
+    for event_type in ("comment.agent", "phase.progress", "work-item-complete"):
+        bot.post(
+            Event(
+                event_type=event_type,
+                work_item="github:o/r#7",
+                text=f"{event_type} says something.",
+                detail={"phase": "x", "node": event_type},
+            )
+        )
+        assert "<@" not in client.posted[-1]["text"], event_type
+
+
+def test_a_handle_resolves_through_the_directory(tmp_path, monkeypatch):
+    """R7.1: an authorized user named by handle is mentioned by member id."""
+    client, bot = _mention_channel(
+        tmp_path, monkeypatch, authorized=("@dana",), users={"dana": "U0DANA"}
+    )
+    bot.post(_awaiting())
+    assert _short_text(client.posted[-1]).startswith("👋 <@U0DANA>\n")
+
+
+def test_abuse_unresolvable_identity_no_mention(tmp_path, monkeypatch):
+    """Abuse case 6, R7.2: a configured identity that does not resolve to a
+    member id mentions no one; the message is still posted, and a mention typed
+    into the text stays inert."""
+    client, bot = _mention_channel(
+        tmp_path, monkeypatch, authorized=("@ghost",), users={"dana": "U0DANA"}
+    )
+    result = bot.post(
+        _awaiting(summary="Approve it, <@U0DANA>?", text="Approve the design?")
+    )
+    assert result.ok
+    text = _short_text(client.posted[-1])
+    assert "<@" not in text and "👋" not in text

@@ -57,6 +57,7 @@ from .digest import (
 )
 from .events import APPROVAL_EVENTS, PUBLISHABLE_EVENTS, SUBSCRIBABLE_EVENTS
 from . import placement, room_policy, status as status_reactor
+from .preamble import Preamble, change_of, mention_line, recap_line, wait_key
 from .delivery import (
     THREAD_OF_TOP,
     Delivered,
@@ -2671,10 +2672,100 @@ class SlackBotChannel:
 
     # -- the posting path (issue-549): policy → placement → builders → plan → delivery
 
-    def _short_preamble(self, event: Event, kind: str) -> str:
-        """The mrkdwn that opens the short form, inside its cap: the recap line
-        and the mentions (issue-549 R7, R9). Empty until those land (task 14)."""
-        return ""
+    #: The clock the recap and the mentions read (issue-549 R9) — a test
+    #: substitutes it.
+    _now: Callable[[], float] = staticmethod(time.time)  # type: ignore[assignment]
+
+    def _preamble(self, event: Event) -> Preamble:
+        """What opens ``event``'s short form, inside its cap (issue-549 R7, R9):
+        the recap line when a person has been away and the loop moved, then the
+        mentions when ``event`` announces a wait not announced before. Built
+        from configuration and the delivery memory, never from the event's
+        text. A memory that cannot be read opens nothing."""
+        if not event.work_item:
+            return Preamble()
+        try:
+            with ChannelState.locked(self.state_path, self.stores) as state:
+                memory = state.delivery_for(event.work_item)
+        except Exception as exc:  # noqa: BLE001 — a preamble never fails a post
+            logger.debug("slack: delivery memory read failed (%s)", exc)
+            return Preamble()
+        wait = wait_key(event)
+        mentions = ""
+        if wait and wait not in memory["announced"]:
+            mentions = mention_line(self._mention_ids())
+        recap = recap_line(
+            memory["changes"],
+            last_human=memory["lastHuman"],
+            recapped_at=memory["recapAt"],
+            now=self._now(),
+        )
+        text = "\n".join(line for line in (recap, mentions) if line)
+        return Preamble(text=text, wait=wait, recapped=bool(recap))
+
+    def _mention_ids(self) -> List[str]:
+        """The member ids of the authorized users (``routing.authorizedUsers[]
+        .slack``), in configured order: an id as written, a handle through the
+        Slack directory. One that does not resolve is left out, never guessed
+        (abuse case 6)."""
+        from .directory import is_member_id
+
+        ids: List[str] = []
+        directory = None
+        for entry in self.config.authorized_users:
+            if is_member_id(entry):
+                ids.append(entry)
+                continue
+            try:
+                directory = directory or self.directory()
+                resolved = directory.user_id(entry)
+            except Exception as exc:  # noqa: BLE001 — unresolved: no mention
+                logger.debug("slack: could not resolve %s for a mention (%s)", entry, exc)
+                continue
+            if resolved:
+                ids.append(resolved)
+        return ids
+
+    def _remember_event(self, event: Event, preamble: Preamble) -> None:
+        """Record what ``event`` means for the next preamble (issue-549): its
+        change for the recap (dropped events too, R10.2), the wait it
+        announced, the recap it carried — and, once the work item is no longer
+        waiting, forget the announced waits, so a gate that reopens is a new
+        wait (R7.3). Best effort."""
+        if not event.work_item:
+            return
+        now = str(self._now())
+        changes: Dict[str, Any] = {}
+        change = change_of(event)
+        if change is not None:
+            changes["changes"] = [{"at": now, "kind": change[0], "value": change[1]}]
+        state_name = status_reactor.state_for(event)
+        if preamble.wait:
+            changes["announced"] = {preamble.wait: now}
+        elif state_name and state_name != status_reactor.WAITING:
+            changes["announced"] = None
+        if preamble.recapped:
+            changes["recapAt"] = now
+        if not changes:
+            return
+        try:
+            with ChannelState.locked(self.state_path, self.stores) as state:
+                state.remember_delivery(event.work_item, **changes)
+                state.save(self.state_path)
+        except Exception as exc:  # noqa: BLE001 — memory is best-effort
+            logger.debug("slack: could not record %s (%s)", event.work_item, exc)
+
+    def note_human(self, work_item: str) -> None:
+        """An authorized human spoke in ``work_item``'s conversation now — the
+        recap's reference point (issue-549 R9.1). Best effort."""
+        if not work_item:
+            return
+        try:
+            with ChannelState.locked(self.state_path, self.stores) as state:
+                state.remember_delivery(work_item, lastHuman=str(self._now()))
+                state.save(self.state_path)
+        except Exception as exc:  # noqa: BLE001 — memory is best-effort
+            logger.debug("slack: could not note a human in %s (%s)", work_item, exc)
 
     def _plan(
         self,
@@ -2684,6 +2775,7 @@ class SlackBotChannel:
         *,
         channel_id: str,
         thread: str,
+        preamble: str = "",
     ) -> MessagePlan:
         """``event`` as a :class:`MessagePlan` for a conversation of ``kind``.
 
@@ -2691,7 +2783,7 @@ class SlackBotChannel:
         central channel's item thread, the room mention's thread, or the gate
         message an acknowledgement threads under (``""`` = top-level).
         """
-        short = build_short_form(event, preamble=self._short_preamble(event, kind))
+        short = build_short_form(event, preamble=preamble)
         where = placement.place(kind, event, long_adds=long_form_adds(event, short))
         blocks = render_short_blocks(
             event,
@@ -2913,7 +3005,9 @@ class SlackBotChannel:
                 event.work_item,
                 decision.rule,
             )
-            # Not posted, but still the work item's state (R10.3).
+            # Not posted, but still the work item's state (R10.3) and the recap's
+            # record (R10.2).
+            self._remember_event(event, Preamble())
             self._react_status(
                 event,
                 placement.ROOM if in_room else placement.CENTRAL,
@@ -2937,7 +3031,15 @@ class SlackBotChannel:
             # (a gate message there is itself a reply, so an ack joins the thread)
             thread = reply_to or ((bound[1] or "") if bound else "")
             kind = placement.CENTRAL
-        plan = self._plan(event, kind, decision, channel_id=channel_id, thread=thread)
+        preamble = self._preamble(event)
+        plan = self._plan(
+            event,
+            kind,
+            decision,
+            channel_id=channel_id,
+            thread=thread,
+            preamble=preamble.text,
+        )
         try:
             delivered = self._deliver(client, event, plan)
         except ChannelError:
@@ -2958,6 +3060,7 @@ class SlackBotChannel:
         # Record what the conversation now holds, so the next decision reads it.
         if event.work_item:
             self._remember_delivery(event, decision, delivered.top)
+            self._remember_event(event, preamble)
         try:
             self._after_delivery(event, kind, plan, delivered, client)
         except Exception as exc:  # noqa: BLE001 — never fails a delivery

@@ -130,6 +130,13 @@ DELIVERY_CAP = 200
 #: that old is long out of the outbox's replay window.
 POSTED_CAP = 50
 
+#: How many changes one work item's recap record keeps (issue-549 R9): the
+#: newest; the recap line names at most a handful of them anyway.
+CHANGES_CAP = 30
+
+#: How many announced waits one work item's memory keeps (issue-549 R7.3).
+WAITS_CAP = 50
+
 #: What a declared room hears (issue-389, decision-133 D1): only a message that
 #: mentions the bot (``mentions``, the default), or every message (``all``, an
 #: authorized user's switch). Read off the declaration; anything else is
@@ -423,7 +430,8 @@ class ChannelState:
     #: The delivery memory (issue-393 B2; every conversation since issue-549):
     #: work item → ``{lastNode, lastEvent, progressTs{phase}, gateTs{node},
     #: phaseSelectionTs, posted{eventId: {channel, top, parts[]}},
-    #: status{channel, ts, emoji}}`` — what THIS
+    #: status{channel, ts, emoji}, announced{wait: at}, lastHuman, recapAt,
+    #: changes[{at, kind, value}]}`` — what THIS
     #: deployment has already shown in the room, so RoomPolicy can collapse a
     #: transition, suppress a gate's duplicate announcements, edit a phase's
     #: progress message in place, and thread an acknowledgement under the message
@@ -1000,6 +1008,14 @@ class ChannelState:
                     posted.pop(str(event_id), None)  # move to newest
                     posted[str(event_id)] = entry
                 record["posted"] = posted
+            elif field_name == "changes" and isinstance(value, list):
+                record["changes"] = list(record.get("changes") or []) + list(value)
+            elif field_name == "announced":
+                # None forgets every announced wait (the work item stopped
+                # waiting); a map adds to them (issue-549 R7.3)
+                merged = dict(record.get("announced") or {}) if value else {}
+                merged.update({str(k): str(v) for k, v in (value or {}).items()})
+                record["announced"] = merged
             elif field_name in ("progressTs", "gateTs") and isinstance(value, dict):
                 merged = dict(record.get(field_name) or {})
                 merged.update({str(k): str(v) for k, v in value.items() if v})
@@ -1092,7 +1108,40 @@ def _delivery_record(info: Dict[str, Any]) -> Dict[str, Any]:
         # (issue-549 R8): ``{channel, ts, emoji}``, so only a reaction it added
         # itself is ever removed.
         "status": _status_record(info.get("status")),
+        # Waits already announced with a mention (issue-549 R7.3): wait → when.
+        "announced": _capped_map(info.get("announced"), WAITS_CAP),
+        # When an authorized human last spoke in the conversation, and when a
+        # recap was last posted (issue-549 R9), as epoch seconds.
+        "lastHuman": _str_or_empty(info.get("lastHuman")),
+        "recapAt": _str_or_empty(info.get("recapAt")),
+        # The loop's own changes, for the recap line (issue-549 R9.3).
+        "changes": _changes(info.get("changes")),
     }
+
+
+def _capped_map(value: Any, cap: int) -> Dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+    out = {str(k): str(v) for k, v in value.items() if v}
+    while len(out) > cap:
+        out.pop(next(iter(out)), None)
+    return out
+
+
+def _changes(value: Any) -> List[Dict[str, str]]:
+    """The recap's change records, coerced, the newest :data:`CHANGES_CAP`."""
+    if not isinstance(value, list):
+        return []
+    out = [
+        {
+            "at": _str_or_empty(entry.get("at")),
+            "kind": _str_or_empty(entry.get("kind")),
+            "value": _str_or_empty(entry.get("value")),
+        }
+        for entry in value
+        if isinstance(entry, dict) and entry.get("kind")
+    ]
+    return out[-CHANGES_CAP:]
 
 
 def _status_record(value: Any) -> Dict[str, str]:

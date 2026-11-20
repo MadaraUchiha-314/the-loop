@@ -467,6 +467,9 @@ def process_reply(
     speaker = speaker_for(reply.author, reply.work_item, config, cli_config, bot)
     if not speaker.authorized and not speaker.collaborator:
         return _drop(reply, "unauthorized-actor", level="warning", actor=reply.author)
+    if speaker.authorized:
+        # an authorized human spoke here: the recap's reference point (issue-549 R9)
+        bot.note_human(reply.work_item)
     own = bot.own_user_id()
     if not own and (
         (reply.addressed and "<@" in (reply.text or "")) or addresses_a_verb(reply.text)

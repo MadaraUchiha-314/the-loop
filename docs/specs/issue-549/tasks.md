@@ -171,7 +171,7 @@ Tests are named so the T8 `-k` filter in `testing-plan.md` finds the abuse cases
   - _Requirements:_ R6.2, R8
   - _Test:_ T2 — `Scenario: the gateway proxy forwards reactions.remove and chat.delete`
     (red→green)
-- [ ] 14. Mentions and the recap line.
+- [x] 14. Mentions and the recap line.
   - An awaiting message mentions the authorized users whose Slack ids resolve, once per
     wait (remembered in delivery memory); none resolved → no mention.
   - The recap line opens the short form when the last authorized human message in the
