@@ -154,6 +154,10 @@ class SessionState:
     nudges_spent: int = 0
     #: The one stall notice of this visit to the node was already sent.
     notified: bool = False
+    #: An ask's default was already taken in this visit to the node (the nudge
+    #: budget's window). A second timed ask in the same visit would let a
+    #: session keep itself waiting on defaults without end.
+    default_spent: bool = False
     #: Every ask nothing has closed, oldest first.
     open_asks: Tuple[OpenAsk, ...] = ()
     #: The most recent of them.
@@ -255,6 +259,7 @@ def derive(
     ask_closed: Optional[_Moment] = None
     nudges_spent = 0
     notified = False
+    default_spent = False
     last_nudge: Optional[datetime] = None
     # The stall and number of the last nudge counted.
     last_attempt: Optional[Tuple[str, Any]] = None
@@ -322,11 +327,12 @@ def derive(
             if asks_open:
                 asks_open, ask_closed = {}, moment
         elif event == _DEFAULT_TAKEN:
+            default_spent = True
             if asks_open.pop(_text(record, "ask_id"), None) is not None:
                 ask_closed = moment
         if event in _BUDGET_RESETS or _delivered_a_person(record):
             nudges_spent, notified, last_nudge = 0, False, None
-            last_attempt = None
+            last_attempt, default_spent = None, False
 
     open_asks = tuple(ask.view() for ask in asks_open.values())
     open_ask = open_asks[-1] if open_asks else None
@@ -444,6 +450,7 @@ def derive(
         stall_id=stall_id_now,
         nudges_spent=nudges_spent,
         notified=notified,
+        default_spent=default_spent,
         open_asks=open_asks,
         open_ask=open_ask,
         declared_wait=declared,

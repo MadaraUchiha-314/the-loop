@@ -644,6 +644,27 @@ def test_a_persons_answer_closes_every_open_ask(answer):
     assert (state.state, state.idle_since) == ("stalled", stamp(20))
 
 
+def test_a_default_taken_on_this_node_visit_is_spent():
+    """Requirement: R6.2 — one default per visit to a node: a session cannot
+    renew a timed ask for ever on the same node. The window is the nudge
+    budget's: the pointer moving, or a person's event, opens a new one."""
+    log = [started(0), ask(1, ask_id="A", default="Go.", default_at=stamp(30))]
+    assert state_at(log, 40).default_spent is False
+    log.append(ev(31, "session.ask_default_taken", ask_id="A"))
+    assert state_at(log, 40).default_spent is True
+    # Asking again does not renew it.
+    log.append(ask(41, ask_id="B", default="Go.", default_at=stamp(80)))
+    assert state_at(log, 50).default_spent is True
+    for reset in (
+        ev(60, "graph.advanced", node="implementation", to="verification"),
+        ev(60, "session.reply_sent", actor="rohith"),
+        ev(60, "dispatch.succeeded", via="tmux", actor="rohith"),
+    ):
+        assert state_at(log + [reset], 70).default_spent is False
+    daemon = ev(60, "dispatch.succeeded", via="tmux", gh_event="check_run")
+    assert state_at(log + [daemon], 70).default_spent is True
+
+
 def test_legacy_ask_without_an_id_is_named_by_its_time_and_closed_by_a_reply():
     log = [ask(0)]
     state = state_at(log, 5)
