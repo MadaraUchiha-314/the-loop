@@ -691,6 +691,19 @@ def test_the_services_cycle_reads_its_registry_log_and_graph_from_the_config(
 # -- the thread ---------------------------------------------------------------------------
 
 
+def watchers():
+    return [t for t in threading.enumerate() if t.name == "the-loop-watchdog"]
+
+
+def wait_until(condition, seconds=5.0):
+    done = threading.Event()
+    for _ in range(int(seconds / 0.01)):
+        if condition():
+            return True
+        done.wait(0.01)
+    return False
+
+
 def test_exactly_one_watcher_runs_in_a_process(monkeypatch):
     ticks = []
     monkeypatch.setattr(watchdog, "TICK_SECONDS", 0.01)
@@ -700,20 +713,84 @@ def test_exactly_one_watcher_runs_in_a_process(monkeypatch):
     try:
         assert first is not None and first.daemon
         assert watchdog.start_watcher({}, second_stop) is None
-        for _ in range(200):
-            if ticks:
-                break
-            first_stop.wait(0.01)
-        assert ticks and ticks[0] == {"routing": {}}
+        assert len(watchers()) == 1
+        assert wait_until(lambda: bool(ticks)) and ticks[0] == {"routing": {}}
     finally:
         first_stop.set()
+        second_stop.set()
         if first is not None:
             first.join(5)
     assert first is not None and not first.is_alive()
-    again = watchdog.start_watcher({}, second_stop)
-    assert again is not None
-    second_stop.set()
-    again.join(5)
+    assert wait_until(lambda: watchers() == [])
+
+
+def test_a_second_service_is_still_watched_when_the_first_one_ends(monkeypatch):
+    """Requirement: R4.11 — the watcher runs for as long as a service in this
+    process does. The first service's watcher ends with it; the second
+    service, told that one already ran, is not left with none."""
+    ticks = []
+    monkeypatch.setattr(watchdog, "TICK_SECONDS", 0.01)
+    monkeypatch.setattr(watchdog, "_cycle", lambda config: ticks.append(config["n"]))
+    first_stop, second_stop = threading.Event(), threading.Event()
+    first = watchdog.start_watcher({"n": 1}, first_stop)
+    try:
+        assert first is not None
+        assert watchdog.start_watcher({"n": 2}, second_stop) is None
+        assert wait_until(lambda: 1 in ticks)
+        first_stop.set()
+        first.join(5)
+        assert not first.is_alive()
+        assert wait_until(lambda: 2 in ticks)
+        assert len(watchers()) == 1
+    finally:
+        first_stop.set()
+        second_stop.set()
+    assert wait_until(lambda: watchers() == [])
+    # Nothing is left waiting for a turn: a later service starts its own.
+    third_stop = threading.Event()
+    third = watchdog.start_watcher({"n": 3}, third_stop)
+    assert third is not None
+    third_stop.set()
+    third.join(5)
+
+
+def test_a_watcher_that_is_shutting_down_does_not_block_a_new_one(monkeypatch):
+    """The first watcher's stop is set while its cycle is still running. A new
+    service gets a watcher of its own, and the two cycles never overlap."""
+    release, entered = threading.Event(), threading.Event()
+    running, overlaps, ticks = [], [], []
+
+    def cycle(config):
+        if running:
+            overlaps.append(config["n"])
+        running.append(1)
+        ticks.append(config["n"])
+        if config["n"] == 1:
+            entered.set()
+            release.wait(5)
+        running.pop()
+
+    monkeypatch.setattr(watchdog, "TICK_SECONDS", 0.01)
+    monkeypatch.setattr(watchdog, "_cycle", cycle)
+    first_stop, second_stop = threading.Event(), threading.Event()
+    first = watchdog.start_watcher({"n": 1}, first_stop)
+    assert first is not None
+    try:
+        assert entered.wait(5)
+        first_stop.set()
+        second = watchdog.start_watcher({"n": 2}, second_stop)
+        assert second is not None and second is not first
+        second_stop.wait(0.1)
+        assert 2 not in ticks  # it waits for the first one's cycle to finish
+        release.set()
+        assert wait_until(lambda: 2 in ticks)
+    finally:
+        release.set()
+        first_stop.set()
+        second_stop.set()
+        first.join(5)
+    assert overlaps == []
+    assert wait_until(lambda: watchers() == [])
 
 
 def test_a_cycle_that_raises_is_logged_and_the_next_tick_runs(monkeypatch):

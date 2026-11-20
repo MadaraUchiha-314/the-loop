@@ -25,7 +25,7 @@ import logging
 import re
 import threading
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Dict, List, Mapping, Optional, Union
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
 from pathlib import Path
 
 from .. import eventlog, prompts
@@ -481,18 +481,25 @@ def _cycle(config: Optional[dict]) -> None:
     )
 
 
+#: A config, or a callable that returns the config as it is now.
+ConfigSource = Union[Mapping[str, Any], Callable[[], Mapping[str, Any]], None]
+
 _LOCK = threading.Lock()
-#: The one watcher of this process. Two would each see an act as owed in the
-#: moment before either recorded it, and type it twice.
+#: The one watcher of this process, and the event that stops it. Two watchers
+#: would each see an act as owed in the moment before either recorded it, and
+#: type it twice.
 _RUNNING: Optional[threading.Thread] = None
+_RUNNING_STOP: Optional[threading.Event] = None
+#: Callers that asked for a watcher while one ran. When that one stops, the
+#: first of these that is still serving gets a watcher of its own.
+_WAITING: List[Tuple[ConfigSource, threading.Event]] = []
 
 
 def start_watcher(
-    cli_config: Union[Mapping[str, Any], Callable[[], Mapping[str, Any]], None],
-    stop_event: threading.Event,
+    cli_config: ConfigSource, stop_event: threading.Event
 ) -> Optional[threading.Thread]:
-    """The service's hook (R4.11): the watcher's thread, or ``None`` when this
-    process already runs one.
+    """The service's hook: the watcher's thread, or ``None`` when this process
+    already runs one.
 
     The other watchers' shape exactly: a daemon thread looping
     ``stop_event.wait(TICK_SECONDS)`` → one cycle; the caller's stop event ends
@@ -503,23 +510,60 @@ def start_watcher(
     ``cli_config`` is the config, or a callable that returns the config as it
     is now. The callable is asked on every tick, so a switch turned off in the
     file takes effect on the next tick and needs no restart.
+
+    At most one watcher cycles at a time. A caller answered ``None`` is not
+    forgotten: when the running watcher stops and that caller's own stop event
+    is still clear, a watcher is started for it. A watcher that is already
+    stopping does not count as running; the new one waits for its last cycle.
     """
-    global _RUNNING
+    with _LOCK:
+        _WAITING[:] = [entry for entry in _WAITING if not entry[1].is_set()]
+        previous = _RUNNING if _RUNNING is not None and _RUNNING.is_alive() else None
+        stopping = _RUNNING_STOP is None or _RUNNING_STOP.is_set()
+        if previous is not None and not stopping:
+            _WAITING.append((cli_config, stop_event))
+            return None
+        thread = _start(cli_config, stop_event, previous)
+    logger.info("the watcher looks at every session each %ss", TICK_SECONDS)
+    return thread
+
+
+def _start(
+    cli_config: ConfigSource,
+    stop_event: threading.Event,
+    previous: Optional[threading.Thread],
+) -> threading.Thread:
+    """Start the watcher's thread and make it the running one. ``_LOCK`` held."""
+    global _RUNNING, _RUNNING_STOP
     current = cli_config if callable(cli_config) else None
     fixed = {} if callable(cli_config) else dict(cli_config or {})
 
     def run() -> None:
+        # A watcher that was told to stop may still be inside its last cycle.
+        while previous is not None and previous.is_alive():
+            if stop_event.wait(0.05):
+                break
         while not stop_event.wait(TICK_SECONDS):
             try:
                 _cycle(dict(current() or {}) if current is not None else fixed)
             except Exception:  # noqa: BLE001 — never kill the service over a tick
                 logger.exception("the watcher's cycle raised; continuing")
+        _hand_over()
 
-    with _LOCK:
-        if _RUNNING is not None and _RUNNING.is_alive():
-            return None
-        thread = threading.Thread(target=run, name="the-loop-watchdog", daemon=True)
-        thread.start()
-        _RUNNING = thread
-    logger.info("the watcher looks at every session each %ss", TICK_SECONDS)
+    thread = threading.Thread(target=run, name="the-loop-watchdog", daemon=True)
+    _RUNNING, _RUNNING_STOP = thread, stop_event
+    thread.start()
     return thread
+
+
+def _hand_over() -> None:
+    """Called by a watcher as it stops: start one for the first caller that was
+    answered ``None`` and is still serving."""
+    with _LOCK:
+        if _RUNNING is not threading.current_thread():
+            return  # a newer watcher already took over
+        while _WAITING:
+            cli_config, stop_event = _WAITING.pop(0)
+            if not stop_event.is_set():
+                _start(cli_config, stop_event, None)
+                return
