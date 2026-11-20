@@ -852,21 +852,25 @@ def test_the_declared_wait_verb_refuses_a_foreign_work_item(bound, monkeypatch, 
 # -- a daemon's session that does not name its work item ---------------------------
 
 
-@pytest.mark.parametrize("marker", ["THE_LOOP_INSTANCE", "THE_LOOP_CLI_CONFIG"])
 def test_the_verbs_refuse_a_daemon_session_that_names_no_work_item(
-    bound, monkeypatch, capsys, marker
+    bound, monkeypatch, capsys
 ):
     """Requirement: security considerations — the daemon names every session's
-    work item. A session that carries the daemon's marks and not that name
-    lost it, and the check on the ref must not switch itself off for it."""
+    work item. A session that carries the daemon's instance variable and not
+    that name lost it, and the check on the ref must not switch itself off
+    for it."""
+    marker = "THE_LOOP_INSTANCE"
     working_on(monkeypatch)
     monkeypatch.delenv("THE_LOOP_WORK_ITEM", raising=False)
+    monkeypatch.delenv("THE_LOOP_CLI_CONFIG", raising=False)
     monkeypatch.setenv(marker, "somewhere")
     monkeypatch.setattr("sys.stdin", io.StringIO(""))
 
     assert main(["sessions", "stop-check", "--work-item", REF]) == 2
     stop = capsys.readouterr()
     assert stop.out == "" and "THE_LOOP_WORK_ITEM" in stop.err and marker in stop.err
+    assert "started by" not in stop.err
+    assert "a the-loop daemon session's instance variable" in stop.err
 
     assert main(["wait", "--work-item", REF, "--for", "CI", "--until", "30m"]) == 2
     wait = capsys.readouterr()
@@ -882,6 +886,26 @@ def test_the_verbs_refuse_a_daemon_session_that_names_no_work_item(
         "session.turn_started",
     ):
         assert recorded(bound, event) == []
+
+
+def test_the_verbs_run_in_a_shell_that_only_points_the_cli_at_a_config(
+    bound, monkeypatch, capsys, tmp_path
+):
+    """Requirement: security considerations — exporting THE_LOOP_CLI_CONFIG is
+    how an operator points the CLI at a config. It does not make the shell a
+    daemon's session, so the verbs are not refused there."""
+    working_on(monkeypatch)
+    monkeypatch.delenv("THE_LOOP_WORK_ITEM", raising=False)
+    monkeypatch.delenv("THE_LOOP_INSTANCE", raising=False)
+    monkeypatch.setenv("THE_LOOP_CLI_CONFIG", str(tmp_path / "cli-config.yaml"))
+    monkeypatch.setattr("sys.stdin", io.StringIO(""))
+    assert main(["sessions", "stop-check", "--work-item", REF]) == 0
+    assert json.loads(capsys.readouterr().out)["verdict"] == "refuse"
+    assert main(["wait", "--work-item", REF, "--for", "CI", "--until", "30m"]) == 0
+    assert main(["sessions", "turn-start", "--work-item", REF]) == 0
+    capsys.readouterr()
+    assert len(recorded(bound, "session.wait_declared")) == 1
+    assert len(recorded(bound, "session.turn_started")) == 1
 
 
 def test_the_verbs_still_run_in_a_shell_the_daemon_did_not_start(
