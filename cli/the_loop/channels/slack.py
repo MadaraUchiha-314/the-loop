@@ -96,6 +96,7 @@ __all__ = [
     "MENTION",
     "decision_view",
     "MENTION_SHORTCUTS",
+    "REMEMBERED_ASKS_CAP",
     "SNAPSHOT_CHAR_CAP",
     "SNAPSHOT_MESSAGE_CAP",
     "Snapshot",
@@ -250,6 +251,10 @@ SNAPSHOT_CHAR_CAP = 40_000
 #: GitHub's own ceiling on a comment body; a scrubbed snapshot still over it is
 #: refused rather than cut in silence (A9).
 GITHUB_COMMENT_LIMIT = 65_000
+#: How many questions' messages one work item's delivery memory keeps for a
+#: later edit or reminder. A session rarely has more than two open; the cap
+#: bounds the ones that were answered and so never edited.
+REMEMBERED_ASKS_CAP = 8
 
 
 @dataclass(frozen=True)
@@ -3189,8 +3194,12 @@ class SlackBotChannel:
     ) -> None:
         """Keep what a stall notice or a question says and where, as an open
         gate's message is kept, so it can be edited when the stall ends
-        or the default is taken. A work item has one open question: remembering
-        a new one forgets the one before it."""
+        or the default is taken.
+
+        Several questions can be open at once, and each keeps its own message:
+        a default or a reminder is about the question it names. A question
+        that was answered is never edited, so nothing forgets it; past
+        :data:`REMEMBERED_ASKS_CAP` the oldest question is forgotten."""
         try:
             with ChannelState.locked(self.state_path, self.stores) as state:
                 changes: Dict[str, Any] = {
@@ -3199,7 +3208,9 @@ class SlackBotChannel:
                 stale: Dict[str, Any] = {}
                 if key.startswith("ask:"):
                     held = state.delivery_for(event.work_item)["gateTs"]
-                    stale = {k: None for k in held if k.startswith("ask:") and k != key}
+                    asks = [k for k in held if k.startswith("ask:") and k != key]
+                    excess = len(asks) + 1 - REMEMBERED_ASKS_CAP
+                    stale = {k: None for k in asks[: max(0, excess)]}
                 state.remember_delivery(
                     event.work_item, gateMessage={**stale, **changes}
                 )

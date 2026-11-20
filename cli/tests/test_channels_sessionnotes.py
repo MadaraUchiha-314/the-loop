@@ -397,22 +397,69 @@ def test_the_reminder_is_a_thread_reply_under_the_question_with_a_mention(tmp_pa
     assert len([p for p in client.posted if "has been waiting" in p["text"]]) == 1
 
 
-def test_a_new_question_forgets_the_one_before_it(tmp_path):
-    config, client, bot = room(tmp_path)
-    bot.post(question(ask_id="ask-1"))
-    bot.post(
-        Event(
-            event_type="session.awaiting_input",
-            work_item=REF,
-            text="And the second one?",
-            summary="And the second one?",
-            source="cli",
-            detail={"ask_id": "ask-2"},
-        )
+def second_question(ask_id="ask-2"):
+    return Event(
+        event_type="session.awaiting_input",
+        work_item=REF,
+        text="And the second one?",
+        summary="And the second one?",
+        source="cli",
+        detail={"ask_id": ask_id},
     )
+
+
+def test_each_open_question_keeps_its_own_message(tmp_path):
+    """Two questions are open at once: the first one's default edits the first
+    message and leaves the second remembered.
+
+    Requirement: R6.2, R6.7
+    """
+    config, client, bot = room(tmp_path, read={"mode": "socket"})
+    bot.post(question(ask_id="ask-1"))
+    first = f"1700.{len(client.posted):06d}"
+    bot.post(second_question())
+    second = f"1700.{len(client.posted):06d}"
+    assert memory(config)["gateTs"]["ask:ask-1"] == first
+
+    bot.post(default_taken(ask_id="ask-1"))
+
+    ((channel, edited, text, _),) = client.updates
+    assert (channel, edited) == (ROOM, first)
+    assert "No answer by 08:47 UTC" in text
     held = memory(config)
     assert [k for k in held["gateTs"] if k.startswith("ask:")] == ["ask:ask-2"]
+    assert held["gateTs"]["ask:ask-2"] == second
     assert [k for k in held["gateMessage"] if k.startswith("ask:")] == ["ask:ask-2"]
+
+
+def test_a_reminder_for_an_older_question_threads_under_that_question(tmp_path):
+    """Requirement: R6.8"""
+    _, client, bot = room(tmp_path)
+    bot.post(question(ask_id="ask-1", default=""))
+    first = f"1700.{len(client.posted):06d}"
+    bot.post(second_question())
+
+    bot.post(reminded(ask_id="ask-1"))
+
+    assert client.posted[-1]["thread_ts"] == first
+
+
+def test_the_remembered_questions_of_a_work_item_are_capped(tmp_path):
+    """Questions that were answered are never edited, so they would be kept
+    for ever: past the cap the oldest is forgotten.
+
+    Requirement: R6.2
+    """
+    from the_loop.channels.slack import REMEMBERED_ASKS_CAP
+
+    config, _, bot = room(tmp_path)
+    count = REMEMBERED_ASKS_CAP + 2
+    for n in range(count):
+        bot.post(second_question(ask_id=f"ask-{n}"))
+    kept = [f"ask:ask-{n}" for n in range(2, count)]
+    held = memory(config)
+    assert [k for k in held["gateTs"] if k.startswith("ask:")] == kept
+    assert [k for k in held["gateMessage"] if k.startswith("ask:")] == kept
 
 
 # -- abuse cases --------------------------------------------------------------------
