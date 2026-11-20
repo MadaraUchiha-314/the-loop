@@ -775,7 +775,7 @@ def test_legacy_ask_without_an_id_is_shown_and_owes_nothing():
     timed = state_at([ask(0, default="Yes.", default_at=stamp(30))], 60 * 24)
     assert timed.open_ask is not None and timed.open_ask.legacy is True
     assert timed.due == ()
-    assert state_at([ask(0, ask_id="a1")], 5).open_ask.legacy is False
+    assert state_at([ask(0, ask_id="a1")], 5).open_asks[0].legacy is False
 
 
 def test_a_reminder_is_owed_once_for_an_ask_without_a_default():
