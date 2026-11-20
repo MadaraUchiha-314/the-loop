@@ -932,6 +932,12 @@ def ask_session(
     # of zero means no human was paged, and until now that fact lived only in a
     # `debug` line in this checkout's event log.
     channels_posted = sum(1 for posted in channel_results if posted.ok)
+    # A default stands in for an answer nobody gave. When the question reached
+    # neither the tracker nor a channel, nobody could have given one, so the
+    # ask is recorded without a time and its default is never taken.
+    unheard = wait is not None and not ok and not channels_posted
+    if unheard:
+        default_at = ""
     eventlog.emit(
         "session.awaiting_input",
         level="info" if ok else "warning",
@@ -1031,8 +1037,13 @@ def ask_session(
                 "text": strings.t("core.sessions.ask.recorded-wait-anyway"),
             }
         )
-    if wait is not None:
-        # Said whether or not the comment landed: the time is recorded either way.
+    if unheard:
+        messages.append(
+            {"stream": "err", "text": strings.t("core.sessions.ask.default-unheard")}
+        )
+    elif wait is not None:
+        # Said whether or not the comment landed, as long as a channel took it:
+        # the time is recorded either way.
         if wait != requested:
             messages.append(
                 {
@@ -1060,7 +1071,7 @@ def ask_session(
         "commentUrl": url,
         "askId": ask_id,
         "defaultAt": default_at or None,
-        "defaultAfterSeconds": wait,
+        "defaultAfterSeconds": None if unheard else wait,
         "exitCode": 0 if ok else 1,
         "messages": messages,
     }

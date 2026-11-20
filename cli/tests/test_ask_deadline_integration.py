@@ -726,3 +726,39 @@ def test_abuse_a_default_of_approved_taken_next_to_a_human_gate_answers_nothing(
     )
     verdict = classify_feedback(gate)
     assert verdict.status == verdict.outcome == "wait"
+
+
+def test_a_question_that_reached_nobody_has_no_default_to_take(
+    config, log_path, monkeypatch
+):
+    """
+    Feature: A question can carry a default and a deadline
+    Scenario: the question could not be posted anywhere
+      Given the work item's tracker refuses the comment and no channel is configured
+      When the session asks with a default answer and a wait
+      Then the ask is recorded with its default and without a time for it
+      And the output says the default will not be taken, and why
+      And no default is owed however long nobody answers
+
+    Requirement: docs/specs/issue-551/requirements.md#R6.2
+    """
+    monkeypatch.setattr(
+        core_sessions,
+        "post_issue_comment_with_url",
+        lambda item, body, api=None: (False, "HTTP 502", ""),
+    )
+
+    result = _ask(config)
+
+    (asked,) = _records(log_path, "session.awaiting_input")
+    assert asked["comment_posted"] is False and asked["channels_posted"] == 0
+    assert asked["default"] == "Move T5 to after merge."
+    assert "default_at" not in asked
+    assert result["defaultAt"] is None and result["defaultAfterSeconds"] is None
+    said = " ".join(m["text"] for m in result["messages"])
+    assert "reached nobody" in said and "will not be taken" in said
+    assert "the default is taken at" not in said
+    late = _ts(asked["ts"]) + timedelta(days=30)
+    state = _state_after(log_path, late)
+    assert state.open_ask is not None
+    assert "take-default" not in [due.act for due in state.due]
