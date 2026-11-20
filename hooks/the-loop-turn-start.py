@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Record that this session's turn started (issue-551, R4.5, R4.6).
+"""Record that this session's turn started.
 
 The idle watcher tells a working session from an idle one by its turn records:
 a turn's end is written by the Stop gate, and a turn's start is written here, by

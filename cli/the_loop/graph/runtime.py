@@ -204,13 +204,13 @@ class NodeReport:
     messages: List[str] = field(default_factory=list)
     forced: bool = False
     attempts: int = 0
-    #: The node this advance moved the pointer INTO, ``""`` when it did not move
-    #: (issue-551). Not part of :meth:`as_dict`: `check` reports verdicts, and a
+    #: The node this advance moved the pointer INTO, ``""`` when it did not
+    #: move. Not part of :meth:`as_dict`: `check` reports verdicts, and a
     #: claim's answer says where it landed in its own fields.
     entered: str = ""
     #: Whether that node's entry chain pushed its assignment into a session —
     #: the daemon's channel. A claim's answer then leaves the assignment out, so
-    #: no session reads it twice (issue-551, R1.5).
+    #: no session reads it twice.
     assignment_delivered: bool = False
 
     @property
@@ -1392,11 +1392,11 @@ class Runtime:
     def _next_assignment(
         self, item: WorkItem, state: "WorkItemState", report: NodeReport
     ) -> Dict[str, Any]:
-        """``assignment`` and ``next`` for the node a claim entered (issue-551, R1).
+        """``assignment`` and ``next`` for the node a claim entered.
 
         ``advanced to <node>`` told the claiming session where it stood and not
         what to do there, and it ended its turn. Empty — both keys absent — when
-        the entry chain already pushed the assignment into a session (R1.5), and
+        the entry chain already pushed the assignment into a session, and
         at a terminal node, where nothing is left to assign.
         """
         from .hooks.assignment import claim_assignment
@@ -1438,7 +1438,7 @@ class Runtime:
         ref: str = "",
         event: Optional[Mapping[str, Any]] = None,
     ) -> NodeReport:
-        """An inbound event reached the work item's session (issue-551, R5).
+        """An inbound event reached the work item's session.
 
         A comment is not a claim. A human-owned node, or a node whose exit chain
         has a hook that declared it reads the event, is advanced exactly as
@@ -1473,7 +1473,7 @@ class Runtime:
             # the very node its author declared away (issue-177).
             node_id = self._route_skips(state, item, self.graph.start, skips)
         node = self.graph.node(node_id)
-        # An event nobody on this node reads only LOOKS at the gate (issue-551):
+        # An event nobody on this node reads only LOOKS at the gate:
         # the chain runs once, without it, and an unmet verdict is not recorded.
         read_only = (
             inbound and node.actor != "human" and not self._exit_reads_event(node)

@@ -43,7 +43,7 @@ __all__ = [
     "render_assignment",
 ]
 
-#: The hook's registered name — the runtime reads its result by it (issue-551).
+#: The hook's registered name — the runtime reads its result by it.
 DELIVER_ASSIGNMENT = "deliver-assignment"
 
 
@@ -129,7 +129,7 @@ def render_assignment(ctx: HookContext) -> str:
 
 
 def claim_assignment(ctx: HookContext) -> str:
-    """The assignment a **claim's answer** carries for the node it entered (issue-551).
+    """The assignment a **claim's answer** carries for the node it entered.
 
     The one renderer's text, then the line a pushed assignment never needed: a
     session reading its own command's answer is mid-turn, so it is told to keep

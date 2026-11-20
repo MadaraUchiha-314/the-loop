@@ -46,7 +46,7 @@ _REGISTRY: Dict[str, HookFn] = {}
 _COLLECTOR = threading.local()
 
 
-#: Set on a hook function that declared ``reads_event`` (issue-551). On the
+#: Set on a hook function that declared ``reads_event``. On the
 #: function rather than in a table of names, so a repository's ``x-`` hook
 #: carries its own declaration into whichever graph it is attached to.
 _READS_EVENT = "__the_loop_reads_event__"
@@ -56,8 +56,8 @@ def hook(name: str, *, reads_event: bool = False) -> Callable[[HookFn], HookFn]:
     """Register ``fn`` under ``name``. A duplicate name is a programming error
     raised at import time — exactly as the command registry does.
 
-    ``reads_event`` declares that the hook reads :attr:`HookContext.event`
-    (issue-551, R5.3). An inbound event is handed to an agent-owned node's exit
+    ``reads_event`` declares that the hook reads :attr:`HookContext.event`.
+    An inbound event is handed to an agent-owned node's exit
     chain only when a hook of that chain declared it; otherwise the node is
     read without the event and an unmet gate records nothing.
 
@@ -134,7 +134,7 @@ def get_hook(name: str) -> HookFn:
 
 def reads_event(fn: HookFn) -> bool:
     """Whether ``fn`` declared, where it was registered, that it reads the
-    inbound event (issue-551)."""
+    inbound event."""
     return getattr(fn, _READS_EVENT, False) is True
 
 

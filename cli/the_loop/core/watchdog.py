@@ -1,4 +1,4 @@
-"""Core capability: the watcher (issue-551, Requirement 4, R6.2, R6.7).
+"""Core capability: the watcher.
 
 One thread in the control-plane service, on a fixed tick. Each cycle reads the
 event log once, derives every live session's state (:mod:`sessionstate`) and
@@ -7,7 +7,7 @@ stall, an ask's default, an ask's reminder.
 
 The watcher keeps no state of its own. An act is owed only while the log holds
 no record of it, and every act here ends by writing that record, so a second
-cycle, or a watcher started after a restart, repeats nothing (R4.10, R6.10).
+cycle, or a watcher started after a restart, repeats nothing.
 
 This is the one place the daemon types into a session with no human event
 behind it. What it types is a fixed prompt file plus the node id and its
@@ -15,8 +15,6 @@ command from the graph definition, the idle minutes and the work item's own
 ref (:func:`nudge_text`); the "proceed with your default" message quotes the
 session's own default inside a fence it cannot close (:func:`default_text`).
 Nothing a commenter wrote is ever in either.
-
-Spec: docs/specs/issue-551/design.md § "The watcher's cycle".
 """
 
 from __future__ import annotations
@@ -67,7 +65,7 @@ Resolve = Callable[[Session, str], Mapping[str, Any]]
 def nudge_text(
     *, node: str, command: str, minutes: int, ref: str, claim: str = ""
 ) -> str:
-    """The nudge (R4.2): fixed prompt files, with the node, the command that
+    """The nudge: fixed prompt files, with the node, the command that
     resumes it, the idle minutes and the work item's own ref.
 
     ``claim`` is the work item's id when the node's exit is already met: the
@@ -87,7 +85,7 @@ _BACKTICKS = re.compile(r"`+")
 
 
 def default_text(*, ref: str, default: str) -> str:
-    """The "proceed with your default" message (R6.2).
+    """The "proceed with your default" message.
 
     The default is the session's own earlier text. It is quoted inside a fence
     one backtick longer than any run in it, so nothing in it can close the
@@ -254,7 +252,7 @@ class _Cycle:
 
     def _reachable(self) -> bool:
         """A session the daemon drives and may type to: it has a pane of the
-        daemon's and nobody paused it (design § Fail-closed)."""
+        daemon's and nobody paused it."""
         return bool(self.endpoint.tmux_target) and not self.held
 
     def _paste(self, text: str) -> Any:
@@ -285,7 +283,7 @@ class _Cycle:
             # A stall whose node cannot be resolved gets the notice instead.
             return self._notify(due)
         if facts.get("actor") != "agent" or facts.get("terminal"):
-            return  # nobody owes agent work here (R4.1)
+            return  # nobody owes agent work here
         text = nudge_text(
             node=state.node,
             command=str(facts.get("command") or ""),

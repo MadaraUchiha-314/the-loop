@@ -24,8 +24,8 @@ END = "<!-- the-loop:codex:end -->"
 GATE_SCRIPT = "the-loop-gate.py"
 TURN_START_SCRIPT = "the-loop-turn-start.py"
 #: The hooks a Codex session gets: the event, the script and its timeout in
-#: seconds. The turn-start hook is issue-551's (R4.5): a session without it has
-#: no turn records, and the idle watcher leaves it alone.
+#: seconds. A session without the turn-start hook has no turn records, and the
+#: idle watcher leaves it alone.
 _CODEX_HOOKS = (
     ("Stop", GATE_SCRIPT, 60),
     ("UserPromptSubmit", TURN_START_SCRIPT, 15),

@@ -128,7 +128,7 @@ _EVENT_NAMES: Tuple[str, ...] = (
     "session.announce_failed",
     "session.awaiting_input",
     "session.reply_sent",
-    # -- turns, waits, stalls and ask deadlines (issue-551; source: the session's
+    # -- turns, waits, stalls and ask deadlines (source: the session's
     #    hooks and verbs, the dispatcher, and the control-plane service's watcher)
     "session.turn_started",
     "session.turn_ended",
@@ -528,7 +528,7 @@ def load_config(config_path: Optional[Union[str, Path]] = None) -> dict:
 def current_path() -> Optional[Path]:
     """The file this process's records go to; ``None`` when no log is configured.
 
-    For a reader that must see what this process just wrote (issue-551: the
+    For a reader that must see what this process just wrote (the
     dispatcher asks whether the work item has an open ask)."""
     return _log.path if _log is not None and _log.enabled else None
 

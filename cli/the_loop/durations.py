@@ -1,10 +1,8 @@
-"""Durations a session or an operator types: ``45s``, ``30m``, ``2h`` (issue-551).
+"""Durations a session or an operator types: ``45s``, ``30m``, ``2h``.
 
 One strict form, a positive whole number with one unit. The value becomes a
 deadline the daemon acts on by itself (an ask's default, a declared wait), so
 text that is nearly a duration is refused instead of guessed at.
-
-Spec: docs/specs/issue-551/design.md § Security design.
 """
 
 from __future__ import annotations
@@ -30,7 +28,7 @@ def parse_duration(text: str) -> int:
 
 
 def clamp(seconds: int, minimum: int) -> int:
-    """``seconds``, raised to the operator's ``minimum`` when it is under it (R6.5)."""
+    """``seconds``, raised to the operator's ``minimum`` when it is under it."""
     return max(seconds, minimum)
 
 

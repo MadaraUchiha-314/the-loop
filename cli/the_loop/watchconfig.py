@@ -1,4 +1,4 @@
-"""``routing.watchdog`` and ``routing.asks`` — the idle watcher's knobs (issue-551).
+"""``routing.watchdog`` and ``routing.asks`` — the idle watcher's knobs.
 
 Kept apart from the watcher so that the dispatcher, the stop check and the
 status surfaces can read the same numbers without importing each other.
@@ -7,8 +7,6 @@ The schema is the gate for these values. ``from_mapping`` still falls back to
 the default for one the schema would refuse, as ``routing.ci`` does: a mapping
 that never met the schema (a test, an embedder) must not yield a zero idle
 threshold, which would nudge a session on every tick.
-
-Spec: docs/specs/issue-551/design.md § Configuration.
 """
 
 from __future__ import annotations
@@ -45,7 +43,7 @@ class WatchdogConfig:
     """``routing.watchdog`` — when an idle session is nudged, and how often."""
 
     #: ``False`` sends no nudge and no stall notice. The Stop gate and the turn
-    #: records do not read it (R4.12).
+    #: records do not read it.
     enabled: bool = True
     idle_seconds: int = DEFAULT_IDLE_SECONDS
     #: ``0`` skips the nudges and goes to the notice.
@@ -71,7 +69,7 @@ class WatchdogConfig:
 class AsksConfig:
     """``routing.asks`` — the deadline of an ask's default, and the reminder."""
 
-    #: A shorter `--after` is raised to this (R6.5).
+    #: A shorter `--after` is raised to this.
     min_default_wait_seconds: int = DEFAULT_MIN_DEFAULT_WAIT_SECONDS
     #: ``0`` sends no reminder.
     reminder_seconds: int = DEFAULT_REMINDER_SECONDS

@@ -5,7 +5,7 @@ The harness hook is a **clock**, not a state machine. It says *when* to look; th
 graph says *what we are looking at*. So this wrapper never needs to know which
 phase a work item is in — it asks the-loop.
 
-It asks the service first (issue-551): ``the-loop sessions stop-check`` is given
+It asks the service first: ``the-loop sessions stop-check`` is given
 the harness's own hook payload and answers ``allow`` or ``refuse``, because only
 the service knows of an open ask, a declared wait and who owns each node. The
 attempt cap stays here, so it holds when the service is down, and a give-up is
@@ -44,7 +44,7 @@ from pathlib import Path
 
 DEFAULT_MAX_ATTEMPTS = 3
 CHECK_TIMEOUT_SECONDS = 30
-#: The service's answer and the give-up report (issue-551). Both are bounded so
+#: The service's answer and the give-up report. Both are bounded so
 #: the worst case — the service times out and `check` runs after it — still ends
 #: inside the 60 seconds a harness gives this hook.
 STOP_CHECK_TIMEOUT_SECONDS = 20
@@ -143,7 +143,7 @@ def ask_service(
 ) -> dict | None:
     """The service's verdict on this stop, or ``None`` when there is none to use.
 
-    ``None`` sends the caller to :func:`run_check` (issue-551, version skew). It
+    ``None`` sends the caller to :func:`run_check` (version skew). It
     covers every way of not getting an answer: no CLI, a CLI without the verb
     (argparse exits non-zero), a service that is down or does not know the work
     item (non-zero, nothing on stdout), a timeout, and output that is not a JSON
@@ -173,7 +173,7 @@ def ask_service(
 
 
 def report_give_up(work_item: str, timeout: float = GAVE_UP_TIMEOUT_SECONDS) -> None:
-    """Tell the service the cap let this stop through (issue-551, R3.6).
+    """Tell the service the cap let this stop through.
 
     It records the turn's end as ``gate-gave-up``, which the idle watcher then
     covers. Best effort: the stop is already allowed, so a failure changes nothing.
@@ -201,8 +201,8 @@ def report_give_up(work_item: str, timeout: float = GAVE_UP_TIMEOUT_SECONDS) -> 
 def run_check(work_item: str, timeout: float = CHECK_TIMEOUT_SECONDS) -> dict | None:
     """Ask the CLI where the work item stands. ``None`` means "cannot tell".
 
-    The fallback for a CLI or a service that cannot answer ``stop-check``
-    (issue-551). It knows nothing of asks or waits and records nothing.
+    The fallback for a CLI or a service that cannot answer ``stop-check``.
+    It knows nothing of asks or waits and records nothing.
 
     ``--recompute`` stays. Work-item state is a **cache, not an authority**, and
     this is a gate: the state file is one the agent being gated can write. The
@@ -233,7 +233,7 @@ def run_check(work_item: str, timeout: float = CHECK_TIMEOUT_SECONDS) -> dict | 
 def blocking_node(report: dict) -> dict | None:
     """The node the agent should not stop on, if there is one.
 
-    Used when the service gave no verdict (issue-551). A ``block`` **before**
+    Used when the service gave no verdict. A ``block`` **before**
     the node the work item is at, else that node itself when it is a ``block``.
     Each narrowing is a way an earlier version got it wrong:
 
@@ -256,12 +256,12 @@ def blocking_node(report: dict) -> dict | None:
       agent from ending its turn then would spin it against a person who is not
       there, which is the one thing an attempt cap exists to contain rather than
       to cause.
-    * A ``wait`` **before** the item's node counts as passed (issue-551, R3.3).
+    * A ``wait`` **before** the item's node counts as passed.
       It can only be an approved human gate, which recomputes as ``wait`` for
       good, or a graph wait the pointer is already past. The walk used to end at
       the first such node and allow the stop, so one approved gate switched this
       gate off for every node after it. A ``block`` before the item's node still
-      blocks and is the node named (issue-429, R3.4); any other status there
+      blocks and is the node named; any other status there
       leaves the report inconclusive.
     """
     nodes = report.get("nodes") or []

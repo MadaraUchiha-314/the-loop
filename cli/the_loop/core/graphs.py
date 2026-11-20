@@ -228,8 +228,8 @@ def check(
     always wins, and `--recompute` over a spec directory that is present still
     evaluates its artifacts.
 
-    **A work item with a live session on this machine also carries `session`**
-    (issue-551, R7): the state :mod:`sessionstate` derives from the event log.
+    **A work item with a live session on this machine also carries `session`**:
+    the state :mod:`sessionstate` derives from the event log.
     ``config`` is the operator's CLI config; without one it is read best-effort.
     """
     named = work_item
@@ -254,7 +254,7 @@ def _session_view(
     repo: str, named: str, work_item: str, config: Optional[dict]
 ) -> Optional[Dict[str, Any]]:
     """The contract's `session` object for the work item's live session on this
-    machine, else ``None`` (issue-551, R7).
+    machine, else ``None``.
 
     The session is the registered one whose ref ``named`` is, or — for a bare
     id, which names no repository — the one working that id in this checkout.
@@ -320,7 +320,7 @@ def _node_facts(node: Any) -> Dict[str, Any]:
 def stop_report(
     repo: str, work_item: str, spec_dir: str = ""
 ) -> Tuple[Dict[str, Any], Dict[str, Dict[str, Any]]]:
-    """What the stop check judges (issue-551): the recomputed report of the outer
+    """What the stop check judges: the recomputed report of the outer
     loop, and every node's ``actor``, ``command`` and ``terminal`` by node id.
 
     The report is the one ``the-loop check --recompute`` gives. The node facts
@@ -335,7 +335,7 @@ def stop_report(
 
 
 def pointer(repo: str, work_item: str, spec_dir: str = "") -> Dict[str, Any]:
-    """The node work-item state places the outer loop at (issue-551): ``node``
+    """The node work-item state places the outer loop at: ``node``
     and that node's ``actor``, ``command`` and ``terminal``. ``{}`` when the
     work item was never entered or the pointer names no node of its graph.
 
@@ -356,7 +356,7 @@ def node_facts(
     repo: str, work_item: str, node: str, spec_dir: str = ""
 ) -> Dict[str, Any]:
     """One node's ``actor``, ``command`` and ``terminal`` from the definition of
-    the work item's outer loop (issue-551); ``{}`` for a node it does not have.
+    the work item's outer loop; ``{}`` for a node it does not have.
 
     What the watcher's nudge names. Like :func:`stop_report`'s facts it reads
     the graph definition only: no exit chain runs and no state is believed.
@@ -380,7 +380,7 @@ def complete(
     work_item = work_item_id(work_item)
     runtime = _runtime(repo, pr, pr_repo, work_item, spec_dir=spec_dir)
     if pr is not None:
-        # The answer carries the entered node's assignment (issue-551), and an
+        # The answer carries the entered node's assignment, and an
         # inner loop's names its pull request — the keys the daemon's delivery
         # sets for the same renderer (`GraphLink`).
         runtime.config = {

@@ -1,4 +1,4 @@
-"""``the-loop wait`` — a session says what it waits for, and until when (issue-551).
+"""``the-loop wait`` — a session says what it waits for, and until when.
 
 A session that waits on something that is not a person — CI, another session,
 a build it started — used to end its turn in silence, and nothing told the-loop
@@ -15,8 +15,6 @@ answers (:func:`~the_loop.client.routing.harness_routed`), and a session the
 daemon spawned never runs it in-process. The core function is
 :func:`the_loop.core.stopcheck.declare_wait`; ``POST /api/v1/sessions/wait`` is
 its binding.
-
-Spec: docs/specs/issue-551/design.md § Interfaces.
 """
 
 from __future__ import annotations

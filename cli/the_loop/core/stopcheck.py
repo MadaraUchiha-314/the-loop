@@ -1,4 +1,4 @@
-"""Core capability: may this session's turn end? (issue-551, Requirement 3).
+"""Core capability: may this session's turn end?
 
 The harness's Stop hook stays a clock. It asks here, because the answer needs
 what only the service's side holds together: the graph's recomputed verdicts,
@@ -9,11 +9,8 @@ registry. :func:`stop_check` gathers its four inputs for one work item, records
 ``session.turn_ended`` on every allow and records nothing on a refusal.
 
 Every operation here answers only for a work item that has a live session in
-the session registry (design § Security design). The service authenticates no
-caller (decision-059), so that is what "bound" can mean on this side; the CLI
-verbs add the caller's own ``THE_LOOP_WORK_ITEM`` before they call.
-
-Spec: docs/specs/issue-551/design.md § "The stop check".
+the session registry. The service authenticates no caller, so that is what
+"bound" can mean on this side; the CLI verbs add the caller's own ``THE_LOOP_WORK_ITEM`` before they call.
 """
 
 from __future__ import annotations
@@ -52,11 +49,11 @@ ALLOW = "allow"
 REFUSE = "refuse"
 
 #: What a refusal's `reason` says. An allow's reason is one of the closed list a
-#: turn's end records (design § Events).
+#: turn's end records.
 WORK_OWED = "work-owed"
 
 #: The longest condition a declared wait may state. It is shown on the status
-#: surfaces and in channels (design § Security design).
+#: surfaces and in channels.
 MAX_CONDITION_LENGTH = 200
 
 
@@ -101,9 +98,9 @@ def decide(
         return Decision(ALLOW, "human-gate", at, status)
     if nodes[at].get("terminal") or nodes[at].get("actor") != "agent":
         return Decision(ALLOW, "complete", at, status)
-    # 3. A pointer moved forward hides nothing behind it (issue-429). A human
+    # 3. A pointer moved forward hides nothing behind it. A human
     # gate behind it was answered, or the pointer would not be past it, and an
-    # answered gate recomputes as `wait`: it counts as passed (R3.3).
+    # answered gate recomputes as `wait`: it counts as passed.
     for node_id, entry in reported.items():
         if node_id == at:
             break
@@ -171,7 +168,7 @@ def _standing(
     """The recomputed report and the node facts, from the session's checkout.
 
     ``(None, {})`` when they cannot be read: the gate's fail-open case is kept
-    on purpose (R3.7), and is recorded as `inconclusive`.
+    on purpose, and is recorded as `inconclusive`.
     """
     try:
         return core_graphs.stop_report(session.cwd, work_item.ref)
@@ -219,7 +216,7 @@ def _resume_command(node: Mapping[str, Any], work_item: WorkItemRef) -> str:
 
 
 def _refusal_text(decision: Decision, command: str, work_item: WorkItemRef) -> str:
-    """What the harness hands back to the session (R3.5): fixed prompt files, with
+    """What the harness hands back to the session: fixed prompt files, with
     the node, its unmet checks, the command and the work item's own ref."""
     lines = [prompts.render("stopcheck/refusal", inline=True, node=decision.node)]
     lines += [
@@ -245,7 +242,7 @@ def stop_check(
     """Decide whether ``ref``'s session may end its turn, and record an allow.
 
     ``gave_up`` records a stop the hook already allowed after its own attempts
-    ran out (R3.6): nothing is judged. ``LookupError`` when no live session is
+    ran out: nothing is judged. ``LookupError`` when no live session is
     registered for ``ref``; then nothing is read and nothing is recorded.
     """
     work_item, session = _bound(ref, config, registry_dir)
@@ -291,7 +288,7 @@ def stop_check(
 def turn_start(
     ref: str, config: Optional[dict] = None, registry_dir: str = ""
 ) -> Dict[str, Any]:
-    """Record that ``ref``'s session started a turn (R4.5, R4.6).
+    """Record that ``ref``'s session started a turn.
 
     While this is the session's last turn record it is `working`, and it is the
     one record that ends a stall. ``LookupError`` when no live session is
@@ -307,8 +304,7 @@ def check_condition(condition: str) -> str:
     """A declared wait's condition as one line of words; ``ValueError`` when it
     is empty or longer than :data:`MAX_CONDITION_LENGTH`.
 
-    The status surfaces print it inside a line of a terminal (issue-551, abuse
-    case 6). A line break or an escape sequence in it would be drawn there, not
+    The status surfaces print it inside a line of a terminal. A line break or an escape sequence in it would be drawn there, not
     read, so every run of whitespace and control characters becomes one space.
     """
     text = condition if isinstance(condition, str) else ""
@@ -333,7 +329,7 @@ def declare_wait(
     config: Optional[dict] = None,
     registry_dir: str = "",
 ) -> Dict[str, Any]:
-    """Record what ``ref``'s session waits for, and for how long (R4.7).
+    """Record what ``ref``'s session waits for, and for how long.
 
     The wait covers one stop, the one that ends the turn it is made in; the
     derivation enforces that, not this record. ``ValueError`` for an empty or

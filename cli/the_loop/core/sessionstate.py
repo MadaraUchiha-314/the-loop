@@ -1,16 +1,13 @@
-"""Core capability: the state of a session, derived from the event log (issue-551).
+"""Core capability: the state of a session, derived from the event log.
 
 One read-only function of a work item's event records and a clock value:
 working, waiting, idle, stalled or not watched, plus what the watcher owes right
 now. The stop check, the watcher and the status surfaces all read it, which is
-what keeps "idle" on a status line and "idle" in the watcher from disagreeing
-(R7).
+what keeps "idle" on a status line and "idle" in the watcher from disagreeing.
 
 :func:`derive` reads no file and no clock, writes nothing and emits nothing. An
 act is owed only while the log holds no record of it, so deriving again after
-the watcher recorded an act — or after a restart — never owes it twice (R4.10).
-
-Spec: docs/specs/issue-551/design.md § "The state of a session".
+the watcher recorded an act — or after a restart — never owes it twice.
 """
 
 from __future__ import annotations
@@ -56,7 +53,7 @@ _ASK_CLOSERS = _ANSWERS | {_DEFAULT_TAKEN}
 #: Records that start a new nudge budget: the pointer moved, or a person's event
 #: reached the session. `dispatch.succeeded` is not here: it also records a CI
 #: event, an assignment and the watcher's own paste, and counting those would
-#: let a stuck session be nudged without end (abuse case 5). It resets the
+#: let a stuck session be nudged without end. It resets the
 #: budget only when it names the person (:func:`_delivered_a_person`).
 _BUDGET_RESETS = frozenset(
     {
@@ -367,7 +364,7 @@ def derive(
 
     due: List[Due] = []
     # A stall is ended whatever the switch says now: it may have been made
-    # before the watchdog was turned off (R4.5).
+    # before the watchdog was turned off.
     for stall_id, stall in stalls.items():
         if stall.resumed is not None:
             lasted = (
@@ -424,8 +421,8 @@ def derive(
                             wait_at_end, lapse, covers_stop=False
                         )
                 else:
-                    # Idle starts when the reason lapsed, not at the turn's end
-                    # (R4.8). An unknown reason is idle from the turn's end.
+                    # Idle starts when the reason lapsed, not at the turn's end.
+                    # An unknown reason is idle from the turn's end.
                     idle = _later(at, lapse)
             if state == "waiting":
                 since = at[1]
@@ -458,7 +455,7 @@ def derive(
             last_act = max(idle[0], last_nudge) if last_nudge else idle[0]
             if watchdog.enabled and now - last_act >= threshold:
                 # The nudge names the node, so a stall without one goes to the
-                # notice (design § Fail-closed).
+                # notice.
                 if node and nudges_spent < watchdog.max_nudges:
                     due.append(Due("nudge", stall_id=stall_id_now))
                 elif not notified:
@@ -534,7 +531,7 @@ def _lapse(wait: Tuple[_Moment, Dict[str, Any]], limit: timedelta) -> Optional[_
     """When a declared wait ends; ``None`` when its end cannot be read.
 
     `the-loop wait` refuses a wait over the limit. The limit is applied again
-    here so that a record stating a longer one is not believed (abuse case 4).
+    here so that a record stating a longer one is not believed.
     """
     (declared_at, _), record = wait
     stated = parse_ts(record.get("until"))

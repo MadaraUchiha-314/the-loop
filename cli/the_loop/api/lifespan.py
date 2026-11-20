@@ -3,7 +3,7 @@
 Three things need a live process rather than an imported module: the MCP SDK's session
 manager (it runs a task group for the process's duration — without it, the first POST to
 ``/mcp`` fails), the hosted ingresses (issue-231: the poller and the webhook receiver
-as threads inside this process) and the watcher (issue-551: one thread that notices an
+as threads inside this process) and the watcher (one thread that notices an
 idle session, whichever ingresses are hosted).
 
 :func:`create_app` used to compose both inline. They live here instead because Starlette
@@ -51,7 +51,7 @@ def build_lifespan(
         from ..core import watchdog
         from . import ingress as ingress_mod
 
-        # The watcher (issue-551, R4.11) runs with the service, not with an
+        # The watcher runs with the service, not with an
         # ingress: every deployment has this process, whichever ingresses it
         # hosts, and an instance that only runs the gateway client hosts none.
         # `None` when this process already runs one; then it is not ours to stop.

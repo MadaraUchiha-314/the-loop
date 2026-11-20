@@ -180,7 +180,7 @@ def _read_what_is_there(stream: Any) -> str:
 
 def _background_work(stream: Any) -> bool:
     """Whether the harness's Stop payload on ``stream`` lists running background
-    work (issue-551, R3.2.4).
+    work.
 
     Claude Code's payload carries ``background_tasks``, a list of objects with a
     ``status``. Everything else means "no": a terminal, an empty or unreadable
@@ -682,7 +682,7 @@ class SessionsCommand(Command):
         return _render(result)
 
     def _stop_check(self, args: argparse.Namespace) -> int:
-        """Ask whether this session's turn may end (issue-551, R3).
+        """Ask whether this session's turn may end.
 
         For the harness's Stop hook, which pipes its own payload in. One fact is
         read from it and forwarded: whether the harness lists background work
@@ -722,7 +722,7 @@ class SessionsCommand(Command):
         return 0
 
     def _turn_start(self, args: argparse.Namespace) -> int:
-        """Record that this session's turn started (issue-551, R4.5).
+        """Record that this session's turn started.
 
         For the harness's turn-start hook, so it runs before every turn of every
         session. It must never break or delay one: every failure is swallowed,
@@ -777,7 +777,7 @@ class SessionsCommand(Command):
                 strings.t("cli.sessions.list.column.last-event"),
             )
         ]
-        # What each session is doing (issue-551, R7): the state the service
+        # What each session is doing: the state the service
         # derived from the event log. `-` for a row that carries none.
         states = strings.section("cli.sessions.list.state")
         for s in sessions:

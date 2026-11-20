@@ -643,7 +643,7 @@ def _start(rt: Any, item: str, ref: str, handoff: Optional["HandoffRecord"]) -> 
 
 
 def _advance_on_event(rt: Any, item: str, ref: str, event: Mapping[str, Any]) -> Any:
-    """Let the graph see an inbound event — the one seam for both loops (issue-551).
+    """Let the graph see an inbound event — the one seam for both loops.
 
     Every dispatcher call site reaches the runtime through here, so the rule that
     a comment does not grade an agent-owned node is decided once, in
@@ -887,7 +887,7 @@ class GraphLink:
         a human-approval node's ``classify-feedback`` finally has the input it
         was written to read. ``block``/``wait`` need no handling here: the
         runtime leaves the pointer where it is — and, on an agent-owned node no
-        hook of which reads the event, records nothing (issue-551, R5).
+        hook of which reads the event, records nothing.
 
         Returns the runtime's :class:`NodeReport` when the graph ran, ``None``
         on any skip or fault (issue-148, D4) — the consult-first path renders
