@@ -928,15 +928,17 @@ distinction and per-harness mechanics):
 - **Never reset without a checkpoint** — checkmarks current, WIP committed, phase label
   in sync. The next window's **Next:** is the first unticked task, derived rather than
   written.
-- **Phase boundaries clear** (fixed):
+- **Phase boundaries clear** (fixed; an interactive session's verb):
   once `tasks.md` clears its gate, start implementation on a **fresh window** that
   re-reads the approved spec from disk — the same separation Claude Code's plan mode makes
   between planning and execution. Spec→spec transitions derive each artifact from the
   locked file, not the chat that produced it.
 - **Task boundaries compact** (default): drop the finished task's exploration/diff/test
   noise, keep cross-task working knowledge.
-- **Headless sessions** end at the boundary instead — resumability (below) starts the
-  next session fresh from the checkpoint.
+- **A daemon-driven session never ends its turn at a boundary between two agent-owned
+  nodes.** It cannot clear itself, and nothing starts another session when it stops. It
+  checkpoints, compacts or hands the next node's work to a fresh subagent, and continues
+  in the same turn (`context.md` § Per-harness mechanics).
 
 ## Capability docs — the organized view of specs (fold-in step)
 

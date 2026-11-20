@@ -249,3 +249,44 @@ def test_the_directive_asks_for_a_phone_sized_summary(mode):
     directive = directive_for(mode)
     assert "--summary" in directive and "the-loop comment" in directive
     assert "phone" in directive and "600 characters" in directive
+
+
+# -- a daemon-driven session is never told to stop at a boundary (issue-551) ----
+
+
+def test_the_work_item_directive_names_the_three_ask_cases_and_the_wait():
+    """issue-551 R6.9, R2.3: the directive names the ask with a deadline, the
+    declared wait, and the rule that no other reason ends a turn."""
+    text = flat(directive_for("work-item"))
+    assert "do NOT ask" in text
+    assert "--default '<answer>' --after 30m" in text
+    assert "the-loop wait --work-item <ref> --for '<what>' --until 30m" in text
+    assert "Never end a turn with agent work owed for any other reason" in text
+    assert "Then stop and wait" not in text
+
+
+@pytest.mark.parametrize(
+    "phrase", ["next session starts fresh", "ending the session at a phase"]
+)
+def test_the_skill_never_says_a_stopped_session_is_replaced(phrase):
+    """issue-551 R2.2 (T12): a session that obeyed either sentence stopped at a
+    boundary and waited for a session nothing starts."""
+    hits = [
+        str(path.relative_to(REPO_ROOT))
+        for tree in ("skills", "commands")
+        for path in sorted((REPO_ROOT / tree).rglob("*.md"))
+        if phrase in flat(path.read_text(encoding="utf-8"))
+    ]
+    assert not hits, f"{phrase!r} is back in: {hits}"
+
+
+def test_the_skill_lists_the_reasons_a_turn_may_end_in_one_place():
+    """issue-551 R2.1, R2.3, R2.4: the rules exist, and only collaboration.md
+    carries the list."""
+    reference = REPO_ROOT / "skills/the-loop/reference"
+    collaboration = flat((reference / "collaboration.md").read_text(encoding="utf-8"))
+    context = flat((reference / "context.md").read_text(encoding="utf-8"))
+    assert "a turn ends only for one of five reasons" in collaboration
+    assert "Take the step you announce" in collaboration
+    assert "A default is never a gate answer and never an approval" in collaboration
+    assert "never ends its turn at a boundary between two agent-owned nodes" in context

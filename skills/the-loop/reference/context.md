@@ -77,12 +77,16 @@ left `.the-loop/harness-config.yaml` in issue-352).
 - **Phase boundaries → clear.** The big one is **tasks-breakdown → implementation**:
   once the spec chain is locked, the drafting/iteration history is pure noise for
   implementation — the approved files *are* the contract. Start implementation on a
-  fresh window that reads `requirements.md`, `design.md`, `tasks.md` and the execution
-  log from disk. This is the same move Claude Code's plan mode makes (plan in one
+  fresh window that reads `requirements.md`, `design.md`, `testing-plan.md` and
+  `tasks.md` from disk. This is the same move Claude Code's plan mode makes (plan in one
   context, execute from the approved plan, not the deliberation), and Cursor's "new
   chat per task" guidance. The earlier spec→spec transitions (requirements → design →
   tasks) benefit too: each artifact is derived from the locked file, not from the chat
   that produced it.
+  **"Clear" is the interactive session's verb.** A person at the terminal runs it. A
+  daemon-driven session cannot clear itself, and ending its turn clears nothing. At a
+  phase boundary it checkpoints, then compacts or hands the next node's work to a fresh
+  subagent, and continues in the same turn (§ Per-harness mechanics).
 - **Task boundaries → compact.** After each completed task in the DAG: checkpoint,
   then compact away the finished task's exploration, diffs and test output while
   keeping cross-task working knowledge (codebase layout, conventions discovered, the
@@ -106,12 +110,27 @@ The protocol is harness-portable; only the reset verb differs:
 |---|---|---|---|
 | Claude Code (interactive) | `/clear` | `/compact <focus instructions>` | subagents via `Task` |
 | Cursor | new chat (`@Past Chats` to recover selectively) | built-in summarization of older messages | scoped `@` context |
-| Daemon-spawned tmux sessions (webhook, poller) | end the session at the boundary; the next session starts fresh and resumes from the checkpoint | harness auto-compaction (safety net) | spawn-per-task |
+| Daemon-driven tmux session (webhook, poller) | not available: the session cannot clear itself, and ending its turn starts no new session | the harness's compaction, when the session can trigger it; auto-compaction is the safety net | a fresh subagent for the next node's work, or for each task |
 
-An agent that cannot invoke a reset on itself (daemon-spawned runs) still follows the
-protocol: checkpoint at every boundary and prefer ending the session at a phase
-boundary over grinding on with a bloated window — the-loop's resumability guarantees
-the next session continues exactly where the state file and the checkmarks say.
+**A daemon-driven session never ends its turn at a boundary between two agent-owned
+nodes.** It is one long-lived session, and it wakes only when an event arrives. Nothing
+starts another session when it stops. So a stop at a boundary is a stall, and it lasts
+until a person notices.
+
+At every boundary between two agent-owned nodes, the session does three things, in this
+order:
+
+1. **Checkpoint**, as the protocol above defines.
+2. **Reduce its context.** Compact, when the harness lets the session trigger it.
+   Otherwise hand the next node's work to a fresh subagent. The subagent starts on an
+   empty window, reads the artifacts from disk and returns its result. That gives the
+   next node the fresh window a clear gives an interactive session.
+3. **Continue with the next node in the same turn.** `the-loop graph complete` answers
+   with that node's assignment.
+
+A full window is not a reason to end the turn, and neither is a finished phase. The
+turn ends only for a reason that `reference/collaboration.md` lists (§ When a turn may
+end). The Stop gate refuses any other stop.
 
 ## Sources this guidance follows
 
