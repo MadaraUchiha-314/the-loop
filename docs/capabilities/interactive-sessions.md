@@ -433,6 +433,9 @@ stateDiagram-v2
   log is off, or the service writes to a file other than the one the watcher reads,
   THEN the cycle SHALL do nothing, and one warning in the service log SHALL say so.
   WHEN the record of one act cannot be written THEN that act SHALL NOT happen.
+- Just before it performs an act, the watcher SHALL read that work item's records again
+  and SHALL perform the act only if they still owe it; an act no longer owed is dropped,
+  and the next tick decides afresh.
 - WHEN a session is stalled THEN the watcher SHALL paste a nudge into it and record
   `session.nudged`. It SHALL nudge again each idle threshold after its last nudge, up
   to `routing.watchdog.maxNudges` nudges.

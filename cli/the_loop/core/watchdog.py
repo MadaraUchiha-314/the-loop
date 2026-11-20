@@ -3,7 +3,9 @@
 One thread in the control-plane service, on a fixed tick. Each cycle reads the
 event log once, derives every live session's state (:mod:`sessionstate`) and
 performs what that state owes: a nudge, the one stall notice, the end of a
-stall, an ask's default, an ask's reminder.
+stall, an ask's default, an ask's reminder. An act that is owed is checked
+once more, against that work item's records as they are then, just before it
+is performed.
 
 The watcher keeps no state of its own. An act is owed only while the log holds
 no record of it, and every act here ends by writing that record, so a second
@@ -117,7 +119,9 @@ def run_cycle(
 ) -> None:
     """Derive every live session's state and perform what it owes.
 
-    The log is read once, however many sessions are live. A pull request's own
+    The whole log is read once, however many sessions are live; each act that
+    is owed then costs one more pass that keeps its own work item's records
+    (:meth:`_Cycle._still_owed`). A pull request's own
     endpoint is judged on its own ref, beside its work item's session: it gets
     the notice, the end of a stall and its asks' deadlines, and no nudge. One
     session's failure is logged and the others are still served.
@@ -150,6 +154,9 @@ def run_cycle(
                     state=state,
                     events=events,
                     now=now,
+                    log_path=log_path,
+                    watchdog=watchdog,
+                    asks=asks,
                     deliver=deliver,
                     publish=publish,
                     # A pull request's own session walks the inner loop, and
@@ -220,6 +227,9 @@ class _Cycle:
         state: SessionState,
         events: List[Dict[str, Any]],
         now: datetime,
+        log_path: Union[str, Path],
+        watchdog: WatchdogConfig,
+        asks: AsksConfig,
         deliver: Deliver,
         publish: Publish,
         resolve: Resolve,
@@ -231,12 +241,17 @@ class _Cycle:
         self.state = state
         self.events = events
         self.now = now
+        self._log_path = log_path
+        self._watchdog = watchdog
+        self._asks = asks
         self._deliver = deliver
         self._publish = publish
         self._resolve = resolve
         self._notified = state.notified
 
     def perform(self, due: Due) -> None:
+        if due.act in ("nudge", "notify") and not self._still_owed(due):
+            return
         if due.act == "end-stall":
             self._end_stall(due)
         elif due.act == "nudge":
@@ -247,6 +262,47 @@ class _Cycle:
             self._take_default(due)
         elif due.act == "remind":
             self._remind(due)
+
+    def _still_owed(self, due: Due) -> bool:
+        """Whether ``due`` is still owed, on a fresh read of this work item's
+        records.
+
+        The cycle derived every session from one read of the log, and serving
+        the sessions before this one can take seconds: a paste, a notice that
+        goes out to a ticket. In that time the session may have started a turn
+        or claimed its node, and a person's answer may have been recorded. So
+        the work item's records are read again and derived at the cycle's own
+        time. The act is owed only if that state owes the same act, for the
+        same stall or the same ask, and a nudge only while the session is still
+        at the node it was derived for. An act that is no longer owed is
+        dropped without a word, and the next tick decides afresh. An act that
+        is still owed is performed on the fresh state, so that a nudge is
+        counted against the budget the log holds now.
+
+        This narrows the gap; it does not close it. What writes the other
+        records (the session's hooks, the dispatcher) may be another thread or
+        another process, and shares no lock with the watcher, so a record can
+        still land between this read and the act's own record. Losing that
+        last race costs little. A nudge pasted into a session that just began
+        to work is read as one more prompt. A default recorded a moment after
+        a person's answer leaves both on the log, and the answer still reaches
+        the session as a comment, which the default's own text tells it to
+        follow.
+        """
+        events = sessionstate.load(self._log_path, work_item=self.ref).get(self.ref, [])
+        fresh = sessionstate.derive(
+            events,
+            now=self.now,
+            watchdog=self._watchdog,
+            asks=self._asks,
+            work_item=self.ref,
+        )
+        if due not in fresh.due:
+            return False
+        if due.act == "nudge" and fresh.node != self.state.node:
+            return False
+        self.state, self.events = fresh, events
+        return True
 
     # -- the session's side ---------------------------------------------------------
 

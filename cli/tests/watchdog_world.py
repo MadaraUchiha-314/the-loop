@@ -6,11 +6,11 @@ a recording bus. Shared by the watchdog's unit and integration tests.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from conftest import FakeTmux
 from the_loop import eventlog
-from the_loop.core import watchdog
+from the_loop.core import sessionstate, watchdog
 from the_loop.sessions import Session, SessionRegistry, WorkItemRef
 from the_loop.watchconfig import AsksConfig, WatchdogConfig
 
@@ -38,6 +38,7 @@ class World:
         self.log = tmp_path / "events.jsonl"
         eventlog.configure("test", path=self.log)
         monkeypatch.setattr(eventlog, "_utcnow", self.stamp)
+        self._monkeypatch = monkeypatch
         self.registry = SessionRegistry(tmp_path / "sessions")
         self.tmux = FakeTmux()
         self.published: List[Tuple[Any, Optional[bool]]] = []
@@ -125,6 +126,21 @@ class World:
             publish=self.publish,
             resolve=lambda endpoint, node: dict(NODES.get(node) or {}),
         )
+
+    def after_the_snapshot(self, happens: Callable[[], None]) -> None:
+        """Run ``happens`` once, right after the next cycle has read the whole
+        log and before it performs anything: what another thread or process
+        wrote while the watcher was busy with an earlier session."""
+        real = sessionstate.load
+        pending = [happens]
+
+        def load(path, work_item=None):
+            grouped = real(path, work_item=work_item)
+            if work_item is None and pending:
+                pending.pop()()
+            return grouped
+
+        self._monkeypatch.setattr(sessionstate, "load", load)
 
     def pasted(self) -> List[str]:
         return [prompt for _, prompt in self.tmux.delivers]

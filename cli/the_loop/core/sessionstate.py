@@ -612,12 +612,12 @@ def load(
 ) -> Dict[str, List[Dict[str, Any]]]:
     """Read the event log once: the records :func:`derive` reads, by work item.
 
-    The watcher derives every session from one pass, so a tick costs one read of
+    The watcher derives every session from one pass, so that costs one read of
     the log however many sessions are live. The file is streamed a line at a
     time and a line is parsed only when its text can hold a record that is
     kept, so the cost follows the session records, not the size of the log.
     ``work_item`` keeps one work item's records and passes over every line
-    that does not name it. A missing log is no records; a torn or unreadable
+    that does not name it: the watcher's second look before an act. A missing log is no records; a torn or unreadable
     line is skipped.
     """
     grouped: Dict[str, List[Dict[str, Any]]] = {}

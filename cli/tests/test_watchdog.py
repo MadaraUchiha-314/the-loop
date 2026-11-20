@@ -646,7 +646,7 @@ def test_a_failing_bus_does_not_lose_the_record_or_the_next_session(world):
     assert len(world.records("session.stalled")) == 2
 
 
-def test_the_cycle_reads_the_log_once(world, monkeypatch):
+def test_the_cycle_reads_the_whole_log_once(world, monkeypatch):
     for number in range(7, 12):
         ref = f"github:octo/repo#{number}"
         world.register(ref, target=f"loop-github-octo-repo-{number}")
@@ -654,11 +654,17 @@ def test_the_cycle_reads_the_log_once(world, monkeypatch):
         world.ended(0, ref=ref)
     reads = []
     real = sessionstate.load
-    monkeypatch.setattr(
-        sessionstate, "load", lambda path, **kw: reads.append(path) or real(path)
-    )
+
+    def load(path, work_item=None):
+        reads.append(work_item)
+        return real(path, work_item=work_item)
+
+    monkeypatch.setattr(sessionstate, "load", load)
     world.cycle(10)
-    assert len(reads) == 1 and len(world.pasted()) == 5
+    assert len(world.pasted()) == 5
+    # The whole log once; then one work item's records before each act.
+    assert reads[0] is None and None not in reads[1:]
+    assert sorted(reads[1:]) == sorted(f"github:octo/repo#{n}" for n in range(7, 12))
 
 
 def test_the_services_cycle_reads_its_registry_log_and_graph_from_the_config(
@@ -747,6 +753,73 @@ def test_the_services_cycle_reads_its_registry_log_and_graph_from_the_config(
         assert kw == {"record": None} and len(pasted) == 1
     finally:
         eventlog.reset()
+
+
+# -- an act is checked against the log just before it happens -----------------------------
+
+
+def test_a_turn_that_started_after_the_snapshot_gets_no_nudge(world):
+    """The session began working while the watcher served an earlier one."""
+    idle(world)
+    world.after_the_snapshot(lambda: world.started(9.9))
+    world.cycle(10)
+    assert world.pasted() == [] and world.published == []
+    assert world.records("session.nudged") == []
+
+
+def test_a_node_claimed_after_the_snapshot_gets_no_nudge_for_the_old_node(world):
+    idle(world)
+    world.after_the_snapshot(
+        lambda: world.emit(9.9, "graph.advanced", node="build", to="bare")
+    )
+    world.cycle(10)
+    assert world.pasted() == [] and world.published == []
+    assert world.records("session.nudged") == []
+
+
+def test_a_move_that_keeps_the_stall_still_stops_the_old_nodes_nudge(world):
+    """The move is stamped with the idle period's own start, so the stall is
+    the same one and only its node differs. The next tick nudges the new node."""
+    idle(world)
+    world.after_the_snapshot(
+        lambda: world.emit(0, "graph.advanced", node="build", to="bare")
+    )
+    world.cycle(10)
+    assert world.pasted() == [] and world.records("session.nudged") == []
+
+    world.cycle(10.5)
+    (text,) = world.pasted()
+    assert "at node `bare`" in text
+    (nudged,) = world.records("session.nudged")
+    assert (nudged["node"], nudged["nudge"]) == ("bare", 1)
+
+
+def test_a_turn_that_started_after_the_snapshot_gets_no_notice(world):
+    idle(world, node=None)
+    world.after_the_snapshot(lambda: world.started(9.9))
+    world.cycle(10)
+    assert world.published == [] and world.records("session.stalled") == []
+
+
+def test_a_nudge_is_charged_to_the_budget_the_log_holds_now(world):
+    """A person's word reached the session after the snapshot: the nudge that
+    is still owed is the first of a new budget, not the second of the old."""
+    idle(world)
+    world.cycle(10)
+    world.after_the_snapshot(
+        lambda: world.emit(20.5, "dispatch.succeeded", actor="octocat")
+    )
+    world.cycle(21)
+    assert [r["nudge"] for r in world.records("session.nudged")] == [1, 1]
+
+
+def test_an_unchanged_log_gets_every_act_it_owed(world):
+    owes_everything(world)
+    world.after_the_snapshot(lambda: None)
+    world.cycle(10)
+    assert len(world.pasted()) == 2
+    assert len(world.records("session.nudged")) == 1
+    assert len(world.records("session.ask_default_taken")) == 1
 
 
 # -- the thread ---------------------------------------------------------------------------
