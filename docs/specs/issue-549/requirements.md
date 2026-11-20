@@ -2,8 +2,8 @@
 type: requirements
 phase: requirements-definition
 workItem: issue-549
-status: draft
-approvedBy: []
+status: approved
+approvedBy: ["MadaraUchiha-314"]
 collaborators: [product-manager, architect, engineer]
 overrides: {}
 ---
@@ -420,3 +420,9 @@ None. Where the long form goes in the central channel was settled on PR #550: no
 > comments (issue-109). Append-only and attributed: an approval never silently
 > discards a reviewer's suggestions, and the feedback travels with the document
 > it concerns rather than living in a side-channel tracker.
+
+### 2026-11-19 — approved
+
+**@MadaraUchiha-314** wrote:
+
+approved
