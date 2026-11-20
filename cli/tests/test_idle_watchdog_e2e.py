@@ -374,7 +374,8 @@ def test_an_idle_session_is_refused_nudged_reported_and_resumed(world):
         "session.turn_ended",
     ]
     (nudge,) = world.records("session.nudged")
-    assert (nudge["node"], nudge["nudge"], nudge["delivered"]) == ("design", 1, True)
+    assert (nudge["node"], nudge["nudge"]) == ("design", 1)
+    assert "delivered" not in nudge  # only a failed paste is recorded as one
     assert world.records("session.turn_started")[0]["node"] == "design"
 
     # 4. An empty turn per nudge buys no new budget.

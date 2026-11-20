@@ -124,6 +124,8 @@ def run_cycle(
     the notice, the end of a stall and its asks' deadlines, and no nudge. One
     session's failure is logged and the others are still served.
     """
+    if not _records_reach(log_path):
+        return
     grouped = sessionstate.load(log_path)
     for record in registry.list_sessions():
         if not record.is_live:
@@ -171,9 +173,46 @@ def _unresolved(endpoint: Session, node: str) -> Mapping[str, Any]:
     return {}
 
 
+#: The unrecordable-log warning was logged, and the log has not come back since.
+_warned_unrecordable = False
+
+
+def _records_reach(log_path: Union[str, Path]) -> bool:
+    """Whether a record written now lands in the file the cycle reads.
+
+    The watcher remembers an act only through its record. With the event log
+    off, or pointed at another file, every tick would see the same act still
+    owed and perform it again, so such a cycle does nothing. One warning says
+    so, and one more after the log came back and went away again.
+    """
+    global _warned_unrecordable
+    writes_to = eventlog.current_path()
+    try:
+        same = writes_to is not None and (
+            Path(writes_to).resolve() == Path(log_path).resolve()
+        )
+    except OSError:
+        same = False
+    if same:
+        _warned_unrecordable = False
+        return True
+    if not _warned_unrecordable:
+        _warned_unrecordable = True
+        logger.warning(
+            "the watcher does nothing: this process records to %s and the"
+            " watcher reads %s, so no act could be remembered",
+            writes_to or "no event log",
+            log_path,
+        )
+    return False
+
+
 class _Cycle:
-    """One session's acts in one cycle. Each act writes its record before it
-    tells a channel, so a bus that fails costs a message and never a repeat."""
+    """One session's acts in one cycle.
+
+    Each act writes its record first and happens only if the record was
+    written: a log that cannot be written costs the act, and a paste or a bus
+    that fails costs a message. Neither can make an act repeat."""
 
     def __init__(
         self,
@@ -256,33 +295,39 @@ class _Cycle:
                 core_graphs.work_item_id(self.ref) if state.reason == "exit-met" else ""
             ),
         )
+        attempt: Dict[str, Any] = {
+            "work_item": self.ref,
+            "stall_id": due.stall_id,
+            "node": state.node,
+            "nudge": state.nudges_spent + 1,
+        }
+        # The attempt spends the node visit's budget whether or not the paste
+        # lands, so a pane that never takes one is not tried without end.
+        if not eventlog.emit("session.nudged", **attempt):
+            return
         result = self._paste(text)
+        if result is not None and result.ok:
+            return
+        # The same attempt again, now known not to have landed. The derivation
+        # reads it as the outcome of the record above, not as another nudge.
+        eventlog.emit("session.nudged", **attempt, delivered=False)
         if result is not None and getattr(result, "session_missing", False):
             # No live pane: nothing was typed, and a person is told instead.
-            return self._notify(due)
-        # A paste that failed is recorded too: it spends the node visit's
-        # budget, so a pane that never takes one is not tried without end.
-        eventlog.emit(
-            "session.nudged",
-            work_item=self.ref,
-            stall_id=due.stall_id,
-            node=state.node,
-            nudge=state.nudges_spent + 1,
-            delivered=bool(result is not None and result.ok),
-        )
+            self._notify(due)
 
     def _notify(self, due: Due) -> None:
         if not self._reachable() or self._notified:
             return
         self._notified = True
         state = self.state
-        eventlog.emit(
+        if not eventlog.emit(
             "session.stalled",
             work_item=self.ref,
             stall_id=due.stall_id,
             node=state.node or None,
             idle_since=state.idle_since,
-        )
+        ):
+            return
         self._tell(
             sessionnotes.stalled(
                 self.ref,
@@ -298,12 +343,13 @@ class _Cycle:
         acts = [r for r in self.events if r.get("stall_id") == due.stall_id]
         notified = any(r.get("event") == "session.stalled" for r in acts)
         node = next((str(r["node"]) for r in acts if r.get("node")), "")
-        eventlog.emit(
+        if not eventlog.emit(
             "session.stall_ended",
             work_item=self.ref,
             stall_id=due.stall_id,
             idle_seconds=due.idle_seconds,
-        )
+        ):
+            return
         # The id is the work item and the idle period's start.
         began = sessionstate.parse_ts((due.stall_id or "").rpartition("@")[2])
         ended = (
@@ -342,20 +388,23 @@ class _Cycle:
             return
         if sessionstate.parse_ts(ask.default_at) is None:
             return
-        result = (
-            self._paste(default_text(ref=self.ref, default=ask.default))
-            if self._reachable()
-            else None
-        )
-        # Recorded whether or not the session could be told: the ask closes
-        # exactly once (R6.10), and the thread says what happened.
-        eventlog.emit(
-            "session.ask_default_taken",
-            work_item=self.ref,
-            ask_id=ask.ask_id,
-            default=ask.default,
-            delivered=bool(result is not None and result.ok),
-        )
+        taken: Dict[str, Any] = {
+            "work_item": self.ref,
+            "ask_id": ask.ask_id,
+            "default": ask.default,
+        }
+        # Recorded whether or not the session can be told: the ask closes
+        # exactly once, and the thread says what happened.
+        if not self._reachable():
+            if not eventlog.emit("session.ask_default_taken", **taken, delivered=False):
+                return
+        else:
+            if not eventlog.emit("session.ask_default_taken", **taken):
+                return
+            result = self._paste(default_text(ref=self.ref, default=ask.default))
+            if result is None or not result.ok:
+                # The ask is closed already; this only says the paste failed.
+                eventlog.emit("session.ask_default_taken", **taken, delivered=False)
         self._tell(
             sessionnotes.default_taken(
                 self.ref,
@@ -370,7 +419,10 @@ class _Cycle:
         ask = self.state.open_ask
         if ask is None or ask.ask_id != due.ask_id:
             return
-        eventlog.emit("session.ask_reminded", work_item=self.ref, ask_id=ask.ask_id)
+        if not eventlog.emit(
+            "session.ask_reminded", work_item=self.ref, ask_id=ask.ask_id
+        ):
+            return
         asked = sessionstate.parse_ts(ask.asked_at)
         self._tell(
             sessionnotes.reminded(

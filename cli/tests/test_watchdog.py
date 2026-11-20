@@ -64,7 +64,10 @@ def test_a_nudge_is_recorded_with_its_stall_its_node_and_its_number(world):
     (nudged,) = world.records("session.nudged")
     assert nudged["work_item"] == REF
     assert nudged["stall_id"] == f"{REF}@{world.stamp(0)}"
-    assert (nudged["node"], nudged["nudge"], nudged["delivered"]) == ("build", 1, True)
+    assert (nudged["node"], nudged["nudge"]) == ("build", 1)
+    # Written before the paste, so it cannot say how the paste went. Only a
+    # paste that failed adds a record that does.
+    assert "delivered" not in nudged
 
 
 def test_a_node_without_a_command_gets_no_resume_line(world):
@@ -122,8 +125,101 @@ def test_a_failed_paste_spends_the_budget_and_says_so(world):
     world.cycle(20)
     world.cycle(30)
     world.cycle(60)
-    assert [r["delivered"] for r in world.records("session.nudged")] == [False, False]
+    # Each attempt is two records: the nudge, then the fact that it did not
+    # land. The budget of two counts attempts, not records.
+    assert [
+        (r["nudge"], r.get("delivered")) for r in world.records("session.nudged")
+    ] == [
+        (1, None),
+        (1, False),
+        (2, None),
+        (2, False),
+    ]
     assert len(world.records("session.stalled")) == 1
+
+
+# -- no record, no act --------------------------------------------------------------
+
+
+def owes_everything(world):
+    """One session owes a nudge, another an ask's default: twenty ticks would
+    paste and publish every time if an act could happen without its record."""
+    idle(world)
+    world.register(OTHER, target="loop-github-octo-repo-8")
+    world.started(-1, ref=OTHER)
+    world.emit(
+        0,
+        "session.awaiting_input",
+        OTHER,
+        question="A or B?",
+        ask_id="ask-9",
+        default="A",
+        default_at=world.stamp(5),
+    )
+    world.ended(0.5, reason="open-ask", ref=OTHER)
+
+
+def twenty_ticks(world):
+    for tick in range(20):
+        world.cycle(60 + tick * 0.5)
+
+
+def test_a_log_that_refuses_every_write_gets_no_paste_and_no_notice(world, monkeypatch):
+    """Requirement: R4.10 — an act is never repeated; so it never happens
+    without the record that stops the repeat."""
+    owes_everything(world)
+    monkeypatch.setattr(eventlog, "emit", lambda *a, **k: False)
+    twenty_ticks(world)
+    assert world.pasted() == [] and world.published == []
+
+
+def test_an_unwritable_log_file_gets_no_paste_and_no_notice(world):
+    import os
+
+    if os.geteuid() == 0:
+        pytest.skip("root writes to a read-only file")
+    owes_everything(world)
+    world.log.chmod(0o444)
+    try:
+        twenty_ticks(world)
+    finally:
+        world.log.chmod(0o644)
+    assert world.pasted() == [] and world.published == []
+
+
+def test_a_disabled_log_gets_no_paste_and_no_notice_and_one_warning(world, caplog):
+    owes_everything(world)
+    eventlog.configure("test", path=world.log, enabled=False)
+    with caplog.at_level("WARNING", logger="the-loop.core.watchdog"):
+        twenty_ticks(world)
+    assert world.pasted() == [] and world.published == []
+    assert len([r for r in caplog.records if r.levelname == "WARNING"]) == 1
+
+
+def test_a_log_this_process_does_not_write_gets_no_paste_and_no_notice(world, tmp_path):
+    """The watcher reads one file and this process records to another: what
+    it wrote would never be read back, so nothing is done."""
+    owes_everything(world)
+    eventlog.configure("test", path=tmp_path / "elsewhere.jsonl")
+    twenty_ticks(world)
+    assert world.pasted() == [] and world.published == []
+    eventlog.reset()
+    twenty_ticks(world)
+    assert world.pasted() == [] and world.published == []
+
+
+def test_a_nudge_is_recorded_before_it_is_pasted(world):
+    idle(world)
+    seen = []
+    real = world.tmux.deliver
+
+    def deliver(session, prompt):
+        seen.append(len(world.records("session.nudged")))
+        return real(session, prompt)
+
+    world.tmux.deliver = deliver
+    world.cycle(10)
+    assert seen == [1]
 
 
 # -- whom the watcher never types to ------------------------------------------------
@@ -197,7 +293,9 @@ def test_a_dead_pane_gets_the_notice_and_no_nudge(world):
     world.tmux.session_missing = True
     world.cycle(10)
     world.cycle(20)
-    assert world.records("session.nudged") == []
+    assert [(r["nudge"], r.get("delivered")) for r in world.records("session.nudged")][
+        :2
+    ] == [(1, None), (1, False)]
     assert world.published_types() == ["session.stalled"]
 
 
@@ -338,7 +436,7 @@ def test_a_default_is_recorded_and_published_once(world):
     world.cycle(32)
     (taken,) = world.records("session.ask_default_taken")
     assert (taken["ask_id"], taken["default"]) == ("ask-1", "Move T5 to after merge.")
-    assert taken["delivered"] is True
+    assert "delivered" not in taken
     ((event, _),) = world.published
     assert event.event_type == "session.ask_default_taken"
     assert event.detail["ask_id"] == "ask-1"
@@ -359,8 +457,10 @@ def test_a_default_for_a_dead_pane_closes_the_ask_and_says_so(world):
     ask(world)
     world.tmux.session_missing = True
     world.cycle(31)
-    (taken,) = world.records("session.ask_default_taken")
-    assert taken["delivered"] is False
+    world.cycle(32)
+    taken, failed = world.records("session.ask_default_taken")
+    assert "delivered" not in taken and failed["delivered"] is False
+    assert len(world.published) == 1
 
 
 @pytest.mark.parametrize("default_at", [None, "soon", ""])
@@ -508,7 +608,7 @@ def test_the_services_cycle_reads_its_registry_log_and_graph_from_the_config(
         late = datetime.now(timezone.utc) - timedelta(minutes=11)
         records = [r for r in eventlog.read_events(log)]
         nudged = next(r for r in records if r["event"] == "session.nudged")
-        assert nudged["delivered"] is True
+        assert "delivered" not in nudged
         lines = log.read_text().replace(
             nudged["ts"], late.strftime("%Y-%m-%dT%H:%M:%S.000Z")
         )

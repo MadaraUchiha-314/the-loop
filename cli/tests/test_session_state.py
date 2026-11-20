@@ -314,6 +314,32 @@ def test_the_notice_is_owed_once_the_nudges_are_spent():
     assert later.due == ()
 
 
+def test_a_nudge_and_the_record_that_its_paste_failed_are_one_nudge():
+    """Requirement: R4.3 — one attempt is one unit of the budget. The watcher
+    records a nudge before it pastes, and a second time when the paste failed."""
+    nudge = dict(stall_id=stall_id(5), node="implementation", nudge=1)
+    log = [
+        started(0),
+        ended(5, "exit-met"),
+        ev(15, "session.nudged", **nudge),
+        ev(15.01, "session.nudged", **nudge, delivered=False),
+    ]
+    assert state_at(log, 24).due == ()
+    state = state_at(log, 25)
+    assert state.nudges_spent == 1 and acts(state) == ["nudge"]
+
+
+def test_a_lone_failed_nudge_record_still_spends_the_budget():
+    """An older log holds one record per failed nudge, with nothing before it."""
+    log = [
+        started(0),
+        ended(5, "exit-met"),
+        ev(15, "session.nudged", stall_id=stall_id(5), nudge=1, delivered=False),
+        ev(25, "session.nudged", stall_id=stall_id(5), nudge=2, delivered=False),
+    ]
+    assert state_at(log, 26).nudges_spent == 2
+
+
 def test_no_nudges_configured_goes_straight_to_the_notice():
     watchdog = WatchdogConfig(idle_seconds=600, max_nudges=0)
     state = state_at([started(0), ended(5, "exit-met")], 15, watchdog=watchdog)

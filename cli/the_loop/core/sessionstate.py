@@ -248,6 +248,8 @@ def derive(
     nudges_spent = 0
     notified = False
     last_nudge: Optional[datetime] = None
+    # The stall and number of the last nudge counted.
+    last_attempt: Optional[Tuple[str, Any]] = None
     stalls: Dict[str, _Stall] = {}
     unresumed: List[_Stall] = []
 
@@ -278,7 +280,14 @@ def derive(
                 ask.reminded = True
         elif event in ("session.nudged", "session.stalled"):
             if event == "session.nudged":
-                nudges_spent, last_nudge = nudges_spent + 1, when
+                attempt = (_text(record, "stall_id"), record.get("nudge"))
+                # A nudge is recorded before it is pasted. When the paste
+                # fails, the same attempt is recorded again with
+                # `delivered: false`: one nudge, not two.
+                outcome = record.get("delivered") is False and attempt == last_attempt
+                if not outcome:
+                    nudges_spent, last_nudge = nudges_spent + 1, when
+                    last_attempt = attempt
             else:
                 notified = True
             stall_id = _text(record, "stall_id")
@@ -303,6 +312,7 @@ def derive(
                 ask.closed = moment
         if event in _BUDGET_RESETS or _delivered_a_person(record):
             nudges_spent, notified, last_nudge = 0, False, None
+            last_attempt = None
 
     open_ask = ask.view() if ask is not None and ask.closed is None else None
 

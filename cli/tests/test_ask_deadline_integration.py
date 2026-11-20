@@ -570,7 +570,7 @@ def test_a_default_is_taken_at_its_deadline_once_across_a_restart(
     assert pasted.endswith("```text\nMove T5 to after merge.\n```")
     (taken,) = _records(log_path, "session.ask_default_taken")
     assert (taken["work_item"], taken["ask_id"]) == (REF, asked["ask_id"])
-    assert taken["default"] == "Move T5 to after merge." and taken["delivered"] is True
+    assert taken["default"] == "Move T5 to after merge." and "delivered" not in taken
     (comment,) = comments
     assert "**default taken**" in comment
     assert "[the question above](" + asked["comment_url"] + ")" in comment
