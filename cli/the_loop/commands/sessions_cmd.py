@@ -50,6 +50,7 @@ import logging
 import os
 import select
 import sys
+import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -139,6 +140,44 @@ _FINISHED_TASK_STATES = frozenset(
 )
 
 
+#: How long the Stop payload is waited for: this long for its first byte, and
+#: this long again for the rest once some of it has come.
+_PAYLOAD_WAIT_SECONDS = 1.0
+
+
+def _read_what_is_there(stream: Any) -> str:
+    """What ``stream`` holds now, or within the wait, without needing its end.
+
+    A pipe nobody writes to, or one whose writer never closes it, would block a
+    plain ``read()`` for the whole turn.
+    """
+    try:
+        descriptor = stream.fileno()
+    except (AttributeError, OSError, ValueError):
+        return stream.read()  # an in-memory stream: it cannot block
+    chunks: List[bytes] = []
+    deadline = time.monotonic() + _PAYLOAD_WAIT_SECONDS
+    while True:
+        try:
+            ready = select.select(
+                [descriptor], [], [], max(0.0, deadline - time.monotonic())
+            )[0]
+        except (OSError, ValueError, TypeError):
+            # Not selectable (Windows). Reading it is all that is left.
+            if not chunks:
+                return stream.read()
+            break
+        if not ready:
+            break
+        chunk = os.read(descriptor, 65536)
+        if not chunk:
+            break
+        if not chunks:
+            deadline = time.monotonic() + _PAYLOAD_WAIT_SECONDS
+        chunks.append(chunk)
+    return b"".join(chunks).decode("utf-8", errors="replace")
+
+
 def _background_work(stream: Any) -> bool:
     """Whether the harness's Stop payload on ``stream`` lists running background
     work (issue-551, R3.2.4).
@@ -151,13 +190,7 @@ def _background_work(stream: Any) -> bool:
     try:
         if stream is None or stream.isatty():
             return False
-        try:
-            # A pipe nobody writes to would block `read()` for the whole turn.
-            if not select.select([stream], [], [], 1.0)[0]:
-                return False
-        except (OSError, ValueError, TypeError):
-            pass  # not a selectable stream (a test's buffer, Windows): read it
-        payload = json.loads(stream.read() or "null")
+        payload = json.loads(_read_what_is_there(stream) or "null")
     except (OSError, ValueError):
         return False
     tasks = payload.get("background_tasks") if isinstance(payload, dict) else None

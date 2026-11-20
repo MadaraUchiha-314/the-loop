@@ -462,6 +462,35 @@ def test_the_verb_never_reads_a_terminal(bound, monkeypatch, capsys):
     assert json.loads(capsys.readouterr().out)["verdict"] == "refuse"
 
 
+@pytest.mark.parametrize(
+    "written, background",
+    [
+        (b'{"background_tasks": [{"id": "b1", "status": "running"}]}', True),
+        (b'{"background_tasks": [{"id": "b1", "sta', False),
+        (b"", False),
+    ],
+    ids=["whole", "torn", "silent"],
+)
+def test_a_pipe_left_open_never_holds_the_verb(written, background):
+    """Requirement: R3.2 — the payload is read for at most a moment. A harness
+    that never closes its end gets an answer all the same."""
+    import os
+    import time
+
+    from the_loop.commands import sessions_cmd
+
+    reader, writer = os.pipe()
+    try:
+        os.write(writer, written)
+        with os.fdopen(reader, "r", encoding="utf-8", closefd=False) as stream:
+            begun = time.monotonic()
+            assert sessions_cmd._background_work(stream) is background
+            assert time.monotonic() - begun < 5
+    finally:
+        os.close(writer)
+        os.close(reader)
+
+
 def test_the_verb_reports_a_give_up(bound, monkeypatch, capsys):
     standing(monkeypatch, report("build", build="block"))
     code, captured = run_verb(monkeypatch, capsys, "", "--gave-up")

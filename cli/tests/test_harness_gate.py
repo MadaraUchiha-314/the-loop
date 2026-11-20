@@ -16,9 +16,11 @@ from __future__ import annotations
 import importlib.util
 import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 import pytest
@@ -749,6 +751,44 @@ class TestThePayloadIsReadOnce:
 
         monkeypatch.setattr(gate.sys, "stdin", Terminal())
         assert gate.read_payload() == ""
+
+    @pytest.mark.parametrize("harness", ["codex", "cursor"])
+    def test_only_the_harness_whose_payload_is_used_has_its_stdin_read(
+        self, gate, monkeypatch, tmp_path, harness
+    ):
+        """Requirement: R3.2 — background tasks are in Claude Code's payload
+        alone. Another harness's stdin is left alone: one that keeps it open
+        would hold the stop until the hook timed out."""
+
+        class Untouched(io.StringIO):
+            def read(self, *args):
+                raise AssertionError(f"read {harness}'s stdin")
+
+        cli = FakeCli(ALLOWED)
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("THE_LOOP_WORK_ITEM", GATE_REF)
+        monkeypatch.setattr(gate.shutil, "which", lambda name: f"/bin/{name}")
+        monkeypatch.setattr(gate.subprocess, "run", cli.run)
+        monkeypatch.setattr(gate.sys, "stdin", Untouched('{"background_tasks": []}'))
+        assert gate.main(["gate", harness]) == 0
+        ((_, kwargs),) = cli.calls
+        assert kwargs["input"] == ""
+
+    def test_a_payload_on_a_pipe_left_open_is_read_without_waiting_for_its_end(
+        self, gate, monkeypatch
+    ):
+        payload = '{"background_tasks": [{"id": "b1", "status": "running"}]}'
+        reader, writer = os.pipe()
+        try:
+            os.write(writer, payload.encode())
+            with os.fdopen(reader, "r", encoding="utf-8", closefd=False) as stream:
+                monkeypatch.setattr(gate.sys, "stdin", stream)
+                begun = time.monotonic()
+                assert gate.read_payload() == payload
+                assert time.monotonic() - begun < 5
+        finally:
+            os.close(writer)
+            os.close(reader)
 
     def test_a_closed_or_unreadable_stdin_is_an_empty_payload(self, gate, monkeypatch):
         class Broken(io.StringIO):

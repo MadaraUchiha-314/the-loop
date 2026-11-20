@@ -82,25 +82,60 @@ def read_attempts(path: Path) -> int:
         return 0
 
 
-def read_payload() -> str:
-    """The harness's hook payload from stdin, read once; ``""`` when there is none.
+#: How long the payload is waited for: this long for its first byte, and this
+#: long again for the rest once some of it has come.
+PAYLOAD_WAIT_SECONDS = 1.0
 
-    It is forwarded to the service unread (issue-551): the service takes the
-    list of background tasks from it. A terminal is never read, and a pipe
-    nobody writes to is not waited on — either would hold the stop.
+
+def read_payload(harness: str = "claude") -> str:
+    """The harness's hook payload from stdin; ``""`` when there is none to use.
+
+    It is forwarded to the service unread: the service takes the list of
+    background tasks from it. Only Claude Code's payload carries one, so no
+    other harness's stdin is touched. A terminal is never read, and the read
+    never waits for the stream to end: a harness that keeps its end open would
+    hold the stop until the hook timed out.
     """
+    if harness != "claude":
+        return ""
     stream = sys.stdin
     try:
         if stream is None or stream.isatty():
             return ""
-        try:
-            if not select.select([stream], [], [], 1.0)[0]:
-                return ""
-        except (OSError, ValueError, TypeError):
-            pass  # not a selectable stream (Windows, a test's buffer): read it
-        return stream.read()
+        return _read_what_is_there(stream)
     except (OSError, ValueError):
         return ""
+
+
+def _read_what_is_there(stream) -> str:
+    """What ``stream`` holds now, or within the wait, without needing its end."""
+    try:
+        descriptor = stream.fileno()
+    except (AttributeError, OSError, ValueError):
+        return stream.read()  # an in-memory stream: it cannot block
+    chunks: list[bytes] = []
+    deadline = time.monotonic() + PAYLOAD_WAIT_SECONDS
+    while True:
+        try:
+            ready = select.select(
+                [descriptor], [], [], max(0.0, deadline - time.monotonic())
+            )[0]
+        except (OSError, ValueError, TypeError):
+            # Not selectable (Windows). Reading it is all that is left.
+            return stream.read() if not chunks else _text(chunks)
+        if not ready:
+            break
+        chunk = os.read(descriptor, 65536)
+        if not chunk:
+            break
+        if not chunks:
+            deadline = time.monotonic() + PAYLOAD_WAIT_SECONDS
+        chunks.append(chunk)
+    return _text(chunks)
+
+
+def _text(chunks: list[bytes]) -> str:
+    return b"".join(chunks).decode("utf-8", errors="replace")
 
 
 def ask_service(
@@ -341,7 +376,7 @@ def main(argv: list[str]) -> int:
         maximum = DEFAULT_MAX_ATTEMPTS
     maximum = max(1, maximum)
 
-    payload = read_payload()
+    payload = read_payload(harness)
     answer = ask_service(
         work_item, payload, time_left(deadline, STOP_CHECK_TIMEOUT_SECONDS)
     )
