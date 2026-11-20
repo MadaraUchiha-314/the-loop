@@ -66,6 +66,17 @@ _BUDGET_RESETS = frozenset(
     }
 )
 
+#: Records that move the pointer, and the field that names where it went.
+_POINTER_MOVES = {"graph.started": "node", "graph.advanced": "to", "graph.forced": "to"}
+
+#: A human-owned node is parked as it is entered. The log names no node's
+#: owner, so this record is how a move onto a person's node is recognised.
+_PARKED = "graph.parked"
+
+#: A turn that ended for one of these waited on the node it was on, so the wait
+#: is over once the pointer has left that node.
+_ENDED_BY_A_MOVE = frozenset({"human-gate", "graph-wait"})
+
 #: The dispatcher's delivery record. It carries `actor` only for an authorized
 #: person's comment or review.
 _DELIVERED = "dispatch.succeeded"
@@ -74,6 +85,7 @@ _DELIVERED = "dispatch.succeeded"
 EVENTS = frozenset(
     {
         _DELIVERED,
+        _PARKED,
         _TURN_STARTED,
         _TURN_ENDED,
         "session.wait_declared",
@@ -140,8 +152,12 @@ class SessionState:
     #: `not-watched` | `working` | `waiting` | `idle` | `stalled`.
     state: str
     #: The reason of the turn end behind a waiting, idle or stalled state.
+    #: `pointer-moved` when the pointer left that turn's node afterwards and no
+    #: turn has started since: the turn's own reason was about a node the work
+    #: item is no longer on.
     reason: str = ""
-    #: The node of the last turn record; ``""`` when it names none.
+    #: The node the pointer last moved to since the last turn record, else that
+    #: record's node; ``""`` when neither names one.
     node: str = ""
     #: When the current state began. A stall began when the idle period did.
     since: Optional[str] = None
@@ -255,6 +271,9 @@ def derive(
     wait: Optional[Tuple[_Moment, Dict[str, Any]]] = None
     wait_at_end: Optional[Tuple[_Moment, Dict[str, Any]]] = None
     # The open asks by id, oldest first, and when an ask was last closed.
+    # The pointer's move since the last turn record, and the last node parked.
+    pointer: Optional[Tuple[_Moment, str]] = None
+    parked = ""
     asks_open: Dict[str, _Ask] = {}
     ask_closed: Optional[_Moment] = None
     nudges_spent = 0
@@ -278,12 +297,19 @@ def derive(
         moment: _Moment = (when, record["ts"])
 
         if event == _TURN_STARTED:
-            turn, wait = (event, moment, record), None
+            turn, wait, pointer = (event, moment, record), None, None
             for stall in unresumed:
                 stall.resumed = when
             unresumed = []
         elif event == _TURN_ENDED:
             turn, wait_at_end, wait = (event, moment, record), wait, None
+            pointer = None
+        elif event in _POINTER_MOVES:
+            target = _text(record, _POINTER_MOVES[event])
+            if target:
+                pointer = (moment, target)
+        elif event == _PARKED:
+            parked = _text(record, "node")
         elif event == "session.wait_declared":
             wait = (moment, record)
         elif event == "session.awaiting_input":
@@ -401,6 +427,19 @@ def derive(
                     idle = _later(at, lapse)
             if state == "waiting":
                 since = at[1]
+
+        # The pointer moved after the turn record and no turn has started
+        # since: the paste that should have started one evidently did not.
+        if pointer is not None and not _position_unknown(reason, node):
+            moved_at, node = pointer
+            if kind == _TURN_ENDED and (idle is not None or reason in _ENDED_BY_A_MOVE):
+                if parked == node:
+                    # A person's node: the session waits there, as it would
+                    # had its turn ended on it.
+                    state, reason, since = "waiting", "human-gate", moved_at[1]
+                    until = idle = None
+                else:
+                    reason, idle = "pointer-moved", _later(moved_at, idle)
 
     stall_id_now: Optional[str] = None
     if idle is not None:

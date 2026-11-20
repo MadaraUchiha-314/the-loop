@@ -382,6 +382,97 @@ def test_a_watchdog_switched_off_shows_the_stall_and_owes_nothing():
     assert state.due == ()
 
 
+# -- the pointer moved after the turn ended --------------------------------------
+
+
+def moved(minutes: float, to: str, node: str = "design-approval") -> dict:
+    return ev(minutes, "graph.advanced", node=node, to=to, outcome="approved")
+
+
+def test_a_gate_answered_with_no_turn_after_it_is_idle_at_the_new_node():
+    """Requirement: R4.1, R4.8 — a person approved the gate, the pointer moved
+    to an agent's node and the assignment started no turn. The session no
+    longer waits on a person; it is idle from the advance."""
+    log = [
+        started(0, "design-approval"),
+        ended(5, "human-gate", "design-approval"),
+        moved(8, "implementation"),
+    ]
+    state = state_at(log, 9)
+    assert (state.state, state.node) == ("idle", "implementation")
+    assert (state.since, state.idle_since) == (stamp(8), stamp(8))
+    assert state.reason == "pointer-moved"
+    late = state_at(log, 18)
+    assert late.due == (Due("nudge", stall_id=stall_id(8)),)
+    assert state_at(log + [started(8.5, "implementation")], 30).state == "working"
+
+
+def test_a_wait_the_graph_reported_ends_when_the_pointer_moves():
+    log = [started(0), ended(5, "graph-wait"), moved(8, "verification")]
+    assert acts(state_at(log, 18)) == ["nudge"]
+    assert acts(state_at([started(0), ended(5, "graph-wait")], 60 * 24)) == []
+
+
+def test_a_pointer_moved_onto_a_human_gate_still_waits_for_the_person():
+    """A human node is parked as it is entered, which is how the log says
+    whose node it is."""
+    log = [
+        started(0),
+        ended(5, "graph-wait"),
+        ev(7.9, "graph.parked", node="design-approval", via="entry"),
+        moved(8, "design-approval", node="design"),
+    ]
+    state = state_at(log, 60 * 24)
+    assert (state.state, state.reason) == ("waiting", "human-gate")
+    assert (state.node, state.since, state.due) == ("design-approval", stamp(8), ())
+    # The gate is left again for an agent's node: the park no longer counts.
+    log.append(moved(20, "implementation"))
+    assert state_at(log, 31).state == "stalled"
+
+
+def test_the_node_is_where_the_pointer_last_went():
+    """Requirement: R4.2 — the nudge names the node the work item is on now,
+    and a node the session never ended a turn on has no exit it could have
+    met."""
+    log = [started(0), ended(5, "exit-met"), moved(6, "verification")]
+    state = state_at(log, 16)
+    assert (state.node, state.reason) == ("verification", "pointer-moved")
+    assert state.due == (Due("nudge", stall_id=stall_id(6)),)
+    forced = [started(0), ended(5, "exit-met"), ev(6, "graph.forced", to="design")]
+    assert state_at(forced, 16).node == "design"
+    working = [started(0), moved(1, "verification")]
+    assert state_at(working, 2).node == "verification"
+    # A move before the turn record says nothing new.
+    assert state_at([moved(-1, "x"), started(0), ended(5, "exit-met")], 16).node == (
+        "implementation"
+    )
+
+
+def test_a_wait_with_a_limit_outlives_a_pointer_move():
+    log = [
+        started(0),
+        ev(1, "session.wait_declared", condition="CI", until=stamp(40)),
+        ended(2, "declared-wait"),
+        moved(3, "verification"),
+    ]
+    state = state_at(log, 20)
+    assert (state.state, state.reason, state.node) == (
+        "waiting",
+        "declared-wait",
+        "verification",
+    )
+
+
+def test_an_unknown_position_stays_unknown_when_a_pointer_moves():
+    log = [
+        ev(0, "session.turn_started"),
+        ev(5, "session.turn_ended", reason="inconclusive"),
+        moved(8, "implementation"),
+    ]
+    state = state_at(log, 60 * 24)
+    assert (state.state, state.node, state.due) == ("idle", "", ())
+
+
 # -- the budget is the node visit's ----------------------------------------------
 
 

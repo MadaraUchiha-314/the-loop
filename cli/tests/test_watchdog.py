@@ -288,6 +288,26 @@ def test_a_human_owned_node_is_never_nudged(world):
     assert world.pasted() == [] and world.published == []
 
 
+def test_a_pointer_forced_onto_a_human_owned_node_gets_nothing(world):
+    """Requirement: R4.1 — the log does not say the node is a person's; the
+    graph definition does, and the watcher asks it before it types."""
+    idle(world, reason="exit-met")
+    world.emit(1, "graph.forced", to="gate", actor="octocat", reason="skip")
+    for minutes in (11, 21, 31, 600):
+        world.cycle(minutes)
+    assert world.pasted() == [] and world.published == []
+
+
+def test_a_nudge_names_the_node_the_pointer_moved_to(world):
+    idle(world, reason="exit-met")
+    world.emit(1, "graph.advanced", node="build", to="bare")
+    world.cycle(11)
+    (text,) = world.pasted()
+    assert "at node `bare`" in text and "claim it" not in text
+    (nudged,) = world.records("session.nudged")
+    assert nudged["node"] == "bare"
+
+
 def test_a_dead_pane_gets_the_notice_and_no_nudge(world):
     idle(world)
     world.tmux.session_missing = True
