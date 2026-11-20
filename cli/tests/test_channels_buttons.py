@@ -646,7 +646,7 @@ def _wire(monkeypatch, records, deliveries=None, record_ok=True):
     )
     monkeypatch.setattr(
         "the_loop.core.sessions.reply_session",
-        lambda ref, text, actor="", comment=True, config=None: (
+        lambda ref, text, actor="", comment=True, config=None, **vouched: (
             (deliveries if deliveries is not None else []).append(text)
             or {"delivered": True}
         ),

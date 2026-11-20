@@ -316,6 +316,32 @@ def test_reply_delivers_with_provenance_and_emits(tmp_path, monkeypatch, fake_ru
     assert events[0][2] == {"work_item": REF, "actor": "onika"}
 
 
+def test_a_reply_names_its_authorized_actor_only_when_the_caller_vouches(
+    tmp_path, monkeypatch, fake_runner
+):
+    """A channel that checked the author says so; nothing else on the record
+    is proof of a person."""
+    _register(tmp_path)
+    events = _events(monkeypatch)
+
+    core_sessions.reply_session(
+        REF,
+        "Use OAuth.",
+        actor="slack:U1",
+        comment=False,
+        config=_config(tmp_path),
+        authorized_actor="slack:U1",
+    )
+    core_sessions.reply_session(
+        REF, "Use OAuth.", actor="slack:U1", comment=False, config=_config(tmp_path)
+    )
+
+    assert [fields for name, _, fields in events if name == "session.reply_sent"] == [
+        {"work_item": REF, "actor": "slack:U1", "authorized_actor": "slack:U1"},
+        {"work_item": REF, "actor": "slack:U1"},
+    ]
+
+
 def test_reply_report_comment_is_marked_and_quotes_the_reply(
     tmp_path, monkeypatch, fake_runner
 ):

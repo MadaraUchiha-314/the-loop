@@ -585,6 +585,53 @@ def test_an_unknown_position_stays_unknown_when_a_pointer_moves():
     assert (own.state, own.node, acts(own)) == ("stalled", "", ["notify"])
 
 
+def test_abuse_a_reply_nobody_vouched_for_closes_asks_and_resets_nothing():
+    """
+    Feature: a session cannot renew its own budget
+      Scenario: a session calls the reply operation on itself
+        Given both nudges spent, the notice sent and a default taken at this step
+        And a new ask with a default is open
+        When a `session.reply_sent` with no authorized actor is recorded
+        Then the open ask is closed, so no default is taken after it
+        And the nudges, the notice and the default stay spent
+        When the same reply carries the actor a channel authorized
+        Then the window starts again
+
+    Requirement: docs/specs/issue-551/requirements.md § Security considerations
+    (abuse case 5; R6.2)
+    """
+    log = [
+        started(0),
+        ev(1, "session.awaiting_input", ask_id="A", default="Go.", default_at=stamp(2)),
+        ev(2, "session.ask_default_taken", ask_id="A", default="Go."),
+        ended(5, "exit-met"),
+        ev(15, "session.nudged", stall_id=stall_id(5), nudge=1),
+        ev(25, "session.nudged", stall_id=stall_id(5), nudge=2),
+        ev(35, "session.stalled", stall_id=stall_id(5), idle_since=stamp(5)),
+        ev(
+            36,
+            "session.awaiting_input",
+            ask_id="B",
+            default="Go.",
+            default_at=stamp(90),
+        ),
+    ]
+    forged = state_at(log + [ev(40, "session.reply_sent", actor="anyone")], 600)
+    assert forged.open_asks == ()
+    assert (forged.nudges_spent, forged.notified, forged.default_spent) == (
+        2,
+        True,
+        True,
+    )
+    assert forged.due == ()
+
+    vouched = ev(40, "session.reply_sent", actor="x", authorized_actor="slack:U1")
+    real = state_at(log + [vouched], 600)
+    assert real.open_asks == ()
+    assert (real.nudges_spent, real.notified, real.default_spent) == (0, False, False)
+    assert acts(real) == ["nudge"]
+
+
 # -- the budget is the node visit's ----------------------------------------------
 
 
@@ -626,7 +673,8 @@ def test_a_new_idle_period_on_the_same_node_inherits_what_was_spent():
     [
         ev(28, "graph.advanced", node="implementation", to="verification"),
         ev(28, "graph.forced", to="verification"),
-        ev(28, "session.reply_sent", actor="rohith"),
+        # A reply that came through a channel which checked its author.
+        ev(28, "session.reply_sent", actor="rohith", authorized_actor="rohith"),
         ev(28, "session.ask_answered", ask_id="a1", actor="rohith"),
         # A person's comment the dispatcher delivered: the record names them.
         ev(28, "dispatch.succeeded", via="tmux", actor="rohith"),
@@ -860,10 +908,13 @@ def test_a_default_taken_on_this_node_visit_is_spent():
     assert state_at(log, 50).default_spent is True
     for reset in (
         ev(60, "graph.advanced", node="implementation", to="verification"),
-        ev(60, "session.reply_sent", actor="rohith"),
+        ev(60, "session.reply_sent", actor="rohith", authorized_actor="rohith"),
         ev(60, "dispatch.succeeded", via="tmux", actor="rohith"),
     ):
         assert state_at(log + [reset], 70).default_spent is False
+    # A reply nobody vouched for: the session can send one to itself.
+    plain = ev(60, "session.reply_sent", actor="rohith")
+    assert state_at(log + [plain], 70).default_spent is True
     daemon = ev(60, "dispatch.succeeded", via="tmux", gh_event="check_run")
     assert state_at(log + [daemon], 70).default_spent is True
 

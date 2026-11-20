@@ -37,31 +37,37 @@ __all__ = [
 
 _TURN_STARTED = "session.turn_started"
 _TURN_ENDED = "session.turn_ended"
+_REPLY_SENT = "session.reply_sent"
 
 #: A turn that ended for one of these waits on something with no time limit.
 _UNLIMITED_WAITS = frozenset({"human-gate", "complete", "graph-wait"})
 
-#: A person spoke to the session. Each is written only after the
-#: authorized-actor guard passed, and closes every open ask whichever one it
-#: names: after a person's word no default may be taken.
-_ANSWERS = frozenset({"session.reply_sent", "session.ask_answered"})
+#: Something was said to the session as a person's word, and it closes every
+#: open ask whichever one it names: after it no default may be taken.
+#: `session.ask_answered` is written only for an authorized user's event. A
+#: `session.reply_sent` is not proof of one: the reply operation records what
+#: its caller claims, and the session can call it. Closing an ask is the safe
+#: direction, so both do that; a reply renews nothing unless it names the
+#: actor a channel authorized (:func:`_resets_budget`).
+_ANSWERS = frozenset({_REPLY_SENT, "session.ask_answered"})
 
 #: The watcher took an ask's default. It closes the ask it names and no other.
 _DEFAULT_TAKEN = "session.ask_default_taken"
 
 _ASK_CLOSERS = _ANSWERS | {_DEFAULT_TAKEN}
 
-#: Records that start a new nudge budget: the pointer moved, or a person's event
-#: reached the session. `dispatch.succeeded` is not here: it also records a CI
-#: event, an assignment and the watcher's own paste, and counting those would
-#: let a stuck session be nudged without end. It resets the
-#: budget only when it names the person (:func:`_delivered_a_person`).
+#: Records that always start a new nudge budget: the pointer moved, or an
+#: authorized user's event answered an ask. Two more start one only when they
+#: name a person (:func:`_resets_budget`). `dispatch.succeeded` also records a
+#: CI event, an assignment and the watcher's own paste, and counting those
+#: would let a stuck session be nudged without end. `session.reply_sent` is
+#: also what a session writes when it replies to itself, and counting that
+#: would let it renew its own nudges and its one default.
 _BUDGET_RESETS = frozenset(
     {
         "graph.started",
         "graph.advanced",
         "graph.forced",
-        "session.reply_sent",
         "session.ask_answered",
     }
 )
@@ -99,6 +105,10 @@ EVENTS = frozenset(
     | _ASK_CLOSERS
     | _BUDGET_RESETS
 )
+
+#: On a `session.reply_sent`: the person a channel checked against its
+#: allow-list before it delivered the reply. No other caller sets it.
+_AUTHORIZED_ACTOR = "authorized_actor"
 
 
 @dataclass(frozen=True)
@@ -412,7 +422,7 @@ def derive(
                 untold = UntoldDefault(
                     _text(record, "ask_id"), _text(record, "default")
                 )
-        if event in _BUDGET_RESETS or _delivered_a_person(record, work_item):
+        if _resets_budget(record, work_item):
             nudges_spent, notified, last_nudge = 0, False, None
             last_attempt, default_spent = None, False
 
@@ -584,6 +594,18 @@ def _delivered_a_person(record: Dict[str, Any], to: str = "") -> bool:
     if record.get("event") != _DELIVERED or not _text(record, "actor"):
         return False
     return not to or _delivered_to(record) == to
+
+
+def _resets_budget(record: Dict[str, Any], work_item: str) -> bool:
+    """Whether ``record`` starts a new window for the nudges, the notice and
+    the one default: the pointer moved, or a person who was shown to be
+    authorized spoke to ``work_item``'s session."""
+    event = record.get("event")
+    if event in _BUDGET_RESETS:
+        return True
+    if event == _REPLY_SENT:
+        return bool(_text(record, _AUTHORIZED_ACTOR))
+    return _delivered_a_person(record, work_item)
 
 
 def _later(first: _Moment, second: Optional[_Moment]) -> _Moment:

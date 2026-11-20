@@ -1153,6 +1153,8 @@ def reply_session(
     portable_dir: str = "",
     kind: str = "reply",
     detail: Optional[Mapping[str, str]] = None,
+    *,
+    authorized_actor: str = "",
 ) -> Dict[str, Any]:
     """Deliver an operator's answer into a waiting session's tmux pane (issue-208).
 
@@ -1177,6 +1179,14 @@ def reply_session(
     decision — the session writes the decision record); ``detail`` carries the
     frame's fields (the person, the count, the thread's link, the record's URL,
     the kind, the rationale). Every frame names the text as untrusted data.
+
+    ``authorized_actor`` is the person the caller itself checked against an
+    allow-list before it called. Only such a caller passes it: the inbound
+    channel pipeline does, after its own check. The API route, the MCP tool,
+    the SDK and the CLI verb have no parameter for it, because none of them
+    authenticates its caller. The record carries it, and it is what lets a
+    reply start a new window for the watcher's nudges and an ask's default;
+    a reply without it still closes the open asks.
     """
     work_item = WorkItemRef.parse(ref)  # ValueError on a malformed ref
     if not text or not text.strip():
@@ -1261,7 +1271,10 @@ def reply_session(
             "exitCode": 1,
             "messages": messages,
         }
-    eventlog.emit("session.reply_sent", work_item=work_item.ref, actor=actor or None)
+    vouched = {"authorized_actor": authorized_actor} if authorized_actor else {}
+    eventlog.emit(
+        "session.reply_sent", work_item=work_item.ref, actor=actor or None, **vouched
+    )
     messages.append(
         {
             "stream": "out",
