@@ -293,9 +293,15 @@ def turn_start(
 
 
 def check_condition(condition: str) -> str:
-    """A declared wait's condition, stripped; ``ValueError`` when it is empty or
-    longer than :data:`MAX_CONDITION_LENGTH`."""
-    text = condition.strip() if isinstance(condition, str) else ""
+    """A declared wait's condition as one line of words; ``ValueError`` when it
+    is empty or longer than :data:`MAX_CONDITION_LENGTH`.
+
+    The status surfaces print it inside a line of a terminal (issue-551, abuse
+    case 6). A line break or an escape sequence in it would be drawn there, not
+    read, so every run of whitespace and control characters becomes one space.
+    """
+    text = condition if isinstance(condition, str) else ""
+    text = " ".join("".join(c if c.isprintable() else " " for c in text).split())
     if not text:
         raise ValueError(strings.t("core.stopcheck.wait.empty-condition"))
     if len(text) > MAX_CONDITION_LENGTH:

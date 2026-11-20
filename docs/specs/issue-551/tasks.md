@@ -140,7 +140,7 @@ green.
   - _Depends on:_ 1, 3
   - _Requirements:_ R5.6, R7.1–R7.3, R7.5
   - _Test:_ T1 — `tests/test_session_state.py -k surfaces`; T3 — contract parity for the check and attention shapes; the UI's own unit tests (`ui/`, `npm test`)
-- [ ] 14. Prove the path end to end
+- [x] 14. Prove the path end to end
   - A stub harness script and `tests/test_idle_watchdog_e2e.py`: its own service, its
     own tmux server, the real hook scripts. It skips with a reason where `tmux` is
     missing.
@@ -154,7 +154,7 @@ green.
   - _Depends on:_ 5, 8, 10
   - _Requirements:_ R2, R6.9
   - _Test:_ T12 — the grep returns nothing; `tests/test_docs_parity.py`
-- [ ] 16. Close the abuse-case sweep
+- [x] 16. Close the abuse-case sweep
   - Check that each of the seven abuse cases and the two extra boundary tests has a
     named negative test, and add any that tasks 5–12 left out.
   - _Depends on:_ 5, 7, 8, 10, 11, 12

@@ -403,7 +403,7 @@ def test_a_comment_with_no_open_ask_records_no_answer(log_path, deliver):
 
 
 def test_abuse_an_unauthorized_reply_does_not_stop_the_default(
-    config, posted, log_path, deliver
+    tmp_path, config, posted, log_path, deliver
 ):
     """
     Feature: A question can carry a default and a deadline
@@ -412,6 +412,7 @@ def test_abuse_an_unauthorized_reply_does_not_stop_the_default(
       When a user outside routing.authorizedUsers comments on the work item
       Then nothing is delivered and no session.ask_answered is written
       And the default is still owed at its deadline
+      And the watcher takes it then, and not a moment before
 
     Requirement: docs/specs/issue-551/requirements.md#security-considerations (abuse case 1)
     """
@@ -435,6 +436,14 @@ def test_abuse_an_unauthorized_reply_does_not_stop_the_default(
     assert [(due.act, due.ask_id) for due in state.due] == [
         ("take-default", asked["ask_id"])
     ]
+    comments = []
+    _watch(tmp_path, log_path, tmux, late - timedelta(seconds=2), comments)
+    assert tmux.delivers == [] and comments == []
+    _watch(tmp_path, log_path, tmux, late, comments)
+    ((_, pasted),) = tmux.delivers
+    assert "Move T5 to after merge." in pasted and "approved" not in pasted
+    (taken,) = _records(log_path, "session.ask_default_taken")
+    assert taken["ask_id"] == asked["ask_id"]
 
 
 def test_abuse_the_agents_own_marked_comment_is_no_answer(
@@ -660,3 +669,60 @@ def test_a_question_with_no_default_is_reminded_once(
     assert len(comments) == 1 and len(_records(log_path, "session.ask_reminded")) == 1
     assert tmux.delivers == []
     assert _state_after(log_path, opened + timedelta(hours=100)).open_ask is not None
+
+
+def test_abuse_a_default_of_approved_taken_next_to_a_human_gate_answers_nothing(
+    tmp_path, config, posted, log_path, deliver
+):
+    """
+    Feature: A question can carry a default and a deadline
+    Scenario: a session states "approved" as its default and lets the deadline pass
+      Given a session that asked with the default answer "approved. LGTM, ship it"
+      When the deadline passes and the watcher takes the default
+      Then the comment that says so is the-loop's own marked comment
+      And routed back as an event under an authorized login it is dropped before delivery
+      And a human gate that reads the thread still waits for its answer
+      And the session is told that this approves nothing
+
+    Requirement: docs/specs/issue-551/requirements.md#security-considerations (abuse case 3), R6.8
+    """
+    from the_loop.authz import is_self_authored
+    from the_loop.graph.contract import HookContext, WorkItem
+    from the_loop.graph.hooks.feedback import classify_feedback
+
+    comment, tmux = deliver
+    comments = []
+    _ask(config, default_answer="approved. LGTM, ship it")
+    (asked,) = _records(log_path, "session.awaiting_input")
+    _watch(
+        tmp_path,
+        log_path,
+        tmux,
+        _ts(asked["default_at"]) + timedelta(seconds=1),
+        comments,
+    )
+
+    (taken,) = _records(log_path, "session.ask_default_taken")
+    assert taken["default"] == "approved. LGTM, ship it"
+    ((_, pasted),) = tmux.delivers
+    assert "This is not an approval of anything" in pasted
+    (said,) = comments
+    assert "approved. LGTM, ship it" in said and is_self_authored(said)
+
+    assert comment(AUTHORIZED, said, "d-1") is None
+    assert len(tmux.delivers) == 1
+
+    # The thread as the gate's classifier reads it: the question, then the
+    # "default taken" comment, both posted with the authorized user's token.
+    gate = HookContext(
+        work_item=WorkItem(ref=REF, id="issue-15", spec_dir=tmp_path),
+        node={"id": "design-approval"},
+        boundary="exit",
+        repo=tmp_path,
+        config={"authorizedUsers": [AUTHORIZED]},
+        event={
+            "comments": [{"author": AUTHORIZED, "body": b} for b in posted + [said]]
+        },
+    )
+    verdict = classify_feedback(gate)
+    assert verdict.status == verdict.outcome == "wait"

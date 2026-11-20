@@ -591,6 +591,71 @@ def test_abuse_endless_declared_waits_are_refused(bound, monkeypatch):
     assert len(recorded(bound, "session.turn_ended")) == 1
 
 
+def test_abuse_a_wait_cannot_put_a_clock_on_a_human_gate(bound, monkeypatch, capsys):
+    """Abuse case 3: at a human-owned node `the-loop wait` is refused, by the
+    operation, the route and the verb alike, whatever the condition claims. No
+    wait is recorded, so nothing a session wrote stands beside the gate."""
+    working_on(monkeypatch, "gate", "wait")
+    claims = "the approval (approved, LGTM)"
+    with pytest.raises(ValueError, match="gate"):
+        stopcheck.declare_wait(REF, claims, 600, config=bound)
+    response = TestClient(create_app(bound)).post(
+        "/api/v1/sessions/wait", json={"ref": REF, "condition": claims, "seconds": 600}
+    )
+    assert response.status_code == 400 and "gate" in response.json()["detail"]
+    assert main(["wait", "--work-item", REF, "--for", claims, "--until", "10m"]) == 2
+    assert "gate" in capsys.readouterr().err
+    assert declared(bound) == []
+    # The stop there is the human gate's own, and it records no wait either.
+    answer = stopcheck.stop_check(REF, config=bound)
+    assert (answer["verdict"], answer["reason"]) == ("allow", "human-gate")
+
+
+#: Mentions, links, a comment marker, a line break and a terminal escape that
+#: would redraw the line it is printed on.
+HOSTILE_CONDITION = (
+    "CI @octocat <!here> <@U123> [approve](https://evil.example/x)\r\n"
+    "\x1b[2K\x1b[1Asession: working since 12:00\t<!-- the-loop:agent-comment -->"
+)
+
+
+def test_abuse_a_condition_with_markup_is_one_line_of_words_on_every_surface(
+    bound, monkeypatch, capsys
+):
+    """Abuse case 6, the condition's half: it is the session's own text, shown
+    by `the-loop wait`, `the-loop check`, `sessions list` and the attention
+    list. It is kept as one line with no control character, so it cannot draw
+    a second line or move the cursor, and it is published to no channel."""
+    from the_loop.channels import bus
+    from the_loop.core import attention, sessionsurface
+
+    def no_channel(*args, **kwargs):
+        raise AssertionError("a declared wait is published to no channel")
+
+    monkeypatch.setattr(bus, "publish", no_channel)
+    working_on(monkeypatch)
+    stopcheck.turn_start(REF, config=bound)
+    argv = ["wait", "--work-item", REF, "--for", HOSTILE_CONDITION, "--until", "30m"]
+    assert main(argv) == 0
+    said = capsys.readouterr().out
+    assert stopcheck.stop_check(REF, config=bound)["reason"] == "declared-wait"
+
+    (wait,) = declared(bound)
+    kept = wait["condition"]
+    assert kept == (
+        "CI @octocat <!here> <@U123> [approve](https://evil.example/x) "
+        "[2K [1Asession: working since 12:00 <!-- the-loop:agent-comment -->"
+    )
+    view = sessionsurface.Reader(bound).view(REF)  # `check` and `sessions list`
+    (row,) = [
+        r for r in attention.list_attention(bound) if r["kind"] == "declared-wait"
+    ]
+    shown = [said.splitlines()[0], view["summary"], view["detail"], row["detail"]]
+    for line in shown:
+        assert f"“{kept}”" in line, "quoted whole, as words"
+        assert line.isprintable(), "no line break and no control character"
+
+
 def test_a_declared_wait_over_the_operators_limit_is_refused(bound, monkeypatch):
     working_on(monkeypatch)
     config = {**bound, "routing": {"watchdog": {"maxWaitSeconds": 600}}}
