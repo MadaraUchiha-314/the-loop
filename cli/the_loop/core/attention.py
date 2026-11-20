@@ -99,6 +99,20 @@ def list_attention(config: Optional[dict] = None) -> List[Dict[str, Any]]:
     # open-ask rule in ui/src/api/model.ts::awaitingInput — change one and the
     # other is a reviewable change, or the two surfaces disagree.
     active = {s["ref"] for s in sessions if s["status"] == "active"}
+    # A pull request with a conversation of its own stalls like any other. It
+    # is stored under its work item, and counts only once it has a terminal: a
+    # pull request that is merely linked has no session to stall.
+    for session in sessions:
+        if session["status"] != "active":
+            continue
+        for endpoint in session.get("pullRequests") or []:
+            ref = str((endpoint.get("workItem") or {}).get("ref") or "")
+            if (
+                ref
+                and endpoint.get("status") == "active"
+                and endpoint.get("tmuxTarget")
+            ):
+                active.add(ref)
     waits: List[Dict[str, Any]] = []
     for ref in states.refs:
         if ref in ended:

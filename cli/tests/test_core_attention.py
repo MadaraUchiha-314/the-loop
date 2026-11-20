@@ -515,3 +515,33 @@ def test_several_open_questions_are_one_row_naming_the_one_due_first(tmp_path):
     (row,) = _of_kind(config, "awaiting-input")
     assert "Sooner? (+2 more)" in row["detail"]
     assert (row["default"], row["defaultAt"]) == ("Yes.", soon)
+
+
+def test_a_stalled_pull_request_session_is_listed(tmp_path):
+    """
+    Feature: the attention list shows a stall
+      Scenario: a pull request's own session stalls
+        Given a work item whose pull request has a live session of its own
+        And that session's turn ended 22 minutes ago with work owed
+        When the attention list is read
+        Then one `stalled` row names the pull request
+        And a pull request that is only linked, with no session, gets none
+
+    Requirement: docs/specs/issue-551/requirements.md R7.1
+    """
+    pr, linked = "github:octo/other#20", "github:octo/other#21"
+    config = _session(tmp_path)
+    registry = SessionRegistry(layout_from_config(config).local_dir)
+    for ref in (pr, linked):
+        registry.link_pull_request(REF, ref)
+    endpoint = registry.find_by_work_item(REF).endpoint_for(pr)
+    endpoint.tmux_target = "loop-github-octo-other-20"
+    registry.save_endpoint(REF, endpoint)
+    _log(
+        tmp_path,
+        [
+            _turn(ref, _minutes_ago(22), "session.turn_ended", reason="exit-met")
+            for ref in (pr, linked)
+        ],
+    )
+    assert [row["workItem"] for row in _of_kind(config, "stalled")] == [pr]
