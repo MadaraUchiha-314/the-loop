@@ -564,8 +564,9 @@ def test_a_room_conversation_is_opened_once_and_every_event_is_top_level(tmp_pat
 
     assert bot.open(REF).ok
     assert bot.open(REF).ok
-    bot.post(Event(event_type="phase.started", work_item=REF, text="started"))
-    bot.post(Event(event_type="phase.completed", work_item=REF, text="done"))
+    # issue-549 R10: the `phase.*` pair is bookkeeping, so two ordinary events
+    bot.post(Event(event_type="comment.human", work_item=REF, text="started"))
+    bot.post(Event(event_type="work-item.closed", work_item=REF, text="done"))
 
     assert [(p["channel"], p["thread_ts"]) for p in client.posted] == [
         (ROOM, None),
@@ -576,9 +577,9 @@ def test_a_room_conversation_is_opened_once_and_every_event_is_top_level(tmp_pat
 
 
 def test_an_agentic_room_collapses_an_intermediate_transition(tmp_path):
-    """issue-393 B5/R6.1: in the default agentic room, an intermediate
-    `phase.completed` is collapsed — RoomPolicy drops it — so it is not a third
-    top-level message. The `phase.started` still posts."""
+    """issue-393 B5/R6.1, as issue-549 R10.1 tightens it: the `phase.*` pair is
+    bookkeeping, so neither the `phase.completed` nor the `phase.started` is a
+    message in the room."""
     config = cli_config(tmp_path)  # agentic is the default
     declare(config)
     client = FakeSlackClient()
@@ -601,14 +602,13 @@ def test_an_agentic_room_collapses_an_intermediate_transition(tmp_path):
             detail={"node": "design"},
         )
     )
-    # The started message posted; the completed one was collapsed (not a
-    # separate post). Exactly one posted message mentions the phase, and none
-    # carries the collapsed "done".
+    # Neither half of the transition reached the room: only its opening is there.
     import json
 
     with_phase = [p for p in client.posted if "Starting design." in json.dumps(p)]
-    assert len(with_phase) == 1
+    assert with_phase == []
     assert "done" not in [p.get("text") for p in client.posted]
+    assert len(client.posted) == 1
 
 
 def test_an_agentic_room_edits_a_phase_in_place_on_progress(tmp_path):

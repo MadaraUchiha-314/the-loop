@@ -141,7 +141,7 @@ Tests are named so the T8 `-k` filter in `testing-plan.md` finds the abuse cases
     `Scenario: the-loop comment with a summary posts the summary to Slack and the whole text to GitHub`,
     `Scenario: an outbox replay after a partial delivery posts only the missing parts`
     (red→green)
-- [ ] 10. Bookkeeping filter (R10).
+- [x] 10. Bookkeeping filter (R10).
   - The daemon's session-started notice carries the `session-started` kind in its hidden
     marker; the GitHub mirror passes it on; the room policy drops it, and drops
     `phase.started` / `phase.completed` from Slack. The `operator-docs` word match goes.

@@ -193,7 +193,8 @@ def test_progress_does_not_end_the_reply_thread(tmp_path):
 
 
 def test_room_policy_still_drops_what_it_drops(tmp_path):
-    """R1.5: the session-started cheat-sheet never reaches a room, thread or not."""
+    """R1.5: the session-started cheat-sheet never reaches a room, thread or not.
+    Recognised by its notice kind since issue-549 R10, not by its words."""
     config, client, bot = _room(tmp_path)
     _mention_in(config, client, THREAD, "1700.000200")
     before = len(client.posted)
@@ -204,6 +205,7 @@ def test_room_policy_still_drops_what_it_drops(tmp_path):
             work_item=REF,
             text="the-loop started an interactive session for #375\n"
             "tmux attach -t loop-375",
+            detail={"notice": "session-started"},
         )
     )
 

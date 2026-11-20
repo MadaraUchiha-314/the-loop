@@ -808,3 +808,85 @@ def test_a_reply_for_a_work_item_with_no_session_record_is_left_to_the_ledger(
     assert (
         is_self_authored(records[0][1]) and _etype(records[0][1]) == "work-item.reply"
     )
+
+
+def test_a_session_started_notice_reaches_github_and_not_slack(
+    tmp_path, monkeypatch, slack
+):
+    """
+    Feature: bookkeeping stays out of Slack
+      Scenario: a session-started notice reaches GitHub and not Slack
+        Given a bound thread and a Slack channel subscribed to comment.agent
+        When the daemon announces a spawned session on the work item
+        Then the announcement is a comment on GitHub, carrying the
+             session-started notice kind in its hidden marker
+        And the event log records the announcement
+        When the webhook router mirrors that comment
+        Then the comment.agent event carries the notice kind
+        And no Slack message is posted for it
+
+    Requirement: docs/specs/issue-549/requirements.md R10.1, R10.2
+    """
+    from ghfakes import FakeGitHubClient
+
+    from the_loop import eventlog
+    from the_loop.announce import AnnounceConfig, SessionAnnouncer
+    from the_loop.channels.publishers import comment_publisher
+    from the_loop.sessions import Session, WorkItemRef
+
+    _ledger_writer(monkeypatch, [])
+    config = cli_config(tmp_path, subscribe=["session.awaiting_input", "comment.agent"])
+    _bound_thread(tmp_path, config, slack)
+    before = len(slack.posted)
+
+    emitted = []
+    monkeypatch.setattr(eventlog, "emit", lambda event, **fields: emitted.append(event))
+    github = FakeGitHubClient()
+    session = Session(
+        work_item=WorkItemRef.parse("github:o/r#7"),
+        harness="claude",
+        harness_session_id="sid",
+        cwd="/tmp",
+        tmux_target="loop-o-r-7",
+    )
+    assert SessionAnnouncer(AnnounceConfig(), client=github).announce(session)
+    (posted,) = github.posted
+    body = posted[3]
+    assert "<!-- the-loop:notice session-started -->" in body  # GitHub has it
+    assert "session.announced" in emitted  # the event log has it (R10.2)
+
+    published = []
+    monkeypatch.setattr(
+        "the_loop.channels.bus.publish",
+        _spy(
+            published, __import__("the_loop.channels.bus", fromlist=["publish"]).publish
+        ),
+    )
+    router = Router(
+        events=[],
+        authorized_users=[OPERATOR],
+        publisher=comment_publisher(lambda: config),
+    )
+    payload = {
+        "action": "created",
+        "repository": {"full_name": "o/r"},
+        "issue": {"number": 7, "html_url": "https://github.com/o/r/issues/7"},
+        "comment": {
+            "body": body,
+            "user": {"login": OPERATOR},
+            "html_url": "https://github.com/o/r/issues/7#c10",
+        },
+    }
+    assert router.route("issue_comment", payload, "d1") is None  # its own comment
+    (event,) = published
+    assert event.event_type == "comment.agent"
+    assert event.detail.get("notice") == "session-started"
+    assert len(slack.posted) == before  # nothing reached Slack (R10.1)
+
+
+def _spy(sink, real):
+    def publish(event, *args, **kwargs):
+        sink.append(event)
+        return real(event, *args, **kwargs)
+
+    return publish

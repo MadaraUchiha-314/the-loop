@@ -36,13 +36,10 @@ def _event(event_type, *, text="", detail=None, summary=""):
 
 def test_outside_a_room_the_room_only_rules_do_not_fire():
     """issue-549 design.md stage 1: the policy runs for every conversation, but
-    session-wins and transition-collapse keep their room-only scope."""
-    completed = decide(
-        _event("phase.completed", detail={"node": "design"}), {}, is_room=False
-    )
-    assert completed.action == POST
+    session-wins keeps its room-only scope. (transition-collapse is gone: the
+    `phase.*` pair it folded is bookkeeping since issue-549 R10.)"""
     spoken = decide(
-        _event("phase.started", detail={"node": "design"}),
+        _event("comment.agent", detail={"node": "design"}),
         {"sessionSpokeFor": "design"},
         is_room=False,
     )
@@ -72,9 +69,9 @@ def test_outside_a_room_progress_edit_and_gate_memory_apply():
 
 
 def test_the_identical_event_for_the_same_node_is_dropped():
-    memory = {"lastEvent": "phase.completed", "lastNode": "complete"}
+    memory = {"lastEvent": "work-item-complete", "lastNode": "complete"}
     d = decide(
-        _event("phase.completed", detail={"node": "complete"}),
+        _event("work-item-complete", detail={"node": "complete"}),
         memory,
         is_room=True,
     )
@@ -95,13 +92,15 @@ def test_a_gate_pending_posts_and_remembers_its_ts():
 
 
 def test_the_phase_started_line_after_a_gate_pending_is_dropped():
+    """The gate's `phase.started` line is a label change, so bookkeeping drops
+    it before gate-collapse is asked (issue-549 R10.1)."""
     memory = {"gateTs": {"requirements-approval": "1700.1"}}
     d = decide(
         _event("phase.started", detail={"node": "requirements-approval"}),
         memory,
         is_room=True,
     )
-    assert d.action == DROP and d.rule == "gate-collapse"
+    assert d.action == DROP and d.rule == "bookkeeping"
 
 
 def test_the_ready_for_review_mirror_after_a_gate_pending_is_dropped():
@@ -178,16 +177,33 @@ def test_a_phase_progress_at_an_ungated_node_still_edits_in_place():
     assert d.action == EDIT and d.rule == "progress-edit" and d.ts == "1700.5"
 
 
-def test_the_session_started_cheat_sheet_mirror_is_operator_docs():
-    """The tmux cheat-sheet reaches the room as a nodeless mirror with no
-    operatorDoc flag (issue N2); its own lead is recognised as operator docs."""
-    text = (
-        "🖥️ **the-loop** started an interactive session for `issue-3`.\n\n"
-        "| tmux session | `loop-issue-3` |\n\n"
-        "```sh\ntmux attach -t loop-issue-3\n```\n"
+_CHEAT_SHEET = (
+    "🖥️ **the-loop** started an interactive session for `issue-3`.\n\n"
+    "| tmux session | `loop-issue-3` |\n\n"
+    "```sh\ntmux attach -t loop-issue-3\n```\n"
+)
+
+
+def test_the_session_started_cheat_sheet_mirror_is_bookkeeping():
+    """issue-549 R10.1 (replacing issue N2's word match): the tmux cheat-sheet
+    mirror is recognised by the `session-started` notice kind the GitHub mirror
+    read from its hidden marker."""
+    d = decide(
+        _event(
+            "comment.agent", text=_CHEAT_SHEET, detail={"notice": "session-started"}
+        ),
+        {},
+        is_room=True,
     )
-    d = decide(_event("comment.agent", text=text), {}, is_room=True)
-    assert d.action == DROP and d.rule == "operator-docs"
+    assert d.action == DROP and d.rule == "bookkeeping"
+
+
+def test_bookkeeping_dropped_by_kind_not_by_words():
+    """issue-549 design.md (Bookkeeping detection): words change with every
+    string edit, so the cheat-sheet's words alone, with no notice kind, are an
+    ordinary comment."""
+    d = decide(_event("comment.agent", text=_CHEAT_SHEET), {}, is_room=True)
+    assert d.action == POST
 
 
 def test_an_ordinary_comment_mentioning_a_session_is_not_operator_docs():
@@ -201,7 +217,8 @@ def test_an_ordinary_comment_mentioning_a_session_is_not_operator_docs():
 
 def test_the_terminal_nodes_own_lifecycle_lines_are_collapsed():
     """The `complete` node's phase.started/completed say nothing the dedicated
-    completion and closure events (and the session's summary) do not (issue N2)."""
+    completion and closure events (and the session's summary) do not (issue N2);
+    since issue-549 R10 every `phase.*` line is bookkeeping."""
     started = decide(
         _event("phase.started", detail={"node": "complete"}),
         {"lastEvent": "work-item-complete", "lastNode": "complete"},
@@ -212,12 +229,12 @@ def test_the_terminal_nodes_own_lifecycle_lines_are_collapsed():
         {"lastEvent": "phase.started", "lastNode": "x"},
         is_room=True,
     )
-    assert started.action == DROP and started.rule == "endgame-collapse"
-    assert completed.action == DROP and completed.rule == "endgame-collapse"
+    assert started.action == DROP and started.rule == "bookkeeping"
+    assert completed.action == DROP and completed.rule == "bookkeeping"
 
 
 def test_the_completion_and_closure_events_themselves_still_post():
-    """endgame-collapse drops only the terminal node's phase pair — the events
+    """bookkeeping drops only the terminal node's phase pair — the events
     that actually announce the end still reach the room."""
     complete = decide(
         _event("work-item-complete", detail={"node": "complete"}), {}, is_room=True
@@ -271,16 +288,18 @@ def test_an_intermediate_completed_is_collapsed():
         {},
         is_room=True,
     )
-    assert d.action == DROP and d.rule == "transition-collapse"
+    assert d.action == DROP and d.rule == "bookkeeping"
 
 
-def test_a_terminal_completed_is_still_heard():
+def test_a_terminal_completed_is_bookkeeping_too():
+    """issue-549 R10.1: a terminal `phase.completed` is still a label change;
+    `work-item-complete` is what announces the end."""
     d = decide(
         _event("phase.completed", detail={"node": "complete", "terminal": "true"}),
         {},
         is_room=True,
     )
-    assert d.action == POST
+    assert d.action == DROP and d.rule == "bookkeeping"
 
 
 # -- session-wins (R12.3) -------------------------------------------------------
@@ -289,7 +308,7 @@ def test_a_terminal_completed_is_still_heard():
 def test_a_template_for_a_moment_the_session_spoke_for_is_dropped():
     memory = {"sessionSpokeFor": "requirements-definition"}
     d = decide(
-        _event("phase.started", detail={"node": "requirements-definition"}),
+        _event("comment.agent", detail={"node": "requirements-definition"}),
         memory,
         is_room=True,
     )
@@ -331,3 +350,42 @@ def test_an_ordinary_event_posts_and_records_itself():
     )
     assert d.action == POST and d.rule == "post"
     assert d.remember == {"lastEvent": "work-item.closed", "lastNode": "complete"}
+
+
+# -- bookkeeping (issue-549 R10) --------------------------------------------------
+
+
+def test_bookkeeping_dropped_phase_started_and_completed_everywhere():
+    """issue-549 R10.1: a `loop:<phase>` label change is never posted to Slack,
+    in a room or in the central channel."""
+    for event_type in ("phase.started", "phase.completed"):
+        for is_room in (True, False):
+            d = decide(
+                _event(event_type, detail={"node": "design", "phase": "design"}),
+                {},
+                is_room=is_room,
+            )
+            assert d.action == DROP and d.rule == "bookkeeping", (event_type, is_room)
+
+
+def test_bookkeeping_dropped_session_started_notice_in_the_central_channel():
+    """issue-549 R10.1: the session-started notice is dropped wherever it goes."""
+    d = decide(
+        _event("comment.agent", text="anything", detail={"notice": "session-started"}),
+        {},
+        is_room=False,
+    )
+    assert d.action == DROP and d.rule == "bookkeeping"
+
+
+def test_bookkeeping_dropped_only_for_bookkeeping_kinds():
+    """A notice kind that is not bookkeeping, and the progress line, still post."""
+    other = decide(
+        _event("comment.agent", text="hi", detail={"notice": "something-else"}),
+        {},
+        is_room=True,
+    )
+    progress = decide(
+        _event("phase.progress", detail={"phase": "design"}), {}, is_room=True
+    )
+    assert other.action == POST and progress.action == POST

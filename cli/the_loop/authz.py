@@ -56,6 +56,7 @@ announced.
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING, List, Optional, Sequence
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -152,6 +153,42 @@ def mark_self_authored(body: str) -> str:
     if body and SELF_COMMENT_MARKER in body:
         return body
     return f"{body.rstrip()}\n\n{SELF_COMMENT_ATTRIBUTION}\n{SELF_COMMENT_MARKER}\n"
+
+
+#: The notice-kind marker (issue-549 R10): a hidden HTML comment beside the
+#: self-authored marker that names what kind of notice the-loop's own comment
+#: is, so a reader (the GitHub mirror, then the Slack room policy) recognises
+#: it by contract instead of by matching its words. Only honoured on a body that
+#: also carries :data:`SELF_COMMENT_MARKER`; like that marker, its spelling must
+#: never change once shipped.
+NOTICE_MARKER_FORMAT = "<!-- the-loop:notice {kind} -->"
+_NOTICE_RE = re.compile(r"<!-- the-loop:notice ([a-z][a-z0-9-]{0,63}) -->")
+
+#: The daemon's session-started announcement (:mod:`the_loop.announce`).
+NOTICE_SESSION_STARTED = "session-started"
+
+
+def mark_notice(body: str, kind: str) -> str:
+    """``body`` with the notice-kind marker for ``kind`` (issue-549 R10).
+
+    Apply it, like :func:`mark_self_authored`, only to text the-loop composed;
+    :func:`notice_kind` reads it back only from a self-authored body.
+    """
+    if not _NOTICE_RE.fullmatch(NOTICE_MARKER_FORMAT.format(kind=kind)):
+        raise ValueError(f"not a notice kind: {kind!r}")
+    return f"{body.rstrip()}\n{NOTICE_MARKER_FORMAT.format(kind=kind)}\n"
+
+
+def notice_kind(body: Optional[str]) -> str:
+    """The notice kind the-loop stamped on its own comment ``body``, or ``""``.
+
+    A marker in a comment the-loop did not write (no self-authored marker) is
+    just text a person typed, and names nothing.
+    """
+    if not body or not is_self_authored(body):
+        return ""
+    match = _NOTICE_RE.search(body)
+    return match.group(1) if match else ""
 
 
 def mark_self_authored_on_jira(body: str) -> str:

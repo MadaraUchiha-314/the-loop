@@ -230,3 +230,24 @@ def test_a_missing_work_item_still_never_fails_the_dispatch():
         AnnounceConfig(), client=FakeGitHubClient(missing={("octo", "repo", 15)})
     )
     assert announcer.announce(make_session()) is False
+
+
+def test_body_carries_the_session_started_notice_kind():
+    # issue-549 R10: the announcement names its kind in the-loop's hidden marker,
+    # so the GitHub mirror and the Slack room policy recognise it by contract,
+    # never by matching its words.
+    from the_loop.authz import NOTICE_SESSION_STARTED, notice_kind
+
+    body = announcement_body(make_session())
+    assert notice_kind(body) == NOTICE_SESSION_STARTED == "session-started"
+    assert "<!-- the-loop:notice session-started -->" in body
+
+
+def test_a_notice_marker_on_a_comment_the_loop_did_not_write_names_nothing():
+    # issue-549 R10: a person who types the marker into their own comment does
+    # not make it bookkeeping — the kind is read only from a self-authored body.
+    from the_loop.authz import mark_self_authored, notice_kind
+
+    typed = "hello\n<!-- the-loop:notice session-started -->\n"
+    assert notice_kind(typed) == ""
+    assert notice_kind(mark_self_authored("plain")) == ""
