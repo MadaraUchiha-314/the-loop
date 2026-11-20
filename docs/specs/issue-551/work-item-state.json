@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-551",
-  "currentNode": "critic-review",
+  "currentNode": "security-review",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -125,8 +125,16 @@
     },
     "critic-review": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-11-20T22:59:23+00:00",
+      "exitedAt": "2026-11-20T23:30:18+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "security-review": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-11-20T23:30:18+00:00",
       "exitedAt": "",
       "lastBlock": "",
       "forced": false
@@ -371,6 +379,10 @@
     },
     "self-review": {
       "at": "2026-11-20T22:59:23+00:00",
+      "by": "cli"
+    },
+    "critic-review": {
+      "at": "2026-11-20T23:30:18+00:00",
       "by": "cli"
     }
   },
