@@ -345,6 +345,28 @@ def test_a_pull_requests_own_session_gets_the_notice_and_no_nudge(world):
     assert stalled["work_item"] == OTHER
 
 
+def test_a_pull_requests_own_session_with_no_readable_position_is_left_alone(world):
+    """Requirement: R4.6 — the stop check finds no outer-loop position for a
+    pull request's ref, so its turns end `inconclusive` with no node. the-loop
+    cannot say work is owed there: no nudge, and no notice, ever."""
+    from the_loop.sessions import WorkItemRef
+
+    world.register()
+    endpoint = world.registry.link_pull_request(REF, OTHER)
+    assert endpoint is not None
+    endpoint.tmux_target = "loop-github-octo-repo-8"
+    endpoint.harness_session_id = "sess-pr"
+    world.registry.save_endpoint(WorkItemRef.parse(REF), endpoint)
+    world.started(-1, ref=OTHER)
+    world.ended(0, reason="inconclusive", node=None, ref=OTHER)
+
+    for minutes in (10, 20, 30, 60, 600, 6000):
+        world.cycle(minutes)
+
+    assert world.pasted() == [] and world.published == []
+    assert not world.records("session.nudged") + world.records("session.stalled")
+
+
 # -- the notice and its end -----------------------------------------------------------
 
 

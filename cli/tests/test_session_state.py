@@ -355,6 +355,25 @@ def test_a_stall_that_cannot_name_its_node_gets_the_notice_without_a_nudge():
     assert acts(state_at(log, 15)) == ["notify"]
 
 
+def test_a_turn_that_ended_with_no_readable_position_owes_nothing():
+    """Requirement: R4.6 — `inconclusive` with no node is the-loop not knowing
+    where the work item stands. That is not evidence of work owed."""
+    log = [
+        ev(0, "session.turn_started"),
+        ev(5, "session.turn_ended", reason="inconclusive"),
+    ]
+    state = state_at(log, 60 * 24)
+    assert (state.state, state.reason, state.node) == ("idle", "inconclusive", "")
+    assert (state.due, state.stall_id) == ((), None)
+    assert state.idle_since == stamp(5)
+    assert "cannot tell" in sessionstate.session_view(state)["detail"]
+
+
+def test_an_inconclusive_end_that_names_its_node_is_still_watched():
+    log = [started(0), ended(5, "inconclusive")]
+    assert acts(state_at(log, 15)) == ["nudge"]
+
+
 def test_a_watchdog_switched_off_shows_the_stall_and_owes_nothing():
     """Requirement: R4.12."""
     watchdog = WatchdogConfig(enabled=False, idle_seconds=600)

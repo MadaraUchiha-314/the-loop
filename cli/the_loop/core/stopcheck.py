@@ -90,9 +90,11 @@ def decide(
         if isinstance(entry, Mapping)
     }
     at = str((report or {}).get("pointer") or "")
-    # 1. A check that cannot say where the item is must not invent a debt (R3.7).
+    # 1. A check that cannot say where the item is must not invent a debt. What
+    # the session itself said it waits on is still why the turn ended, so the
+    # record says that when it can.
     if not at or at not in reported or at not in nodes:
-        return Decision(ALLOW, "inconclusive")
+        return Decision(ALLOW, _excuse(session, background_work) or "inconclusive")
     status = str(reported[at].get("status") or "")
     # 2. Nobody owes agent work here.
     if nodes[at].get("actor") == "human":
@@ -116,13 +118,22 @@ def decide(
     if status != "block":
         return Decision(ALLOW, "inconclusive", at, status)
     # 6. Work is owed. Only something the session really waits on excuses it.
-    if session.open_ask is not None:
-        return Decision(ALLOW, "open-ask", at, status)
-    if session.declared_wait is not None and session.declared_wait.covers_stop:
-        return Decision(ALLOW, "declared-wait", at, status)
-    if background_work:
-        return Decision(ALLOW, "background-work", at, status)
+    excuse = _excuse(session, background_work)
+    if excuse:
+        return Decision(ALLOW, excuse, at, status)
     return _refusal(at, reported[at])
+
+
+def _excuse(session: SessionState, background_work: bool) -> str:
+    """What the session really waits on, as a turn end's reason; ``""`` for
+    nothing."""
+    if session.open_ask is not None:
+        return "open-ask"
+    if session.declared_wait is not None and session.declared_wait.covers_stop:
+        return "declared-wait"
+    if background_work:
+        return "background-work"
+    return ""
 
 
 def _refusal(node_id: str, entry: Mapping[str, Any]) -> Decision:

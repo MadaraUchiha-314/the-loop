@@ -379,7 +379,12 @@ def derive(
     if idle is not None:
         state, since = "idle", idle[1]
         threshold = timedelta(seconds=watchdog.idle_seconds)
-        if now - idle[0] >= threshold:
+        # The stop check could not tell where the work item stands, which is
+        # how every turn of a pull request's own session ends. Nothing says
+        # work is owed, so the session never becomes a stall.
+        if _position_unknown(reason, node):
+            pass
+        elif now - idle[0] >= threshold:
             state = "stalled"
             stall_id_now = f"{work_item}@{idle[1]}"
             last_act = max(idle[0], last_nudge) if last_nudge else idle[0]
@@ -420,6 +425,10 @@ def derive(
         declared_wait=declared,
         due=tuple(due),
     )
+
+
+def _position_unknown(reason: str, node: str) -> bool:
+    return reason == "inconclusive" and not node
 
 
 def _delivered_a_person(record: Dict[str, Any]) -> bool:
@@ -500,6 +509,8 @@ def _detail(state: SessionState) -> str:
             return strings.t("core.sessionstate.notified", nudges=state.nudges_spent)
         return strings.t("core.sessionstate.stalled", nudges=state.nudges_spent)
     if state.state == "idle":
+        if _position_unknown(state.reason, state.node):
+            return strings.t("core.sessionstate.position-unknown")
         return strings.t("core.sessionstate.idle")
     if state.state != "waiting":
         return ""

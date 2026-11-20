@@ -91,6 +91,19 @@ def test_an_unresolvable_position_is_allowed_as_inconclusive(rep):
     assert (decision.verdict, decision.reason) == ("allow", "inconclusive")
 
 
+def test_an_unresolvable_position_still_says_what_the_session_waits_on():
+    """Requirement: R3.7, R6.1 — a pull request's own session has no outer-loop
+    position, and its ask, its declared wait and its background work are still
+    what its turn ended on."""
+    asked = ev(1, "session.awaiting_input", question="A or B?", ask_id="a1")
+    wait = ev(2, "session.wait_declared", condition="CI", until=ev(30, "x")["ts"])
+    assert decide(None, asked).reason == "open-ask"
+    assert decide({}, wait).reason == "declared-wait"
+    assert decide(None, background_work=True).reason == "background-work"
+    for decision in (decide(None, asked), decide({}, wait)):
+        assert (decision.verdict, decision.node) == ("allow", "")
+
+
 # -- step 2: nobody owes agent work at the pointer ---------------------------------
 
 
