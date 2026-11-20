@@ -2891,9 +2891,11 @@ components:
           type: string
           maxLength: 200
           title: Condition
-          description: What the session waits for, in its own words. Shown on the
-            status surfaces, after the channel's defusing of mentions, links and
-            markup.
+          description: What the session waits for, in its own words. It is
+            flattened to one line of printable characters (a line break or a
+            control character becomes a space) and shown on the status surfaces
+            only — `the-loop check`, `the-loop sessions list` and the attention
+            list. It is posted to no channel.
         seconds:
           type: integer
           minimum: 1
