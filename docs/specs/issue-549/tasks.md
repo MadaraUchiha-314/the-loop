@@ -198,7 +198,7 @@ Tests are named so the T8 `-k` filter in `testing-plan.md` finds the abuse cases
     `Scenario: a channel that cannot receive a press shows how to approve on GitHub`;
     T8 — `test_unauthorized_press_refused`, `test_stale_press_changes_nothing`
     (red→green)
-- [ ] 16. The gate message is edited after its answer.
+- [x] 16. The gate message is edited after its answer.
   - Answered from Slack or GitHub, the gate message shows the outcome and who answered,
     and the buttons go.
   - _Depends on:_ 15, 11

@@ -514,6 +514,43 @@ class Runtime:
         except Exception:  # noqa: BLE001 — belt and braces over the publisher's own
             logger.exception("lifecycle %s for %s raised", event_type, item.ref)
 
+    def _gate_answered(self, item: WorkItem, node: Any, outcome: ChainOutcome) -> None:
+        """A human gate was answered (issue-549 R11.6): publish ``gate.answered``
+        naming the node, the outcome and who answered, so a channel that posted
+        the gate's message can edit it. Who answered is the authors of the
+        feedback the chain classified (``data["comments"]``), never text.
+        Best-effort and never raising, as :meth:`_lifecycle` is; nothing at all
+        for a node that is not a human gate or a chain that decided no outcome."""
+        if getattr(node, "actor", "") != "human":
+            return
+        verdict = outcome.outcome
+        if not verdict or verdict in (PASS, SKIP, "skipped"):
+            return
+        by: List[str] = []
+        for result in outcome.results:
+            for comment in (result.data or {}).get("comments") or []:
+                author = (
+                    str(comment.get("author") or "")
+                    if isinstance(comment, Mapping)
+                    else ""
+                )
+                if author and author not in by:
+                    by.append(author)
+        node_id = getattr(node, "id", "")
+        text = strings.t(
+            "graph.runtime.gate-answered",
+            work_item=item.id,
+            node=node_id,
+            outcome=verdict,
+        )
+        fields = {"node": node_id, "outcome": verdict, "by": ", ".join(by)}
+        from ..channels.publishers import publish_lifecycle
+
+        try:
+            publish_lifecycle("gate.answered", item.ref, text, fields, self.config)
+        except Exception:  # noqa: BLE001 — belt and braces over the publisher's own
+            logger.exception("gate.answered for %s raised", item.ref)
+
     def _phase_changed(
         self,
         item: WorkItem,
@@ -1440,6 +1477,7 @@ class Runtime:
                 state.current_node = node_id
                 state.save(self.state_dir(item))
                 eventlog.emit("graph.completed", work_item=item.ref, node=node_id)
+                self._gate_answered(item, node, outcome)
                 if self._phase_changed(
                     item,
                     node_id,
@@ -1488,6 +1526,9 @@ class Runtime:
         state.save(
             self.state_dir(item)
         )  # persist BEFORE any dependent side effect (R8.2)
+        # The gate just left was answered (issue-549 R11.6): said before the next
+        # node's entry chain, so its message is closed before anything new posts.
+        self._gate_answered(item, node, outcome)
         if entry_node.actor == "human":
             eventlog.emit("graph.parked", work_item=item.ref, node=target, via="entry")
             # `session: inherit` honoured for real (issue-148, R5): decide which

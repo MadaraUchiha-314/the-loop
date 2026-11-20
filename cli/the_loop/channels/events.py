@@ -32,6 +32,7 @@ __all__ = [
     "PUBLISHABLE_EVENTS",
     "SUBSCRIBABLE_EVENTS",
     "APPROVAL_EVENTS",
+    "GATE_ANSWERED",
     "is_recorded",
 ]
 
@@ -77,6 +78,10 @@ APPROVAL_EVENTS: Tuple[str, ...] = (
     "security-sign-off-pending",
 )
 
+#: Published by the runtime when a human gate is answered (issue-549 R11.6):
+#: ``detail`` names the ``node``, the ``outcome`` and who answered (``by``).
+GATE_ANSWERED = "gate.answered"
+
 #: What each event means, in words (`channels status`, the docs pin).
 _DESCRIPTIONS: Dict[str, str] = strings.section("channels.events.description")
 
@@ -95,6 +100,10 @@ EVENTS: Dict[str, EventSpec] = {
     "phase.started": EventSpec(_DESCRIPTIONS["phase.started"]),
     "phase.completed": EventSpec(_DESCRIPTIONS["phase.completed"]),
     "phase.progress": EventSpec(_DESCRIPTIONS["phase.progress"]),
+    # issue-549 R11.6: a human gate was answered, on GitHub or from Slack. A
+    # channel that posted the gate's message hears it whether or not it names it
+    # (`SlackBotChannel.subscribes`), so the message is edited to the outcome.
+    "gate.answered": EventSpec(_DESCRIPTIONS["gate.answered"]),
     "work-item.closed": EventSpec(_DESCRIPTIONS["work-item.closed"]),
     "comment.agent": EventSpec(
         _DESCRIPTIONS["comment.agent"],

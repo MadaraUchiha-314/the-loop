@@ -55,7 +55,12 @@ from .digest import (
     sanitize_summary,
     truncate,
 )
-from .events import APPROVAL_EVENTS, PUBLISHABLE_EVENTS, SUBSCRIBABLE_EVENTS
+from .events import (
+    APPROVAL_EVENTS,
+    GATE_ANSWERED,
+    PUBLISHABLE_EVENTS,
+    SUBSCRIBABLE_EVENTS,
+)
 from . import placement, room_policy, status as status_reactor
 from .preamble import Preamble, change_of, mention_line, recap_line, wait_key
 from .delivery import (
@@ -106,6 +111,7 @@ __all__ = [
     "GATE_BLOCK_PREFIX",
     "approve_on_github_line",
     "gate_node_of",
+    "gate_answered_line",
     "BUTTON_CHOICE_LIMIT",
     "KICKOFF_REFUSALS",
     "BUTTON_NAMES",
@@ -2047,6 +2053,28 @@ def approve_on_github_line(url: str) -> str:
     return strings.t("channels.slack.gate.approve-on-github", where=where)
 
 
+#: The mark a gate's outcome line opens with, by outcome.
+_GATE_ICONS = {
+    "approved": "✅",
+    "approved-with-comments": "✅",
+    "changes-requested": "↩️",
+}
+
+
+def gate_answered_line(node: str, outcome: str, by: str) -> str:
+    """The line an answered gate's message gains (issue-549 R11.6): the gate,
+    its outcome in words, and who answered (GitHub logins, from the event)."""
+    words = strings.section("channels.slack.gate.outcome").get(outcome) or outcome
+    who = ", ".join(f"@{login.strip()}" for login in by.split(",") if login.strip())
+    return strings.t(
+        "channels.slack.gate.answered",
+        icon=_GATE_ICONS.get(outcome, "☑️"),
+        node=node,
+        outcome=words,
+        by=strings.t("channels.slack.gate.answered-by", who=who) if who else "",
+    )
+
+
 def gate_node_of(action: Mapping[str, Any]) -> str:
     """The gate node a pressed Approve / Request changes button names through
     its block (issue-549 abuse case 8), or ``""`` for a message posted before
@@ -2458,6 +2486,12 @@ class SlackBotChannel:
         self._cli_config: Optional[Mapping[str, Any]] = cli_config
 
     def subscribes(self, event_type: str) -> bool:
+        if event_type == GATE_ANSWERED:
+            # A channel that posts a gate's message hears its answer, so the
+            # message can be closed (issue-549 R11.6) without a second key.
+            return event_type in self.config.subscribe or any(
+                name in self.config.subscribe for name in APPROVAL_EVENTS
+            )
         return event_type in self.config.subscribe
 
     def wants(self, event_type: str) -> bool:
@@ -3032,6 +3066,8 @@ class SlackBotChannel:
         conversation) → placement (room, central thread, mention thread) → the
         short and long builders → a :class:`MessagePlan` → one delivery step.
         """
+        if event.event_type == GATE_ANSWERED:
+            return self._close_gate(event)
         if not self.home_for(event.work_item):
             raise self._no_channel(event.work_item)
         client = self._client()
@@ -3114,6 +3150,8 @@ class SlackBotChannel:
         if event.work_item:
             self._remember_delivery(event, decision, delivered.top)
             self._remember_event(event, preamble)
+            if decision.rule == "gate-pending" and delivered.top:
+                self._remember_gate(event, channel_id, plan.top.text)
         try:
             self._after_delivery(event, kind, plan, delivered, client)
         except Exception as exc:  # noqa: BLE001 — never fails a delivery
@@ -3124,6 +3162,105 @@ class SlackBotChannel:
         if bound and bound[1]:
             return PostResult(channel=self.name, ok=True, thread=bound[1])
         return PostResult(channel=self.name, ok=True, thread=delivered.top)
+
+    def _remember_gate(self, event: Event, channel_id: str, text: str) -> None:
+        """Keep what an open gate's message says and where (issue-549 R11.6),
+        so it can be edited to its outcome when the gate is answered."""
+        node = str((event.detail or {}).get("node") or "")
+        if not node:
+            return
+        try:
+            with ChannelState.locked(self.state_path, self.stores) as state:
+                state.remember_delivery(
+                    event.work_item,
+                    gateMessage={
+                        node: {"channel": channel_id, "text": text, "url": event.url}
+                    },
+                )
+                state.save(self.state_path)
+        except Exception as exc:  # noqa: BLE001 — memory is best-effort
+            logger.debug("slack: could not remember the gate %s (%s)", node, exc)
+
+    def _close_gate(self, event: Event) -> PostResult:
+        """Edit an answered gate's message to its outcome (issue-549 R11.6).
+
+        The gate's message — remembered when it was posted — keeps its short
+        form and its link, loses its Approve / Request changes buttons, and
+        gains one line: the outcome and who answered. Nothing is posted: a gate
+        with no remembered message is left as it is. The gate is then forgotten
+        as open, so a later press on that message is stale (abuse case 8).
+        ``chat.update`` takes no unfurl flags, so the edit adds no preview.
+        """
+        detail = event.detail or {}
+        node = str(detail.get("node") or "")
+        ok = PostResult(channel=self.name, ok=True)
+        if not (event.work_item and node):
+            return ok
+        with ChannelState.locked(self.state_path, self.stores) as state:
+            memory = state.delivery_for(event.work_item)
+            ts = memory["gateTs"].get(node, "")
+            gate = dict(memory["gateMessage"].get(node) or {})
+            bound = state.conversation_for(event.work_item)
+            if ts:
+                state.remember_delivery(
+                    event.work_item, gateTs={node: None}, gateMessage={node: None}
+                )
+                state.save(self.state_path)
+        if not ts:
+            return ok
+        channel_id = gate.get("channel") or (bound[0] if bound else "")
+        if not channel_id:
+            return ok
+        line = gate_answered_line(
+            node, str(detail.get("outcome") or ""), str(detail.get("by") or "")
+        )
+        short = gate.get("text") or ""
+        blocks: List[Dict[str, Any]] = []
+        if short:
+            blocks.append(_mrkdwn_section(short))
+        blocks.append({"type": "context", "elements": [_mrkdwn(line)]})
+        url = gate.get("url") or ""
+        if url:
+            blocks.append(
+                {
+                    "type": "actions",
+                    "elements": _message_actions(
+                        Event(
+                            event_type=GATE_ANSWERED,
+                            work_item=event.work_item,
+                            text="",
+                            url=url,
+                        )
+                    ),
+                }
+            )
+        error = ""
+        try:
+            self._client().chat_update(
+                channel=channel_id,
+                ts=ts,
+                text=f"{short}\n{line}" if short else line,
+                blocks=blocks,
+            )
+        except Exception as exc:  # SlackApiError and transport errors alike
+            error = str(exc)
+            logger.warning(
+                "slack: could not close the gate %s on %s: %s",
+                node,
+                event.work_item,
+                exc,
+            )
+        eventlog.emit(
+            "channel.gate_closed",
+            level="warning" if error else "info",
+            channel=self.name,
+            work_item=event.work_item,
+            node=node,
+            outcome=str(detail.get("outcome") or "") or None,
+            edited=not error,
+            error=error or None,
+        )
+        return ok
 
     def delete_message(self, channel_id: str, ts: str) -> bool:
         """``chat.delete`` of one of the bot's own messages (issue-549 R6.2, for a

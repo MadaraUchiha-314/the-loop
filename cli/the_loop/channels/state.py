@@ -429,6 +429,7 @@ class ChannelState:
     snapshots: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     #: The delivery memory (issue-393 B2; every conversation since issue-549):
     #: work item → ``{lastNode, lastEvent, progressTs{phase}, gateTs{node},
+    #: gateMessage{node: {channel, text, url}},
     #: phaseSelectionTs, posted{eventId: {channel, top, parts[]}},
     #: status{channel, ts, emoji}, announced{wait: at}, lastHuman, recapAt,
     #: changes[{at, kind, value}]}`` — what THIS
@@ -1017,8 +1018,20 @@ class ChannelState:
                 merged.update({str(k): str(v) for k, v in (value or {}).items()})
                 record["announced"] = merged
             elif field_name in ("progressTs", "gateTs") and isinstance(value, dict):
+                # a None value forgets that key: an answered gate (issue-549 R11.6)
                 merged = dict(record.get(field_name) or {})
                 merged.update({str(k): str(v) for k, v in value.items() if v})
+                for k, v in value.items():
+                    if v is None:
+                        merged.pop(str(k), None)
+                record[field_name] = merged
+            elif field_name == "gateMessage" and isinstance(value, dict):
+                merged = dict(record.get(field_name) or {})
+                for k, v in value.items():
+                    if v is None:
+                        merged.pop(str(k), None)
+                    else:
+                        merged[str(k)] = v
                 record[field_name] = merged
             else:
                 record[field_name] = value
@@ -1093,6 +1106,10 @@ def _delivery_record(info: Dict[str, Any]) -> Dict[str, Any]:
         "lastEvent": str(info.get("lastEvent") or ""),
         "progressTs": _str_map(info.get("progressTs")),
         "gateTs": _str_map(info.get("gateTs")),
+        # What each open gate's message says and where it is (issue-549
+        # R11.6): node → ``{channel, text, url}``, so the message can be edited
+        # to its outcome once the gate is answered, on GitHub or from Slack.
+        "gateMessage": _gate_messages(info.get("gateMessage")),
         "phaseSelectionTs": str(info.get("phaseSelectionTs") or ""),
         # The node the session last spoke for (issue-393 B9/R12.3), so a later
         # runtime template for it is suppressed.
@@ -1117,6 +1134,25 @@ def _delivery_record(info: Dict[str, Any]) -> Dict[str, Any]:
         # The loop's own changes, for the recap line (issue-549 R9.3).
         "changes": _changes(info.get("changes")),
     }
+
+
+def _gate_messages(value: Any) -> Dict[str, Dict[str, str]]:
+    """The open gates' messages, coerced; a malformed entry is dropped (its
+    message is then simply not edited when the gate is answered)."""
+    if not isinstance(value, dict):
+        return {}
+    out: Dict[str, Dict[str, str]] = {}
+    for node, entry in value.items():
+        if not isinstance(entry, dict):
+            continue
+        channel = _str_or_empty(entry.get("channel"))
+        if channel:
+            out[str(node)] = {
+                "channel": channel,
+                "text": _str_or_empty(entry.get("text")),
+                "url": _str_or_empty(entry.get("url")),
+            }
+    return out
 
 
 def _capped_map(value: Any, cap: int) -> Dict[str, str]:

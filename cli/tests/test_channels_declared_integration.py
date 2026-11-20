@@ -1351,3 +1351,86 @@ def test_stale_press_changes_nothing(tmp_path, monkeypatch):
     assert len(client.ephemeral) == 4
     assert {user for _c, user, _t, _th in client.ephemeral} == {"UHUMAN"}
     assert all("no longer open" in text for _c, _u, text, _th in client.ephemeral)
+
+
+GATE_GRAPH = {
+    "start": "draft",
+    "nodes": [
+        {"id": "draft"},
+        {
+            "id": GATE_NODE,
+            "actor": "human",
+            "session": "inherit",
+            "entry": [{"hook": "notify", "with": {"event": "phase-approval-pending"}}],
+            "exit": ["classify-feedback"],
+        },
+        {"id": "done", "terminal": True},
+    ],
+    "edges": [
+        {"from": "draft", "to": GATE_NODE, "on": "pass"},
+        {"from": GATE_NODE, "to": "done", "on": "approved"},
+        {"from": GATE_NODE, "to": "draft", "on": "changes-requested"},
+    ],
+}
+
+
+def test_a_gate_answered_on_github_edits_its_slack_message_to_show_the_outcome(
+    tmp_path, monkeypatch
+):
+    """
+    Feature: approve from Slack at every human gate
+      Scenario: a gate answered on GitHub edits its Slack message to show the outcome
+        Given #375 has declared slack@C0TMP375 and the channel can receive a press
+        And the runtime opened design-approval, whose message has its buttons
+        When an authorized user answers "approved" on GitHub and the runtime
+             takes the gate's edge
+        Then the gate's message is edited, not reposted, to show the outcome
+             and who answered
+        And its buttons are gone, its link kept, and the gate is no longer
+             remembered as open, so a later press on it changes nothing
+
+    Requirement: docs/specs/issue-549/requirements.md R11.6
+    """
+    from the_loop.graph import hooks  # noqa: F401 — registers the hooks
+    from the_loop.graph.model import compile_graph
+    from the_loop.graph.runtime import Runtime
+
+    config = {
+        **cli_config(tmp_path, **INTERACTIVE),
+        "authorizedUsers": ["owner"],
+    }
+    declare(config)
+    client = PressClient()
+    monkeypatch.setattr("the_loop.channels.slack.build_client", lambda token: client)
+    repo = tmp_path / "repo"
+    (repo / "docs" / "specs" / "issue-375").mkdir(parents=True)
+    runtime = Runtime(repo, graph=compile_graph(GATE_GRAPH), config=config)
+
+    runtime.advance("issue-375", ref=REF)
+    gate = client.posted[-1]
+    assert "the-loop:approve" in str(gate["blocks"])
+    gate_ts = state_of(config).delivery_for(REF)["gateTs"][GATE_NODE]
+    posted = len(client.posted)
+
+    report = runtime.advance(
+        "issue-375",
+        ref=REF,
+        event={"comments": [{"author": "owner", "body": "approved"}]},
+    )
+
+    assert report.outcome == "approved"
+    assert len(client.posted) == posted  # an edit, never a new message
+    ((channel, ts, text, blocks),) = client.updates
+    assert (channel, ts) == (ROOM, gate_ts)
+    assert "approved" in text and "owner" in text and GATE_NODE in text
+    assert "the-loop:approve" not in str(blocks)
+    assert "the-loop:changes" not in str(blocks)
+    assert "the-loop:open" in str(blocks)  # the link stays
+    assert GATE_NODE not in state_of(config).delivery_for(REF)["gateTs"]
+
+    monkeypatch.setattr(inbound, "_gate_read", lambda ref, cfg: (True, GATE_NODE))
+    sink = Sink()
+    assert _press(config, _gate_press(ts=gate_ts), sink, client) == {
+        "outcome": "gate-not-open"
+    }
+    assert sink.recorded == []
