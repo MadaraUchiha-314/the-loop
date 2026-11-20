@@ -34,9 +34,38 @@ def _event(event_type, *, text="", detail=None, summary=""):
 # -- the room/not-a-room boundary -----------------------------------------------
 
 
-def test_outside_a_room_every_event_simply_posts():
-    d = decide(_event("phase.started"), {}, is_room=False)
-    assert d.action == POST and d.rule == "not-a-room"
+def test_outside_a_room_the_room_only_rules_do_not_fire():
+    """issue-549 design.md stage 1: the policy runs for every conversation, but
+    session-wins and transition-collapse keep their room-only scope."""
+    completed = decide(
+        _event("phase.completed", detail={"node": "design"}), {}, is_room=False
+    )
+    assert completed.action == POST
+    spoken = decide(
+        _event("phase.started", detail={"node": "design"}),
+        {"sessionSpokeFor": "design"},
+        is_room=False,
+    )
+    assert spoken.action == POST
+
+
+def test_outside_a_room_progress_edit_and_gate_memory_apply():
+    """issue-549 design.md stage 1: progress-edit (R6) and gate memory (R11.6)
+    act in the central channel too."""
+    progress = decide(
+        _event("phase.progress", detail={"phase": "design"}),
+        {"progressTs": {"design": "1700.5"}},
+        is_room=False,
+    )
+    assert progress.action == EDIT and progress.ts == "1700.5"
+    gate = decide(
+        _event("phase-approval-pending", detail={"node": "design-approval"}),
+        {},
+        is_room=False,
+    )
+    assert gate.action == POST and gate.remember == {
+        "gateTs": {"design-approval": "@ts"}
+    }
 
 
 # -- dedupe (R6.4) --------------------------------------------------------------

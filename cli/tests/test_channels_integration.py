@@ -33,7 +33,7 @@ class FakeSlackClient:
         self.replies = {}
         self.history = []  # top-level messages, for the kickoff read
 
-    def chat_postMessage(self, *, channel, text, thread_ts=None, blocks=None):
+    def chat_postMessage(self, *, channel, text, thread_ts=None, blocks=None, **unfurl):
         self.posted.append(
             {"channel": channel, "text": text, "thread_ts": thread_ts, "blocks": blocks}
         )
@@ -491,7 +491,9 @@ def test_two_writers_open_one_thread(tmp_path, monkeypatch):
     class Slow(FakeSlackClient):
         """A root post takes long enough for the second writer to arrive."""
 
-        def chat_postMessage(self, *, channel, text, thread_ts=None, blocks=None):
+        def chat_postMessage(
+            self, *, channel, text, thread_ts=None, blocks=None, **unfurl
+        ):
             if thread_ts is None:
                 time.sleep(0.2)
             with lock:
@@ -1802,27 +1804,26 @@ def _long_agent_comment():
     return REPORT
 
 
-def test_a_long_agent_comment_reaches_slack_as_a_digest(tmp_path, monkeypatch):
-    """Scenario: A long agent comment reaches Slack as a digest that leads with
-    the ask
+def test_a_long_agent_comment_reaches_the_central_channel_as_its_short_form(
+    tmp_path, monkeypatch
+):
+    """Scenario: A long agent comment reaches the central channel as its short form
 
-    Given a Slack channel subscribed to comment.agent with a 600-character cap
-      (the digest's own cap since issue-549 deprecated maxChars)
-    When the ledger's ingress publishes an agent comment longer than that,
-      carrying a code fence, a traceback, a table and absolute paths, and
-      ending with a question
-    Then the Slack section opens with that question in bold
-    And carries no fence, no traceback, no table and no /home path — pointers
-      instead — within maxChars, and closes with the link to the full comment
-    And the phone's notification text (the fallback) leads with the same ask
+    Given a Slack channel subscribed to comment.agent, in the central channel
+    When the ledger's ingress publishes an agent comment carrying a code fence, a
+      traceback, a table and absolute paths, ending with a question, and no summary
+    Then the Slack message is a short form built from that question, within the
+      600-character cap, with the button to the whole comment on GitHub
+    And nothing is digested or truncated, and no long form is posted there
+    And the phone's notification text (the fallback) is that same short form
     And nothing was written to the ledger — a mirror is never re-recorded
 
-    Requirement: docs/specs/issue-338/requirements.md R1.1, R1.3, R1.5, R2.1, R3.1, R3.2
+    Requirement: docs/specs/issue-549/requirements.md R1.1, R2.7, R3.4, R4.2
+                 (replaces the issue-338 digest scenario)
     """
     from the_loop.channels.publishers import publish_comment
 
     client = _enabled_client(monkeypatch)
-    monkeypatch.setattr("the_loop.channels.slack.DEFAULT_MAX_CHARS", 600)
     config = cli_config(tmp_path, subscribe=["comment.agent"])
     records = []
     monkeypatch.setattr(
@@ -1840,17 +1841,15 @@ def test_a_long_agent_comment_reaches_slack_as_a_digest(tmp_path, monkeypatch):
     )
 
     assert records == []
+    assert len(client.posted) == 2  # the root, then the short form; no long form
     reply = client.posted[-1]
-    section = reply["blocks"][1]["text"]["text"]
-    assert section.startswith("*Which one should I take?*")
+    assert [block["type"] for block in reply["blocks"]] == ["section", "actions"]
+    section = reply["blocks"][0]["text"]["text"]
+    assert section.startswith("Which one should I take?")
     assert len(section) <= 600
-    for gone in ("```", "Traceback", "| case |", "/home/user"):
+    for gone in ("```", "Traceback", "| case |", "/home/user", "full text"):
         assert gone not in section
-    assert "_⟨code: 2 lines⟩_" in section
-    assert section.rstrip().endswith(
-        "_… full text: <https://gh/o/r/issues/338#c9|GitHub>_"
-    )
-    assert "*Which one should I take?*" in reply["text"]
+    assert reply["text"] == section
     assert reply["blocks"][-1]["elements"][0]["url"] == "https://gh/o/r/issues/338#c9"
 
 
@@ -1859,11 +1858,12 @@ def test_a_short_comment_reaches_slack_untouched(tmp_path, monkeypatch):
 
     Given a Slack channel subscribed to comment.human
     When a collaborator's two-line comment is published
-    Then the Slack section is that comment, whole and in order, with no pointer
-      and no closing line — only the-loop's own marker drawn away
-    And the fallback text is what 13.10.0 sent
+    Then the Slack message is that comment, whole and in order, behind its lead
+      emoji, with no pointer and no closing line
+    And the fallback text is that same short form
 
-    Requirement: docs/specs/issue-338/requirements.md R4.1, R3.3
+    Requirement: docs/specs/issue-549/requirements.md R2.7, R3.5
+                 (was issue-338 R4.1, R3.3)
     """
     from the_loop.channels.publishers import publish_comment
 
@@ -1874,22 +1874,25 @@ def test_a_short_comment_reaches_slack_untouched(tmp_path, monkeypatch):
     publish_comment("human", "github:o/r#338", "octocat", body, "https://gh/c", config)
 
     reply = client.posted[-1]
-    assert reply["blocks"][1]["text"]["text"] == body
-    assert "full text" not in reply["blocks"][1]["text"]["text"]
-    assert reply["text"].endswith("\n\n" + body)
+    section = reply["blocks"][0]["text"]["text"]
+    assert section.endswith(body)
+    assert "full text" not in section
+    assert reply["text"] == section
 
 
-def test_a_notifications_artifact_excerpt_is_digested_too(tmp_path, monkeypatch):
-    """Scenario: A notification's artifact excerpt is digested too
+def test_a_notifications_artifact_is_not_digested_onto_the_message(
+    tmp_path, monkeypatch
+):
+    """Scenario: A notification's artifact is not digested onto the message
 
-    Given a Slack channel subscribed to phase-approval-pending with a 500-character
-      cap (the digest's own cap since issue-549 deprecated maxChars)
-    And a work item whose requirements.md is longer than that
+    Given a Slack channel subscribed to phase-approval-pending
+    And a work item whose requirements.md is long
     When the graph's notify hook fires for the requirements approval
-    Then the message's excerpt section is a digest within maxChars that closes
-      with the work item's link, and the short notification text is untouched
+    Then the message is the gate's short form, naming the gate, with the button
+      to the work item, and no digest of the artifact
 
-    Requirement: docs/specs/issue-338/requirements.md R1.1, R4.1
+    Requirement: docs/specs/issue-549/requirements.md R1.1, R3.5, R4.2
+                 (replaces the issue-338 excerpt-digest scenario)
     """
     from the_loop.graph.contract import HookContext, WorkItem
     from the_loop.graph.hooks.sideeffects import notify
@@ -1905,7 +1908,6 @@ def test_a_notifications_artifact_excerpt_is_digested_too(tmp_path, monkeypatch)
         ),
         encoding="utf-8",
     )
-    monkeypatch.setattr("the_loop.channels.slack.DEFAULT_MAX_CHARS", 500)
     config = cli_config(tmp_path, subscribe=["phase-approval-pending"])
     ctx = HookContext(
         work_item=WorkItem(id="issue-338", ref="github:o/r#338", spec_dir=spec_dir),
@@ -1918,13 +1920,11 @@ def test_a_notifications_artifact_excerpt_is_digested_too(tmp_path, monkeypatch)
 
     assert notify(ctx).status == "pass"
     reply = client.posted[-1]
-    text_section, excerpt_section = reply["blocks"][1], reply["blocks"][2]
-    assert "requirements-approval" in text_section["text"]["text"]
-    excerpt = excerpt_section["text"]["text"]
-    assert excerpt.startswith("*Is this the shape you want?*")
-    assert len(excerpt) <= 500
-    assert excerpt.rstrip().endswith(
-        "_… full text: <https://github.com/o/r/issues/338|GitHub>_"
+    text = reply["blocks"][0]["text"]["text"]
+    assert "requirements-approval" in text
+    assert "full text" not in text and "Paragraph 59" not in text
+    assert reply["blocks"][-1]["elements"][0]["url"] == (
+        "https://github.com/o/r/issues/338"
     )
 
 

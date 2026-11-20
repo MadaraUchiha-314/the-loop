@@ -53,11 +53,15 @@ class FakeSlackClient:
         self.replies = replies or {}  # thread ts -> [message dict, ...]
         self.history = []  # top-level messages, for the kickoff read
         self.updates = []  # (channel, ts, text, blocks) — issue-393 edit-in-place
+        self.unfurls = []  # every post's other keyword arguments — issue-549 R5
+        self.deleted = []  # (channel, ts) — issue-549 R6.2
+        self.removed = []  # (channel, ts, name) — issue-549 R8.5
 
-    def chat_postMessage(self, *, channel, text, thread_ts=None, blocks=None):
+    def chat_postMessage(self, *, channel, text, thread_ts=None, blocks=None, **unfurl):
         self.posted.append(
             {"channel": channel, "text": text, "thread_ts": thread_ts, "blocks": blocks}
         )
+        self.unfurls.append(unfurl)
         return {"ok": True, "channel": channel, "ts": f"1700.{len(self.posted):06d}"}
 
     def chat_update(self, *, channel, ts, text, blocks=None):
@@ -78,6 +82,14 @@ class FakeSlackClient:
 
     def reactions_add(self, *, channel, name, timestamp):
         self.reactions.append((channel, timestamp, name))
+        return {"ok": True}
+
+    def reactions_remove(self, *, channel, name, timestamp):
+        self.removed.append((channel, timestamp, name))
+        return {"ok": True}
+
+    def chat_delete(self, *, channel, ts):
+        self.deleted.append((channel, ts))
         return {"ok": True}
 
 
@@ -910,8 +922,11 @@ def test_the_first_post_opens_a_root_and_replies_into_it(tmp_path, monkeypatch):
     assert root["blocks"][-1]["elements"][0]["url"] == "https://github.com/o/r/issues/7"
     assert "github:o/r#7" in root["text"]
     assert reply["thread_ts"] == "1700.000001" == result.thread
-    assert reply["blocks"][0]["text"]["text"].startswith("Question from the agent")
-    assert "approach A or B" in reply["text"]
+    # issue-549 R3.4: no summary, so the short form is built from the question
+    assert reply["blocks"][0]["text"]["text"].startswith(
+        "Should I use approach A or B?"
+    )
+    assert reply["text"] == reply["blocks"][0]["text"]["text"]  # R2.7
     record = _conversation(_state_with_stores(_state_path(tmp_path)), "github:o/r#7")
     assert record == {
         "channel": "D123",
@@ -920,6 +935,38 @@ def test_the_first_post_opens_a_root_and_replies_into_it(tmp_path, monkeypatch):
         "origin": "event",
         "permalink": "",
     }
+
+
+def test_every_post_sets_unfurl_off(tmp_path, monkeypatch):
+    """issue-549 R5: every chat.postMessage the channel makes — a thread root, a
+    room's opening message, a short message, each long-form part and a plain
+    reply — carries `unfurl_links=False` and `unfurl_media=False`."""
+    from the_loop.workchannels import CollaborationChannelStore
+
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    client = FakeSlackClient()
+    channel = make_channel(tmp_path, client)
+    channel.post(event())  # central: the root, then the short form
+    CollaborationChannelStore(tmp_path / "state" / "portable").add(
+        "github:o/r#8", "slack@C0ROOM", actor="octocat", source="cli"
+    )
+    long_text = "\n\n".join(f"Paragraph {n} of a long comment." for n in range(900))
+    channel.post(
+        OutboundEvent(
+            event_type="comment.agent",
+            work_item="github:o/r#8",
+            text=long_text,
+            url="https://github.com/o/r/issues/8#c1",
+            summary="Two parts follow.",
+        )
+    )  # room: its opening message, the short form, then the long form's parts
+    channel.say("1700.000001", "a plain reply")
+    rooms = [post["channel"] for post in client.posted]
+    assert rooms.count("C0ROOM") >= 4  # opening, short, at least two parts
+    assert len(client.unfurls) == len(client.posted)
+    for extra in client.unfurls:
+        assert extra.get("unfurl_links") is False
+        assert extra.get("unfurl_media") is False
 
 
 def test_the_second_post_is_one_reply(tmp_path, monkeypatch):
@@ -969,7 +1016,9 @@ def test_a_failed_reply_opens_no_second_thread(tmp_path, monkeypatch):
     class Flaky(FakeSlackClient):
         fail_replies = False
 
-        def chat_postMessage(self, *, channel, text, thread_ts=None, blocks=None):
+        def chat_postMessage(
+            self, *, channel, text, thread_ts=None, blocks=None, **unfurl
+        ):
             if thread_ts is not None and self.fail_replies:
                 raise RuntimeError("ratelimited")
             return super().chat_postMessage(
@@ -993,7 +1042,9 @@ def test_a_failed_root_binds_nothing_and_the_next_event_retries(tmp_path, monkey
     class RootFails(FakeSlackClient):
         fail_root = False
 
-        def chat_postMessage(self, *, channel, text, thread_ts=None, blocks=None):
+        def chat_postMessage(
+            self, *, channel, text, thread_ts=None, blocks=None, **unfurl
+        ):
             if thread_ts is None and self.fail_root:
                 raise RuntimeError("channel_not_found")
             return super().chat_postMessage(

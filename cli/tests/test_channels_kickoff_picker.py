@@ -49,7 +49,7 @@ class FakeSlackClient:
         self.updates = []
         self.refuse_post = refuse_post
 
-    def chat_postMessage(self, *, channel, text, thread_ts=None, blocks=None):
+    def chat_postMessage(self, *, channel, text, thread_ts=None, blocks=None, **unfurl):
         if self.refuse_post:
             raise RuntimeError(self.refuse_post)
         self.posted.append(

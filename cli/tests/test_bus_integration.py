@@ -37,7 +37,7 @@ class FakeSlackClient:
         self.replies = {}
         self.history = []
 
-    def chat_postMessage(self, *, channel, text, thread_ts=None, blocks=None):
+    def chat_postMessage(self, *, channel, text, thread_ts=None, blocks=None, **unfurl):
         self.posted.append(
             {"channel": channel, "text": text, "thread_ts": thread_ts, "blocks": blocks}
         )
@@ -188,7 +188,10 @@ def test_an_agents_comment_reaches_slack_and_a_humans_only_when_subscribed(
     assert agent is None  # dropped at ingress, exactly as before
     assert len(slack.posted) == 3
     assert slack.posted[2]["thread_ts"] == slack.posted[1]["thread_ts"]
-    assert "## Summary" in slack.posted[2]["text"]
+    # issue-549 R4.2: the central channel gets the short form, with the button to
+    # the whole comment on GitHub, and no long form
+    buttons = slack.posted[2]["blocks"][-1]["elements"]
+    assert buttons[0]["url"] == "https://github.com/o/r/issues/7#c9"
 
     human = router.route("issue_comment", comment("looks good"), "d2")
     assert isinstance(human, RoutedEvent)
@@ -199,7 +202,9 @@ def test_an_agents_comment_reaches_slack_and_a_humans_only_when_subscribed(
     )
     assert router.route("issue_comment", comment("ship it"), "d3") is not None
     assert len(slack.posted) == 4 and "ship it" in slack.posted[3]["text"]
-    assert "@octocat" in slack.posted[3]["blocks"][0]["text"]["text"]
+    # issue-549 R3: the short form (a lead) replaced the header that named the
+    # author; the comment itself leads the message
+    assert slack.posted[3]["blocks"][0]["text"]["text"].endswith("ship it")
 
     record = env.stamp(
         mark_self_authored("> yes"), env.Envelope("work-item.reply", "slack")
@@ -456,7 +461,8 @@ def test_the_complete_node_announces_work_item_complete_with_a_link(
     done = notify(ctx("work-item-complete"))
     assert done.status == "pass" and done.data["delivered"] is True
     post = slack.posted[-1]
-    assert "Done" in post["blocks"][0]["text"]["text"]
+    # issue-549 R3.5: a runtime event's short form is its fixed lead
+    assert "*complete*" in post["blocks"][0]["text"]["text"]
     assert post["blocks"][-1]["elements"][0]["url"] == "https://github.com/o/r/issues/7"
 
     gate = notify(ctx("phase-approval-pending", artifact="requirements.md"))
@@ -464,7 +470,9 @@ def test_the_complete_node_announces_work_item_complete_with_a_link(
     text = " ".join(
         b["text"]["text"] for b in slack.posted[-1]["blocks"] if "text" in b
     )
-    assert "the thing" in text and "type: requirements" not in text
+    # issue-549 R3.5, R4.2: the gate's short form is its fixed lead; the
+    # artifact's excerpt is no longer drawn on the message (the button opens it)
+    assert "phase-approval-pending" in text and "type: requirements" not in text
 
 
 def test_the_pr_review_gate_names_the_pull_request_and_links_to_it(

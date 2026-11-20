@@ -124,6 +124,12 @@ SNAPSHOT_CAP = 200
 #: room to classic delivery (post everything), never to silence.
 DELIVERY_CAP = 200
 
+#: How many events' posted messages one work item's delivery memory keeps
+#: (issue-549): the top message and long-form part timestamps per event id, so
+#: a replay posts only what is missing. Past the cap the OLDEST goes — an event
+#: that old is long out of the outbox's replay window.
+POSTED_CAP = 50
+
 #: What a declared room hears (issue-389, decision-133 D1): only a message that
 #: mentions the bot (``mentions``, the default), or every message (``all``, an
 #: authorized user's switch). Read off the declaration; anything else is
@@ -414,8 +420,9 @@ class ChannelState:
     #: ts>`` → ``{workItem, last, count, at}``. Insertion-ordered; the cap drops
     #: the oldest. Local like the cursors — what THIS deployment recorded.
     snapshots: Dict[str, Dict[str, Any]] = field(default_factory=dict)
-    #: The room-delivery memory (issue-393 B2): work item → ``{lastNode,
-    #: lastEvent, progressTs{phase}, gateTs{node}, phaseSelectionTs}`` — what THIS
+    #: The delivery memory (issue-393 B2; every conversation since issue-549):
+    #: work item → ``{lastNode, lastEvent, progressTs{phase}, gateTs{node},
+    #: phaseSelectionTs, posted{eventId: {channel, top, parts[]}}}`` — what THIS
     #: deployment has already shown in the room, so RoomPolicy can collapse a
     #: transition, suppress a gate's duplicate announcements, edit a phase's
     #: progress message in place, and thread an acknowledgement under the message
@@ -954,6 +961,22 @@ class ChannelState:
             key = canonical(work_item)
         return key, [k for k in matches if k != key]
 
+    def posted_for(self, work_item: str, event_id: str) -> Dict[str, Any]:
+        """What was already posted for ``event_id`` — ``{channel, top, parts}`` —
+        or ``{}`` (issue-549: a replay resumes after the last message that
+        landed)."""
+        if not event_id:
+            return {}
+        return dict(self.delivery_for(work_item)["posted"].get(event_id) or {})
+
+    def remember_posted(
+        self, work_item: str, event_id: str, record: Mapping[str, Any]
+    ) -> None:
+        """Record what the conversation now holds for ``event_id`` — under the
+        caller's lock, before the next Slack call (issue-549)."""
+        if event_id:
+            self.remember_delivery(work_item, posted={event_id: dict(record)})
+
     def remember_delivery(self, work_item: str, **changes: Any) -> None:
         """Merge ``changes`` into this work item's delivery memory — under the
         caller's lock. Only the keys given are touched; the item moves to newest,
@@ -970,7 +993,13 @@ class ChannelState:
         for other in others:  # merged into ``key`` on this write (R11.2)
             self.delivery.pop(other, None)
         for field_name, value in changes.items():
-            if field_name in ("progressTs", "gateTs") and isinstance(value, dict):
+            if field_name == "posted" and isinstance(value, dict):
+                posted = dict(record.get("posted") or {})
+                for event_id, entry in value.items():
+                    posted.pop(str(event_id), None)  # move to newest
+                    posted[str(event_id)] = entry
+                record["posted"] = posted
+            elif field_name in ("progressTs", "gateTs") and isinstance(value, dict):
                 merged = dict(record.get(field_name) or {})
                 merged.update({str(k): str(v) for k, v in value.items() if v})
                 record[field_name] = merged
@@ -1055,7 +1084,33 @@ def _delivery_record(info: Dict[str, Any]) -> Dict[str, Any]:
         # (issue-507), so the agent's answer is posted where it was asked.
         "replyChannel": _str_or_empty(info.get("replyChannel")),
         "replyThread": _ts_or_empty(info.get("replyThread")),
+        # What was posted per event id (issue-549): a replay posts only the
+        # missing parts. The newest POSTED_CAP events are kept.
+        "posted": _posted_map(info.get("posted")),
     }
+
+
+def _posted_map(value: Any) -> Dict[str, Dict[str, Any]]:
+    """The per-event posted record, coerced and capped to the newest
+    :data:`POSTED_CAP` events. A malformed entry is dropped: the worst it costs
+    is a duplicate message on a replay, never a crash."""
+    if not isinstance(value, dict):
+        return {}
+    out: Dict[str, Dict[str, Any]] = {}
+    for event_id, entry in value.items():
+        if not isinstance(entry, dict):
+            continue
+        parts = entry.get("parts")
+        out[str(event_id)] = {
+            "channel": _str_or_empty(entry.get("channel")),
+            "top": _ts_or_empty(entry.get("top")),
+            "parts": [
+                p for p in (parts if isinstance(parts, list) else []) if _ts_or_empty(p)
+            ],
+        }
+    while len(out) > POSTED_CAP:
+        out.pop(next(iter(out)), None)
+    return out
 
 
 #: A Slack message ts — the only shape a reply thread may hold (issue-507).

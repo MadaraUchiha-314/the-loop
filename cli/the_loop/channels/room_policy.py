@@ -38,9 +38,10 @@ The rules, in the order they are consulted (:func:`decide`):
   the room.
 
 Anything no rule claims is posted, top-level, in the room's own voice
-(:mod:`the_loop.channels.voice`). The whole module is a no-op when the target is
-not a room (a shared channel or an unbound post): the rework is for the place a
-single work item lives.
+(:mod:`the_loop.channels.voice`). Since issue-549 the policy runs for every
+conversation, the central channel included; session-wins and
+transition-collapse alone stay room-only, because they exist to make a room
+read like a conversation.
 """
 
 from __future__ import annotations
@@ -132,8 +133,9 @@ def decide(
     """The room's decision for ``event`` given its delivery ``memory``.
 
     ``memory`` is a work item's :meth:`ChannelState.delivery_for` record.
-    ``is_room`` is False for a shared channel or an unbound post, where the whole
-    rework is off and every event simply posts. ``session_authored`` marks an
+    ``is_room`` is False for a shared channel or an unbound post: the rules run
+    there too (issue-549), except the two that make a room conversational,
+    session-wins and transition-collapse. ``session_authored`` marks an
     event the session itself wrote (its question or summary), which wins over a
     runtime template for the same moment. ``is_operator_doc`` marks operator
     documentation (a tmux cheat-sheet) that never belongs in a room.
@@ -143,11 +145,10 @@ def decide(
     """
     event_type = str(getattr(event, "event_type", "") or "")
 
-    # Outside a room the rework does not apply: a shared channel and an unbound
-    # post get every event, top-level, exactly as before.
-    if not is_room:
-        return Decision(POST, rule="not-a-room")
-
+    # issue-549 (design.md stage 1): the policy runs for EVERY conversation, so
+    # progress-edit, gate memory and the bookkeeping drops act in the central
+    # channel too. The rules that exist to make a room conversational —
+    # session-wins and transition-collapse — still need `is_room`.
     # operator-docs — a tmux cheat-sheet (attach table + shell block) is for the
     # ticket, never a room. The caller stamps `is_operator_doc` when it knows;
     # the session-started announcement, though, reaches the room as a nodeless
@@ -169,7 +170,7 @@ def decide(
 
     # session-wins — the session already spoke for this moment; drop the template.
     # A session-authored event itself always posts (it IS the winning message).
-    if not session_authored and _template_superseded(event, memory):
+    if is_room and not session_authored and _template_superseded(event, memory):
         return Decision(DROP, rule="session-wins")
 
     # endgame-collapse — the terminal `complete`/`done` node's own lifecycle
@@ -240,7 +241,7 @@ def decide(
     # successor's `phase.started` is one transition. Drop the completed half; the
     # started half (next call) carries the move. Only when the completed event is
     # not itself a terminal "done" the room should hear.
-    if event_type == "phase.completed" and not _is_terminal(event):
+    if is_room and event_type == "phase.completed" and not _is_terminal(event):
         return Decision(DROP, rule="transition-collapse")
 
     # Anything else: a new top-level message, remembered as the last thing said.

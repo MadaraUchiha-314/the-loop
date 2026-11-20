@@ -126,7 +126,7 @@ Tests are named so the T8 `-k` filter in `testing-plan.md` finds the abuse cases
 
 ### Delivery
 
-- [ ] 9. The message plan and the delivery step in `channels/slack.py`.
+- [x] 9. The message plan and the delivery step in `channels/slack.py`.
   - Replace the posting path: room policy (now for every conversation) → placement →
     builders → plan → delivery. Post the top message, then each part in order; set
     `unfurl_links=false` and `unfurl_media=false` on every post; record each timestamp

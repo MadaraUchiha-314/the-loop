@@ -33,7 +33,7 @@ class FakeSlackClient:
         self.reactions = []  # (channel, ts, name) — issue-325
         self.replies = {}
 
-    def chat_postMessage(self, *, channel, text, thread_ts=None, blocks=None):
+    def chat_postMessage(self, *, channel, text, thread_ts=None, blocks=None, **unfurl):
         ts = f"1700.{len(self.posted) + 1:06d}"
         self.posted.append(
             {"channel": channel, "text": text, "thread_ts": thread_ts, "ts": ts}

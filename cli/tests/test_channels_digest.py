@@ -9,7 +9,6 @@ No Slack, no network: the SDK boundary is the injected client factory.
 from __future__ import annotations
 
 import argparse
-import dataclasses
 import json
 import re
 import time
@@ -528,7 +527,7 @@ class _Client:
     def __init__(self):
         self.posted = []
 
-    def chat_postMessage(self, *, channel, text, thread_ts=None, blocks=None):
+    def chat_postMessage(self, *, channel, text, thread_ts=None, blocks=None, **unfurl):
         self.posted.append({"text": text, "blocks": blocks, "thread_ts": thread_ts})
         return {"ok": True, "ts": f"1700.{len(self.posted):06d}"}
 
@@ -536,26 +535,25 @@ class _Client:
         return {"permalink": ""}
 
 
-def test_the_fallback_text_carries_the_digest(tmp_path, monkeypatch):
-    """R1.5: the phone's notification preview leads with the ask too."""
+def test_the_fallback_text_is_the_short_form(tmp_path, monkeypatch):
+    """issue-549 R2.7 (replaces issue-338 R1.5, the digest in the fallback): the
+    phone's notification preview is the short form, exactly as the message
+    draws it, and leads with the ask."""
     monkeypatch.setenv("THE_LOOP_SLACK_BOT_TOKEN", "xoxb-test")
     client = _Client()
-    # maxChars is ignored since issue-549; the digest's cap is set on the config.
-    config = dataclasses.replace(
-        SlackChannelConfig.from_mapping(_config(tmp_path)), max_chars=700
-    )
+    config = SlackChannelConfig.from_mapping(_config(tmp_path))
     channel = SlackBotChannel(
         config, tmp_path / "state" / "slack.json", client_factory=lambda t: client
     )
     channel.post(_event(CHECKLIST))
     reply = client.posted[-1]
-    section = reply["blocks"][1]["text"]["text"]
-    assert section in reply["text"]
-    assert "*🤖 _the-loop_ — which phases does this work item need?*" in reply["text"]
+    section = reply["blocks"][0]["text"]["text"]
+    assert reply["text"] == section
+    assert "which phases does this work item need?" in reply["text"]
     assert PHASE_SELECTION_MARKER not in reply["text"]
-    # a short message's fallback is what it always was
     channel.post(_event("A or B?"))
-    assert client.posted[-1]["text"].endswith("\n\nA or B?")
+    assert client.posted[-1]["text"].startswith("A or B?")
+    assert client.posted[-1]["text"] == client.posted[-1]["blocks"][0]["text"]["text"]
 
 
 def test_nothing_but_the_renderer_reads_the_digest():

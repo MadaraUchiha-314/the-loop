@@ -749,3 +749,147 @@ def test_a_reply_under_a_room_message_reaches_the_work_item(tmp_path):
     assert room_message["thread_ts"] is None
     assert outcome["outcome"] == "processed"
     assert sink.refs == [REF]
+
+
+# -- issue-549: the short form, the long form, and where each goes (task 9) ------
+
+LONG_COMMENT = """## Design ready
+
+The Slack channel plans each delivery as a short message plus its long form.
+
+| Where | Top level | Thread |
+|---|---|---|
+| room | short form | long form |
+| central | short form | none |
+
+- [x] placement
+- [ ] status reactions
+
+Approve the design?"""
+
+SUMMARY = "Design is drafted. Approve it, or ask for changes?"
+
+
+def _comment(text=LONG_COMMENT, summary=SUMMARY):
+    return Event(
+        event_type="comment.agent",
+        work_item=REF,
+        text=text,
+        url="https://github.com/octo/repo/issues/375#issuecomment-1",
+        source="cli",
+        summary=summary,
+        event_id="ev-549-1",
+    )
+
+
+def _markdown(post):
+    blocks = post["blocks"] or []
+    return [block for block in blocks if block.get("type") == "markdown"]
+
+
+def test_a_long_comment_in_a_declared_room_posts_a_short_message_and_its_long_form_in_the_thread(
+    tmp_path,
+):
+    """
+    Feature: every Slack message is a short form, and in a room its long form
+      Scenario: a long comment in a declared room posts a short message and its long form in the thread
+        Given #375 has declared slack@C0TMP375
+        When the-loop posts the agent's comment carrying a summary, a table and a
+             task list
+        Then the summary is a top-level message in the room, its text fallback is
+             that same short form, and it carries the Open on GitHub button
+        And the whole comment, table and task list as written, is one markdown
+             block in that message's thread
+        And no message asks Slack for a link preview
+
+    Requirement: docs/specs/issue-549/requirements.md R4.1, R2.1, R2.2, R2.6, R2.7,
+                 R3.2, R5
+    """
+    config = cli_config(tmp_path)
+    declare(config)
+    client = FakeSlackClient()
+
+    channel_for(config, client).post(_comment())
+
+    opening, short, part = client.posted
+    assert opening["channel"] == short["channel"] == part["channel"] == ROOM
+    assert short["thread_ts"] is None  # top-level in the room (R4.1)
+    assert short["blocks"][0]["text"]["text"] == SUMMARY
+    assert short["text"] == SUMMARY  # the fallback is the short form (R2.7)
+    assert short["blocks"][-1]["elements"][0]["url"].endswith("#issuecomment-1")
+    assert not _markdown(short)
+    short_ts = "1700.000002"
+    assert part["thread_ts"] == short_ts  # in the short message's thread
+    (block,) = _markdown(part)
+    assert block["text"] == LONG_COMMENT  # every word, as written (R1.1, R2.2)
+    assert part["text"] == SUMMARY
+    for extra in client.unfurls:
+        assert extra == {"unfurl_links": False, "unfurl_media": False}
+
+
+def test_the_central_channel_gets_the_short_form_only(tmp_path):
+    """
+    Feature: every Slack message is a short form, and in a room its long form
+      Scenario: the central channel gets the short form only
+        Given #375 declared no room, so its conversation is a thread in the
+             central channel
+        When the-loop posts the agent's long comment with a summary
+        Then the summary is a reply in the work item's thread, with the Open on
+             GitHub button
+        And no long form is posted anywhere in the central channel
+
+    Requirement: docs/specs/issue-549/requirements.md R4.2, R3.2
+    """
+    config = cli_config(tmp_path)
+    client = FakeSlackClient()
+
+    channel_for(config, client).post(_comment())
+
+    root, short = client.posted
+    assert root["channel"] == short["channel"] == CENTRAL
+    assert short["thread_ts"] == "1700.000001"  # the item's thread
+    assert short["text"] == SUMMARY
+    assert [block["type"] for block in short["blocks"]] == ["section", "actions"]
+    button = short["blocks"][-1]["elements"][0]
+    assert button["url"].endswith("#issuecomment-1")
+    assert not any(_markdown(post) for post in client.posted)
+    record = state_of(config).posted_for(REF, "ev-549-1")
+    assert record == {"channel": CENTRAL, "top": "1700.000002", "parts": []}
+
+
+def test_the_loop_comment_with_a_summary_posts_the_summary_to_slack_and_the_whole_text_to_github(
+    tmp_path, monkeypatch
+):
+    """
+    Feature: every Slack message is a short form, and in a room its long form
+      Scenario: the-loop comment with a summary posts the summary to Slack and the whole text to GitHub
+        Given #375 has declared slack@C0TMP375, subscribed to the agent's comments
+        When the session runs `the-loop comment` with a body and a `--summary`
+        Then the GitHub comment is the whole body, without the summary
+        And the room's top-level message is the summary
+        And the whole body is the long form in that message's thread
+
+    Requirement: docs/specs/issue-549/requirements.md R3.1, R3.2, R3.8, R4.1
+    """
+    from ghfakes import FakeGitHubClient
+    from the_loop.core import github_ops
+
+    config = cli_config(tmp_path, subscribe=["comment.agent"])
+    declare(config)
+    client = FakeSlackClient()
+    monkeypatch.setattr("the_loop.channels.slack.build_client", lambda token: client)
+    github = FakeGitHubClient()
+
+    result = github_ops.comment(
+        REF, LONG_COMMENT, config, client=github, summary=SUMMARY
+    )
+
+    assert result["posted"] is True and result["channelsPosted"] == 1
+    (posted,) = github.posted
+    body = posted[3]
+    assert LONG_COMMENT in body and SUMMARY not in body  # R3.8
+    _opening, short, part = client.posted
+    assert short["thread_ts"] is None and short["text"] == SUMMARY
+    assert part["thread_ts"] == "1700.000002"
+    (block,) = _markdown(part)
+    assert block["text"] == LONG_COMMENT
