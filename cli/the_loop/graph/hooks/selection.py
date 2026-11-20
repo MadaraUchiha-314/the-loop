@@ -1512,7 +1512,7 @@ def _confirmation(
     return mark_self_authored("\n".join(lines))
 
 
-@hook("classify-phase-selection")
+@hook("classify-phase-selection", reads_event=True)
 def classify_phase_selection(ctx: HookContext) -> HookResult:
     """Read the authorized reply; produce the skip set and release the gate.
 

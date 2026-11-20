@@ -34,7 +34,7 @@ from .registry import EXTENSION_PREFIX, get_hook
 
 logger = logging.getLogger("the-loop.graph")
 
-__all__ = ["ChainOutcome", "run_chain"]
+__all__ = ["ChainOutcome", "hook_of", "run_chain"]
 
 
 @dataclass
@@ -103,6 +103,11 @@ def _normalise_spec(spec: Any) -> tuple[str, Mapping[str, Any]]:
     if isinstance(spec, Mapping) and "hook" in spec:
         return str(spec["hook"]), dict(spec.get("with") or {})
     raise ValueError(f"malformed hook entry: {spec!r}")
+
+
+def hook_of(spec: Any) -> str:
+    """The hook a chain entry names, whichever of its two shapes it has."""
+    return _normalise_spec(spec)[0]
 
 
 def _resolve(name: str, ctx: HookContext) -> Any:

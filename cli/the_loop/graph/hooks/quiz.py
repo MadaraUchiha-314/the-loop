@@ -382,7 +382,7 @@ def _post(
     return posted
 
 
-@hook("quiz-attested")
+@hook("quiz-attested", reads_event=True)
 def quiz_attested(ctx: HookContext) -> HookResult:
     """Pass once an authorized user ticked this round's box (exit hook).
 

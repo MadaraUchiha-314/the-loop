@@ -433,7 +433,7 @@ def _already_requested(ctx: HookContext) -> bool:
     )
 
 
-@hook("post-review-brief")
+@hook("post-review-brief", reads_event=True)
 def post_review_brief(ctx: HookContext) -> HookResult:
     """Ask the thread for a brief (entry hook) — unless one is already there.
 
@@ -489,7 +489,7 @@ def _confirmation(brief: Dict[str, Any]) -> str:
     return mark_self_authored("\n".join(lines))
 
 
-@hook("classify-review-brief")
+@hook("classify-review-brief", reads_event=True)
 def classify_review_brief(ctx: HookContext) -> HookResult:
     """Read the authorized brief; freeze it and release the gate — or wait.
 

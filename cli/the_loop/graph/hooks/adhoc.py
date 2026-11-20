@@ -109,7 +109,7 @@ def declares_done(body: str) -> bool:
     return bool(_DONE.search(text))
 
 
-@hook("classify-adhoc-reply")
+@hook("classify-adhoc-reply", reads_event=True)
 def classify_adhoc_reply(ctx: HookContext) -> HookResult:
     """Decide whether the requester ended the ad-hoc task — or asked for more.
 

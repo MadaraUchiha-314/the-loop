@@ -642,6 +642,18 @@ def _start(rt: Any, item: str, ref: str, handoff: Optional["HandoffRecord"]) -> 
     return rt.start(item, ref, handoff=handoff)
 
 
+def _advance_on_event(rt: Any, item: str, ref: str, event: Mapping[str, Any]) -> Any:
+    """Let the graph see an inbound event — the one seam for both loops (issue-551).
+
+    Every dispatcher call site reaches the runtime through here, so the rule that
+    a comment does not grade an agent-owned node is decided once, in
+    ``Runtime.advance_on_event``. An injected runtime (tests, embedders) that
+    predates it has only ``advance``, and is driven as it always was.
+    """
+    settle = getattr(rt, "advance_on_event", None) or rt.advance
+    return settle(item, ref=ref, event=event)
+
+
 class GraphLink:
     """Drives the process graph from ingress events. Never raises."""
 
@@ -874,7 +886,8 @@ class GraphLink:
         The event's comments ride along as ``HookContext.event["comments"]``, so
         a human-approval node's ``classify-feedback`` finally has the input it
         was written to read. ``block``/``wait`` need no handling here: the
-        runtime records them and leaves the pointer where it is.
+        runtime leaves the pointer where it is — and, on an agent-owned node no
+        hook of which reads the event, records nothing (issue-551, R5).
 
         Returns the runtime's :class:`NodeReport` when the graph ran, ``None``
         on any skip or fault (issue-148, D4) — the consult-first path renders
@@ -885,7 +898,7 @@ class GraphLink:
             "advance",
             work_item,
             cwd,
-            lambda rt, item: rt.advance(item, ref=work_item.ref, event=event),
+            lambda rt, item: _advance_on_event(rt, item, work_item.ref, event),
         )
 
     def on_close(self, work_item: WorkItemRef, cwd: str) -> None:
@@ -1010,7 +1023,7 @@ class GraphLink:
             "advance",
             work_item,
             cwd,
-            lambda rt, item: rt.advance(item, ref=pr.ref, event=event),
+            lambda rt, item: _advance_on_event(rt, item, pr.ref, event),
             pr_number=pr.number,
             pr_repo=_pr_repo(work_item, pr, self.cli_config),
         )

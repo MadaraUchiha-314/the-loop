@@ -25,6 +25,7 @@ __all__ = [
     "hook",
     "hook_names",
     "is_registered",
+    "reads_event",
 ]
 
 HookFn = Callable[[HookContext], HookResult]
@@ -45,9 +46,20 @@ _REGISTRY: Dict[str, HookFn] = {}
 _COLLECTOR = threading.local()
 
 
-def hook(name: str) -> Callable[[HookFn], HookFn]:
+#: Set on a hook function that declared ``reads_event`` (issue-551). On the
+#: function rather than in a table of names, so a repository's ``x-`` hook
+#: carries its own declaration into whichever graph it is attached to.
+_READS_EVENT = "__the_loop_reads_event__"
+
+
+def hook(name: str, *, reads_event: bool = False) -> Callable[[HookFn], HookFn]:
     """Register ``fn`` under ``name``. A duplicate name is a programming error
     raised at import time — exactly as the command registry does.
+
+    ``reads_event`` declares that the hook reads :attr:`HookContext.event`
+    (issue-551, R5.3). An inbound event is handed to an agent-owned node's exit
+    chain only when a hook of that chain declared it; otherwise the node is
+    read without the event and an unmet gate records nothing.
 
     The same decorator serves a repository's own hooks (issue-248): inside
     :func:`collecting` the registration lands in that collector instead of the
@@ -58,6 +70,8 @@ def hook(name: str) -> Callable[[HookFn], HookFn]:
     def decorate(fn: HookFn) -> HookFn:
         if not name:
             raise ValueError("a hook must have a non-empty name")
+        if reads_event:
+            setattr(fn, _READS_EVENT, True)
         collector = getattr(_COLLECTOR, "table", None)
         if collector is None:
             if name.startswith(EXTENSION_PREFIX):
@@ -116,6 +130,12 @@ def get_hook(name: str) -> HookFn:
             f"unknown hook {name!r}; registered hooks are: "
             f"{', '.join(sorted(_REGISTRY)) or '(none)'}"
         ) from None
+
+
+def reads_event(fn: HookFn) -> bool:
+    """Whether ``fn`` declared, where it was registered, that it reads the
+    inbound event (issue-551)."""
+    return getattr(fn, _READS_EVENT, False) is True
 
 
 def is_registered(name: str) -> bool:

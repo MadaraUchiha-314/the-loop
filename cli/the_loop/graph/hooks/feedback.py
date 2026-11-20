@@ -76,7 +76,7 @@ def _authorized_comments(ctx: HookContext) -> List[Dict[str, Any]]:
     return out
 
 
-@hook("classify-feedback")
+@hook("classify-feedback", reads_event=True)
 def classify_feedback(ctx: HookContext) -> HookResult:
     """Decide whether the human approved — or keep waiting.
 
