@@ -211,11 +211,18 @@ from a conversation at the stage it reached (issue-517).
   phase label in sync. No prose checkpoint is written: the next step is the first unticked
   task and the pointer is `work-item-state.json`'s (issue-365).
 - WHEN the phase advances across a locked artifact (most importantly
-  tasks-breakdown → implementation) THEN the loop SHALL **clear** and derive the next
-  phase's work from the checked-in artifacts, not the conversation.
+  tasks-breakdown → implementation) THEN the loop SHALL derive the next phase's work
+  from the checked-in artifacts, not the conversation. An interactive session **clears**
+  there. A daemon-driven session cannot clear itself, so it SHALL checkpoint, then
+  compact or hand the next node to a fresh subagent, and continue in the same turn
+  (issue-551).
 - WHEN a task in the DAG completes THEN the loop SHALL checkpoint and **compact**;
-  mid-task only compaction is permitted, never clearing. Headless sessions reset by
-  ending at the boundary and resuming fresh from the state file and the checkmarks.
+  mid-task only compaction is permitted, never clearing.
+- A daemon-driven session SHALL end its turn only for one of the five reasons the
+  Stop gate allows (issue-551): a human-owned node or a complete work item, an open
+  ask, a declared wait, background work still running, or a wait the graph itself
+  reports. A boundary between two agent-owned nodes is not one of them. See
+  [process-graph](process-graph.md#the-stop-gate-issue-429-issue-551).
 - **The phase state machine SHALL be executable, not only described.** Each phase above
   is a **node** in the shipped process graph, with entry/exit hook chains that decide
   when it is complete and declared edges that route on those decisions
@@ -244,6 +251,7 @@ from a conversation at the stage it reached (issue-517).
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-551 | A daemon-driven session no longer ends its turn at a phase boundary (2026-11-20): it checkpoints, compacts or hands the next node to a subagent, and continues; a turn ends only for one of five reasons, which the Stop gate checks | [spec](../specs/issue-551/), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/551) |
 | issue-543 | PR specs (2026-11-19): a pull request of a multi-PR work item carries a scoped, derived copy of the chain in its own branch, citing it item by item, with no `status`; written with `/the-loop:derive-pr-spec` from `templates/pr-spec/`, recorded with `the-loop graph pr-spec`, re-derived (or declared still valid) when the chain changes, and never published to a more visible repository without an authorized `allow-disclosure` comment. See [process-graph](process-graph.md) | [spec](../specs/issue-543/), [decision-153](../decisions/decision-153.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/543) |
 | issue-544 | Readable artifacts (2026-11-18): every spec template and the PR briefing opens with a `## The short version` card; `design.md` reshaped to Interfaces, Architecture and Technology choices with no code-level detail; the briefing gains review effort and a guided tour; the artifact and doc tabs become reading views; archify recommended when present; opt-in slides and flashcards in the explainer. See [writing-style](writing-style.md) | [spec](../specs/issue-544/), [decision-152](../decisions/decision-152.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/544) |
 | issue-536 | The spec chain can be one Claude doc instead (2026-11-17): a `claude-doc` row beside `claude-artifact`, ticked by default (the artifact row now unticked, except after a handoff that published one); tick at most one, both ticked uses the default. Frozen as `claudeDoc`; the session keeps one doc with a tab per spec file (and the explainer and quizzes), reads each tab before rewriting it and folds any human edit into the file as feedback. The files stay the source of truth and the gates' subject | [spec](../specs/issue-536/), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/536) |

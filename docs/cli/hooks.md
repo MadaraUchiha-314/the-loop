@@ -2,7 +2,9 @@
 
 ::: tip Two kinds of hook
 This page is about **graph hooks** — a check at a node boundary of the process graph,
-answering "is this gate satisfied?". To run code of your own when a work item *starts*, a
+answering "is this gate satisfied?". The **harness hooks** the plugin ships (the Stop
+gate and the turn-start hook) are described in
+[interactive-sessions](/capabilities/interactive-sessions#session-states-and-the-watcher-issue-551). To run code of your own when a work item *starts*, a
 session *launches*, the loop *waits on a person*, the *phase changes* or the item *ends* —
 and to change what the-loop decides there — see [hooking the lifecycle](/cli/lifecycle-hooks)
 ([issue-344](https://github.com/MadaraUchiha-314/the-loop/issues/344)).
@@ -45,6 +47,20 @@ Same decorator, same context and same result type a shipped hook uses — there 
 API, not two. `ctx` carries the work item, the node, the boundary, the repository root, the
 compiled graph, the declared skips, and the `with:` parameters as `ctx.params`; it carries
 credential **handles**, never values.
+
+A hook that reads the inbound event (`ctx.event`, the comment that just arrived) on an
+**agent-owned** node must say so where it is registered
+([issue-551](https://github.com/MadaraUchiha-314/the-loop/issues/551)):
+
+```python
+@hook("x-read-the-comment", reads_event=True)
+def read_the_comment(ctx: HookContext) -> HookResult: ...
+```
+
+The default is `False`. Without the flag, a comment that reaches a session on that node
+runs the hook with `ctx.event` set to `None`, and an unmet gate records no block. On a
+human-owned node every hook gets the event, declared or not. A session's own claim
+(`the-loop graph complete`) carries no event either way.
 
 Every name must start with `x-`. The unprefixed namespace is the-loop's, so a repository hook
 can never shadow `validate-artifacts` — and a chain printed anywhere says whose code is about

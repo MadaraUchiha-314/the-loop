@@ -23,6 +23,10 @@ the-loop sessions pause   --work-item github:OWNER/REPO#N [--no-comment]
 the-loop sessions resume  --work-item github:OWNER/REPO#N [--no-comment]
 the-loop sessions stop    --work-item github:OWNER/REPO#N [--no-comment]
 the-loop sessions cleanup --work-item github:OWNER/REPO#N [--no-comment]
+
+# for the harness hooks, not for a person
+the-loop sessions stop-check --work-item github:OWNER/REPO#N [--gave-up] < hook-payload.json
+the-loop sessions turn-start --work-item github:OWNER/REPO#N
 ```
 
 Every subcommand accepts `--registry-dir`, defaulting to
@@ -142,7 +146,21 @@ record for the work item.
 | `--status` | all | `active`, `paused` or `closed`. |
 | `--format` | `table` | `table` or `json`. |
 
-Shows each session's status — `paused` included — and its last control command. When
+Shows each session's status — `paused` included — and its last control command. The
+**State** column says what the session is doing
+([issue-551](https://github.com/MadaraUchiha-314/the-loop/issues/551)):
+
+| State | Meaning |
+|-------|---------|
+| `working` | A turn is running. |
+| `waiting` | The turn ended for a reason that still holds: a human gate, a declared wait, background work, or a wait the graph reports. |
+| `asked` | The session waits on an open [`ask`](/cli/commands/ask). |
+| `idle` | The turn ended with work still to do. |
+| `STALLED` | Idle for [`routing.watchdog.idleSeconds`](/config/cli/routing-options#watchdog-idleseconds) or longer. |
+| `not watched` | The session has no turn record, because its harness hooks are not installed. The watcher leaves it alone. |
+
+JSON output carries the same as a `session` object per row (`state`, `node`, `since`,
+`detail`, `summary`). When
 any running session holds a credential from
 [`env.sessionCredentials`](/config/cli/#env-sessioncredentials), a **Credentials** column
 lists it as `NAME@fingerprint`, never the value
@@ -384,6 +402,37 @@ action back and re-applies it.
 
 Posting is best-effort: `--no-comment` skips it, and a missing token or a failing post only warns —
 it never undoes the local action.
+
+## `stop-check` and `turn-start`
+
+These two are **for the harness hooks**
+([issue-551](https://github.com/MadaraUchiha-314/the-loop/issues/551)). The plugin's
+Stop hook and turn-start hook run them; a person has no reason to.
+
+| Verb | Flag | Required | Meaning |
+|------|------|----------|---------|
+| `stop-check` | `--work-item` | yes | The session's own work item. |
+| `stop-check` | `--gave-up` | no | Record a stop the hook allowed after its attempts ran out. Nothing is judged. |
+| `turn-start` | `--work-item` | yes | The session's own work item. |
+
+`stop-check` reads the harness's Stop payload on stdin and prints one JSON object:
+
+```json
+{"workItem": "github:OWNER/REPO#N", "verdict": "refuse", "reason": "work-owed",
+ "node": "implementation", "nodeStatus": "block",
+ "messages": ["…"], "command": "/the-loop:execute-tasks issue-N", "text": "…"}
+```
+
+- `verdict` is `allow` or `refuse`. Both exit 0. Only a check that could not be made
+  exits non-zero: a ref that is not the session's own, or no live session for it.
+- An `allow` carries the reason and records `session.turn_ended`. A `refuse` records
+  nothing, and adds the unmet checks' `messages`, the `command` that resumes the node
+  and the `text` the hook hands back to the session.
+- The order of the decision is in
+  [process-graph](/capabilities/process-graph#the-stop-gate-issue-429-issue-551).
+
+`turn-start` records `session.turn_started`. It prints nothing and always exits 0, so
+it can never block or delay a prompt.
 
 ## `cleanup`
 

@@ -127,6 +127,32 @@ self-learning/ML capabilities.
   itself, because the session holds no credential. The answer arrives as a forwarded
   ticket comment, or straight into the pane via `POST /api/v1/sessions/reply` (see
   [control-plane](control-plane.md)).
+- `the-loop ask --default <text> --after <duration>` SHALL ask without blocking
+  (issue-551). The posted question SHALL state the default and the time it is taken, and
+  the session SHALL be told to carry on with work that does not depend on the answer.
+  `--after` without `--default` SHALL exit 2 and post nothing. A wait under
+  `routing.asks.minDefaultWaitSeconds` SHALL be raised to it, and the output and the
+  question SHALL say so. A duration is a whole number and one unit: `45s`, `30m`, `2h`.
+  What happens at the deadline, and the one reminder for an ask with no deadline, are
+  the watcher's rules:
+  [interactive-sessions](interactive-sessions.md#session-states-and-the-watcher-issue-551).
+- `the-loop wait --work-item <ref> --for <condition> --until <duration>` SHALL record a
+  declared wait (issue-551). It routes as `ask` does. Its rules are in
+  [interactive-sessions](interactive-sessions.md#session-states-and-the-watcher-issue-551).
+- `the-loop sessions stop-check` and `the-loop sessions turn-start` SHALL exist for the
+  harness hooks, not for a person (issue-551). `stop-check --work-item <ref>` reads the
+  harness's Stop payload on stdin and prints the verdict as JSON. `allow` and `refuse`
+  both exit 0, and only a check that could not be made exits non-zero. `--gave-up`
+  records a stop the hook allowed after its attempts ran out. `turn-start` records the
+  turn's start, prints nothing and always exits 0. Both SHALL refuse a ref that differs
+  from the session's `THE_LOOP_WORK_ITEM`. The verdict's rules are in
+  [process-graph](process-graph.md#the-stop-gate-issue-429-issue-551).
+- `the-loop check <work item>` SHALL print one `session:` line WHEN a live session on
+  this machine works the item (issue-551): `working`, `idle`, `STALLED`, `asked`,
+  `waiting` or `not watched`, with the node, the time and the detail. The JSON report
+  SHALL carry the same as a `session` object with `state`, `node`, `since`, `detail` and
+  `summary`. `the-loop sessions list` SHALL show the same state in a **State** column,
+  and carry the object per session in its JSON.
 - `the-loop add-collaborator @LOGIN [@LOGIN …] --work-item <ref>` and
   `the-loop remove-collaborator @LOGIN … --work-item <ref>` SHALL grant and revoke
   **work-item collaborator** status (issue-307,
@@ -579,6 +605,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-551 | A session's state on the CLI (2026-11-20): `the-loop wait` declares a wait; `ask --after` gives a default a deadline; `sessions stop-check` and `sessions turn-start` serve the harness hooks; `check` prints a `session:` line and `sessions list` a State column | [spec](../specs/issue-551/), [decision-155](../decisions/decision-155.md), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/551) |
 | issue-517 | Conversation handoff (2026-10-21): the `handoff` command (`post`, `show`, `import [--from-dir]`, `note`); `ticket create --issue-type --parent` for a Jira ticket, mirrored in `POST /work-items/tickets` and the MCP tool as `issueType` and `parent`; the read-only `ticket projects` | [spec](../specs/issue-517/), [`handoff`](../cli/commands/handoff.md), [ticket](../cli/commands/ticket.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/517) |
 | issue-496 | The gateway (2026-10-19): the `gateway` command family; the `status`/`start` wording for an instance behind a gateway; the doctor's gateway section | [spec](../specs/issue-496/), [`gateway`](../cli/commands/gateway.md) |
 | issue-482 | Session-side verbs stop needing a token (2026-10-13): in a session the daemon spawned, `comment`, `ticket`, `pr` and `ask` go through the service or fail with a message, never in-process; `ask` gains `POST /api/v1/sessions/ask`. The daemon no longer hands a session any `env.file` value — see [interactive sessions](interactive-sessions.md) | [spec](../specs/issue-482/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/482) |

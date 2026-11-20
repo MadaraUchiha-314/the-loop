@@ -752,6 +752,12 @@ included, however empty the log was.
   that is a no-op unless a command is bound) parked at `no_edge` instead of advancing.
 - A hook that raises SHALL become a `block` with `retriable=False`, never a silent pass.
 - Hook results SHALL carry secret **handles**, never secret values (R2.7).
+- A hook that reads the inbound event SHALL declare it where it is registered:
+  `@hook("<name>", reads_event=True)` (issue-551). The default is `False`. The declaration
+  decides whether an inbound event is handed to an agent-owned node's exit chain; see
+  § What drives the graph. The shipped hooks that declare it are `classify-feedback`,
+  `classify-phase-selection`, `classify-adhoc-reply`, `post-goal-request`, `classify-goal`,
+  `post-review-brief`, `classify-review-brief` and `quiz-attested`.
 
 ### Shipped hooks
 
@@ -823,6 +829,10 @@ included, however empty the log was.
 - A repository hook SHALL use the **same contract** as a shipped one —
   `(HookContext) -> HookResult`, the same `@hook` decorator, the same block-on-raise
   behaviour. There is one hook API, not two.
+- A repository hook that reads `HookContext.event` on an **agent-owned** node SHALL
+  declare `reads_event=True` (issue-551). An undeclared hook is taken not to read events:
+  WHEN a comment reaches a session on that node THEN the hook SHALL run with no event.
+  On a human-owned node every hook is handed the event, declared or not.
 - Every repository hook SHALL be named `x-<something>`, and no shipped hook SHALL take such a
   name. The prefix says whose code is about to run and makes shadowing a shipped hook
   impossible.
@@ -1069,6 +1079,28 @@ reader.
   nor past SHALL be refused naming the current node, and a claim on an item that never
   entered the graph SHALL be refused. Output is one JSON envelope; a refusal or block is
   a result, not a CLI error. Claims are recorded in the state's `completions` ledger.
+- **A claim's answer says what comes next** (issue-551). WHEN a claim moves the pointer
+  THEN the envelope SHALL carry `assignment`, the text of the node the pointer ends on,
+  and `next` with `node`, `actor`, `command` and `continue`. For an agent-owned node
+  `continue` is `true` and the text ends with an instruction to carry on in the same
+  turn. For a human-owned node `continue` is `false` and the text names the gate the
+  session now waits for. WHEN a claim advances through several nodes THEN the envelope
+  SHALL describe the last one only. Both keys SHALL be absent when the pointer did not
+  move, when the pointer ends on a terminal node, and when the entry chain already
+  pushed the assignment into a session, so no session receives one assignment twice.
+- **An inbound event does not grade an agent-owned node** (issue-551). WHEN an event is
+  delivered to a session whose pointer is on an agent-owned node THEN the exit chain
+  SHALL be evaluated **read-only**, with no event attached, unless a hook of that chain
+  declared `reads_event` (§ The hook contract). A met exit gate SHALL still advance the
+  work item, by at most one node boundary. An unmet one SHALL count no attempt, record
+  no block and no park, and escalate nothing. A human-owned node, and an agent-owned
+  node with a declaring hook, SHALL be evaluated with the event as before. The same
+  rule applies to a pull request's inner loop.
+- **A block and an escalation come only from the session's own claim** (issue-551).
+  The runtime SHALL record a block and count an attempt WHEN a claim fails the exit
+  chain, and SHALL escalate WHEN a claim repeats a block or the node's attempts are
+  spent. An agent-owned node with no failed claim therefore reads as in progress on
+  every status surface.
 - **No verb writes configuration into a repository** (issue-352, retiring issue-193's
   adoption). The CLI reads no harness config, so it has none to plant: `graph complete`,
   `graph advance`, `graph force`, `graph skip`, `check`, `graph status` and `graph show`
@@ -1211,18 +1243,12 @@ reader.
   consult the archive. The terminal record is a filtered **copy** of an agent-writable
   file and SHALL NOT be read back into routing or a gate. Before, normal cleanup made a
   delivered item read as `phase-selection` with the full process "missing".
-- **The stop gate SHALL NOT ask about a node the work item never entered** (issue-429).
-  Every `check` report SHALL carry `pointer` — the node work-item state records, `""`
-  when no state file was found — beside `currentNode`, which under `--recompute` is the
-  first node the artifacts leave unmet and can run ahead of the pointer. The harness stop
-  gate (`hooks/the-loop-gate.py`) SHALL take every *verdict* from the recomputed report
-  and SHALL block only on the first unsatisfied node **at or before** the pointer, and
-  only when that node is `block`. A report with no `currentNode`, an empty `pointer`, or a
-  `pointer` that names no node in the report SHALL be inconclusive: the turn ends. The
-  position is the one fact the gate takes from agent-writable state; moving the pointer
-  forward hides nothing (the first unmet node before it is still the finding), and CI's
-  `check --recompute` — which reads no pointer — stays the backstop. The `check` table
-  under `--recompute` SHALL name the pointer on its `state:` line when the two differ.
+- **Every `check` report carries the pointer** (issue-429). `pointer` is the node
+  work-item state records, `""` when no state file was found. It sits beside
+  `currentNode`, which under `--recompute` is the first node the artifacts leave unmet
+  and can run ahead of the pointer. The `check` table under `--recompute` SHALL name the
+  pointer on its `state:` line when the two differ. The Stop gate judges at the pointer;
+  see § The Stop gate.
 - **A gate that evaluated nothing SHALL NOT pass** (issue-238). Since the control-plane
   API answers a `repo` that does not resolve with a position-unknown report rather than an
   error — a checkout somebody cleaned up is expected state on that machine, see
@@ -1231,6 +1257,79 @@ reader.
   either rule, and SHALL say `UNREAD — <path> is not a directory` rather than render it as
   a work item with no phases. Otherwise a mistyped `--repo` would take `--fail-on block`,
   the automated-gate mode, straight to exit 0.
+
+### The Stop gate (issue-429, issue-551)
+
+> [decision-155](../decisions/decision-155.md) ·
+> [session states and the watcher](interactive-sessions.md#session-states-and-the-watcher-issue-551)
+
+The Stop gate refuses to let a session end its turn while agent work is owed. The
+harness's Stop hook (`hooks/the-loop-gate.py`) is a clock: it asks, and the control-plane
+service decides.
+
+```mermaid
+flowchart TD
+  S[Session wants to end its turn] --> H[Stop hook]
+  H -->|the-loop sessions stop-check| V{Service's verdict}
+  H -.->|no usable answer| F[Fallback: the-loop check --recompute]
+  V -->|allow| R[Record session.turn_ended with the reason]
+  V -->|refuse: work-owed| C{Attempts left?}
+  F -->|a block at or before the pointer| C
+  F -->|otherwise| E[Turn ends, nothing recorded]
+  C -->|yes| B[Stop refused: node, unmet checks, command, three ways out]
+  C -->|no| G[Stop allowed, recorded as gate-gave-up]
+```
+
+- WHEN a session tries to end its turn THEN the Stop hook SHALL run
+  `the-loop sessions stop-check --work-item <ref>` for the work item named by
+  `THE_LOOP_WORK_ITEM`, forwarding the harness's own hook payload. Without that variable
+  the hook SHALL do nothing.
+- The service SHALL decide in this order, taking every verdict from the recomputed
+  report of the outer loop and every node's owner from the graph definition:
+  1. The pointer cannot be resolved: **allow**, reason `inconclusive`.
+  2. The pointer is on a human-owned node: **allow**, reason `human-gate`. It is on a
+     code node or a terminal node: **allow**, reason `complete`.
+  3. An agent-owned node before the pointer reports `block`: **refuse**, naming that
+     node (issue-429). A human-owned node before the pointer SHALL count as passed
+     whatever it reports, because an approved gate recomputes as `wait` for good.
+  4. The pointer's node reports `pass` or `skip`: **allow**, reason `exit-met`.
+  5. The pointer's node reports `wait`: **allow**, reason `graph-wait`.
+  6. The pointer's node reports `block`: **allow** WHEN the work item has an open ask
+     (`open-ask`), a declared wait made in this turn that has not lapsed
+     (`declared-wait`), or background work the harness's payload lists as still running
+     (`background-work`). Otherwise **refuse**, reason `work-owed`.
+- Background work SHALL be read from the harness's payload, never from the session's
+  word. Claude Code lists its running background tasks there. A harness that lists none
+  (Codex, Cursor) leaves the session the declared wait, and the refusal says so.
+- WHEN the service allows a stop THEN it SHALL record `session.turn_ended` with the
+  node, the node's status and the reason. A refusal SHALL record nothing.
+- WHEN the service refuses THEN its answer SHALL carry the node, the unmet checks'
+  messages, the command that resumes the node and a fixed text
+  (`cli/the_loop/prompts/stopcheck/`). The text names the node, the unmet checks, the
+  command, the work item's ref and the three ways out: continue, `the-loop ask`, or
+  `the-loop wait`. The hook SHALL add its attempt count and hand the text to the
+  session in the harness's own protocol: Claude Code and Codex block the stop, Cursor
+  submits it as a follow-up message.
+- **The attempt cap stays in the hook**, so it holds when the service is down. The cap
+  is `THE_LOOP_GATE_MAX_ATTEMPTS` (default 3), counted per checkout and work item and
+  reset by an allowed stop. WHEN the cap's refusals are spent THEN the hook SHALL allow
+  the next stop and SHALL report it with `stop-check --gave-up`, which records the
+  turn's end with reason `gate-gave-up`. The watcher then covers the session.
+- **Older CLI, or no service.** WHEN `stop-check` gives no usable answer (the verb is
+  missing, the service is down or knows no live session for the ref, a timeout) THEN the
+  hook SHALL judge `the-loop check --recompute` itself. It SHALL block on a `block` at or
+  before the pointer, SHALL count a `wait` before the pointer as passed, and SHALL end
+  the turn on a report that cannot say where the work item is. This path knows nothing
+  of asks or waits and records no turn end.
+- `stop-check` SHALL answer only for a work item that has a live registered session,
+  and the CLI SHALL refuse a ref that differs from the session's own
+  `THE_LOOP_WORK_ITEM`. The service authenticates no caller
+  ([decision-059](../decisions/decision-059.md)), so this is a binding check, not a
+  per-session credential.
+- For a pull request's own session the service SHALL read the outer loop under the id
+  that the pull request's ref names, in that session's checkout. It does not read the
+  pull request's inner loop.
+- CI's `check --recompute`, which reads no pointer, stays the backstop.
 
 ## Design
 
@@ -1244,6 +1343,7 @@ reader.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-551 | The Stop gate holds past an approved human gate, and a comment stopped grading the node (2026-11-20): the Stop hook asks `the-loop sessions stop-check` and the service decides from the graph, the open ask, the declared wait and the harness's background work; a human-owned node before the pointer counts as passed; an allowed stop is recorded as `session.turn_ended` with its reason, and a spent attempt cap as `gate-gave-up`. An inbound event reads an agent-owned node read-only unless a hook of its exit chain declared `reads_event`, so blocks and escalations come only from a claim. A claim's envelope carries `assignment` and `next` | [spec](../specs/issue-551/), [decision-155](../decisions/decision-155.md), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/551) |
 | issue-543 | PR-scoped specs (2026-11-19): the inner loop starts at `pr-spec`, its first and only skippable node, and `pr-spec-current` gates three places — leaving `pr-spec`, leaving `reviewer-briefing`, leaving the outer `implementation`. `the-loop graph pr-spec` (and `POST /api/v1/graph/pr-spec`) checks a delivery PR's PR spec online and writes `pr-spec.json` beside its inner state; the hook re-derives applicability and recomputes the chain digest offline, so a forged record or a changed chain blocks. Events `graph.pr_spec_recorded` and `graph.pr_spec_refused` | [spec](../specs/issue-543/), [decision-153](../decisions/decision-153.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/543) |
 | issue-524 | A `pause` or `resume` stopped forgetting the loop (2026-10-27): each overwrote the control record, so a paused or resumed `review`/`contribute`/`do` item, and one armed onto an operator loop, answered "which loop" with the default. Those records now keep `armedBy` (the arming spawn command) and the selected `loop`, and `_loop_for_start` reads `armedBy` first. | [issue-524](https://github.com/MadaraUchiha-314/the-loop/issues/524) |
 | issue-544 | Two opt-in explainer experiments at `phase-selection` (2026-11-18): unticked `explainer-slides` / `explainer-flashcards` rows under `explainer`, frozen as `explainerExperiments` only when the explainer runs, named in the prompt of the two explainer nodes; the `request-review` hook takes an optional `focus` (`with: {focus: <name>}`, text from the string catalog), set at `design-approval` to point the reviewer at `design.md` § Interfaces first | [spec](../specs/issue-544/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/544) |

@@ -10,7 +10,7 @@ PR** as the work item that changes behaviour (a ready-to-ship gate item).
 | Capability | What it covers |
 |------------|----------------|
 | [spec-workflow](spec-workflow.md) | The (brainstorm →) requirements → design → testing plan → tasks → implementation → verification loop, phase state machine, commands. |
-| [process-graph](process-graph.md) | The same loop made executable: nodes, entry/exit hooks, declared edges, the human gate, and the forced-transition escape hatch. |
+| [process-graph](process-graph.md) | The same loop made executable: nodes, entry/exit hooks, declared edges, the human gate, the Stop gate, and the forced-transition escape hatch. |
 | [lifecycle-hooks](lifecycle-hooks.md) | The operator's code at the moments a work item's delivery turns — start, session launch, wait, phase change, end — asked before the-loop acts; local or remote executors, declared in the CLI config. |
 | [review-loop](review-loop.md) | Self and critic review rounds before a human: the procedure, and how a configured critic harness is actually invoked. |
 | [capability-docs](capability-docs.md) | This layer itself: the organized view of specs and its fold-in gate. |
@@ -19,7 +19,7 @@ PR** as the work item that changes behaviour (a ready-to-ship gate item).
 | [control-plane](control-plane.md) | The core → API → clients layering: the HTTP API service, the service-routed CLI, the MCP endpoint, and the statically-hostable UI. |
 | [sdk](sdk.md) | the-loop as a component of somebody else's Python service: the importable capability surface, the mountable router, and the environment contract. |
 | [webhook-triggers](webhook-triggers.md) | GitHub webhook receiver and event → session routing. |
-| [interactive-sessions](interactive-sessions.md) | tmux-hosted harness sessions humans can watch/steer live (local, SSH, browser). |
+| [interactive-sessions](interactive-sessions.md) | tmux-hosted harness sessions humans can watch/steer live (local, SSH, browser), and the watcher that nudges an idle one and then tells a person. |
 | [instances](instances.md) | Several instances of the-loop on one repository: a named, scoped CLI config, the address token, the locked instance — and a manager that serves the whole fleet through the same surface. |
 | [standing-sessions](standing-sessions.md) | Named, long-lived sessions that belong to no work item — the ones the-loop keeps for itself, addressed by name on the control plane and in Slack. |
 | [observability](observability.md) | Structured JSONL event log of the CLI's actions and the `events` query command. |

@@ -153,7 +153,9 @@ is logged (fail closed).
 The event types this channel receives, exactly as [`slack.subscribe`](#slacksubscribe)
 — for example `work-item.started`, `phase.started`, `phase.completed`,
 `session.awaiting_input` and `work-item.closed`. `the-loop channels status` prints the
-catalog. A name outside it is kept, with a warning.
+catalog. A name outside it is kept, with a warning. One difference from Slack: this
+channel hears `session.stall_ended`, `session.ask_default_taken` and
+`session.ask_reminded` only when the list names them.
 
 ### `jira.verbosity`
 

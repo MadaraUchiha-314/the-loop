@@ -160,7 +160,7 @@ green.
   - _Depends on:_ 5, 7, 8, 10, 11, 12
   - _Requirements:_ Security considerations, abuse cases 1–7
   - _Test:_ T8 — `pytest -q -k "abuse or unauthorized or foreign_work_item or nudge_is_fixed"`
-- [ ] 17. Update the living docs
+- [x] 17. Update the living docs
   - Capability docs: process graph (the Stop gate, what an inbound event does),
     interactive sessions (turn records, the watcher, the declared wait), channels
     (the four events), CLI. The CLI command pages for `wait`, `ask`, `sessions`,

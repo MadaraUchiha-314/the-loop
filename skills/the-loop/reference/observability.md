@@ -56,6 +56,13 @@ answer to:
   command, its `source` (`comment` | `cli`), the `actor` and the `effect`
   (`spawned`/`resumed`/`paused`/`stopped`/`noop`); `control.rejected` and
   `control.ambiguous` record the requests that were refused (issue-106);
+- **why did the session go quiet, and what did the-loop do about it?** —
+  `session.turn_started` / `session.turn_ended` bracket every turn, and the end carries
+  the `reason` the Stop gate allowed it (`open-ask`, `declared-wait`, `gate-gave-up`, …).
+  `session.wait_declared` is a wait the session stated. `session.nudged`,
+  `session.stalled` and `session.stall_ended` are the watcher's acts on an idle session.
+  `session.ask_answered`, `session.ask_default_taken` and `session.ask_reminded` say how
+  a question ended (issue-551): `the-loop events --work-item <ref> --type 'session.*'`;
 - **what failed, and will it retry?** — `dispatch.failed`, `session.spawn_failed`,
   `poll.provider_error` carry `error` and `will_retry` (whether GitHub redelivery /
   the next poll cycle heals it);

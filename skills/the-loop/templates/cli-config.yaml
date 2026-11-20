@@ -696,7 +696,8 @@ channels:
     # channel: ""                            # where the bot posts: #name or a C… id
     #                                        # (a name needs channels:read/groups:read
     #                                        #  and is resolved once; an id needs neither)
-    # subscribe: [session.awaiting_input]    # what this channel RECEIVES; add the notify
+    # subscribe: [session.awaiting_input, session.stalled]  # what this channel RECEIVES
+    #                                        # (the default: the two events that need a person); add the notify
     #                                        # events (phase-approval-pending, work-item-complete, …),
     #                                        # the lifecycle (phase.started, phase.completed,
     #                                        # work-item.closed — issue-378)

@@ -39,8 +39,9 @@ the-loop upgrade            # move both to the current release
 the-loop upgrade --dry-run  # see the exact commands first
 ```
 
-Codex setup preserves existing instructions and adds the operating skill and Stop
-hook. Review and trust the hook through Codex `/hooks` before unattended use.
+Codex setup preserves existing instructions and adds the operating skill, the Stop
+hook and the turn-start hook. Review and trust both hooks through Codex `/hooks` before
+unattended use.
 Install the official Codex CLI separately. Cursor plugin installation is
 [issue #157](https://github.com/MadaraUchiha-314/the-loop/issues/157).
 

@@ -22,7 +22,13 @@ as one JSON object per line:
   `duplicate-delivery`, `self-comment`;
 - session spawned or resumed, naming the triggering event and delivery id;
 - dispatch failed, with the error and whether a redelivery or the next poll cycle retries it;
-- session closed or auto-closed.
+- session closed or auto-closed;
+- each turn of a session started or ended, with the reason the Stop gate allowed the
+  stop, and what the watcher did about an idle session or an unanswered question
+  (`session.turn_started`, `session.turn_ended`, `session.wait_declared`,
+  `session.nudged`, `session.stalled`, `session.stall_ended`, `session.ask_answered`,
+  `session.ask_default_taken`, `session.ask_reminded` —
+  [issue-551](https://github.com/MadaraUchiha-314/the-loop/issues/551)).
 
 Written to [`eventLog.path`](/config/cli/observability-options#eventlog-path) (default
 `.the-loop/logs/events.jsonl`, git-ignored).

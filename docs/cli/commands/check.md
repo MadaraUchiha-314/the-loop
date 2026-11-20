@@ -122,8 +122,36 @@ issue-1: UNMET (at design)
   state: …/docs/specs/issue-1/work-item-state.json (pointer at phase-selection; position derived from the artifacts)
 ```
 
-The harness stop gate reads both for the same reason: it takes every verdict from the
-recomputed report, and never asks about a node past the pointer.
+The Stop gate judges at the pointer for the same reason: it takes every verdict from
+the recomputed report, and never asks about a node past the pointer. See
+[process-graph](/capabilities/process-graph#the-stop-gate-issue-429-issue-551).
+
+## The `session:` line
+
+When a live session on this machine works the item, `check` prints what that session is
+doing ([issue-551](https://github.com/MadaraUchiha-314/the-loop/issues/551)):
+
+```text
+issue-551: UNMET (at implementation)
+  state: …/docs/specs/issue-551/work-item-state.json
+  session: STALLED at implementation since 14:10 (25 min, 2 nudges, a person was told)
+```
+
+| Line | Meaning |
+|------|---------|
+| `working (turn running since 14:02)` | A turn is running. |
+| `idle at <node> since 14:10 (4 min)` | The turn ended with work still to do. |
+| `STALLED at <node> since 14:10 (25 min, 2 nudges)` | Idle past [`routing.watchdog.idleSeconds`](/config/cli/routing-options#watchdog-idleseconds). |
+| `asked 14:10; waiting for an answer` | An open [`ask`](/cli/commands/ask). With a deadline: `asked 14:10; default “…” at 14:40`. |
+| `waiting for “CI on PR 12” until 14:40` | A declared [`wait`](/cli/commands/wait). |
+| `waiting: <what>` | A human gate, background work, or a wait the graph reports. |
+| `not watched` | The session has no turn record, because its harness hooks are not installed. |
+
+Times are in this machine's zone, with the date when it is another day's. With
+`--format json` the report carries the same as `session`: `state` (`working`, `waiting`,
+`asked`, `idle`, `stalled` or `not-watched`), `node`, `since`, `detail` and `summary`.
+The key is absent when no session of this machine works the item. `--all` prints no
+`session:` line.
 
 ## Reading the output
 

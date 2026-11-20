@@ -156,7 +156,14 @@ the-loop check <work-item>            # evaluate every node against the artifact
 
 The graph **assigns as well as judges**: entering a node pushes that node's assignment —
 where the item stands, what to produce, the exact claim command — into the session bound to
-that loop.
+that loop. A session's own claim gets the next node's assignment in its answer.
+
+**A session never goes idle unnoticed** (issue-551). The Stop gate refuses to let a
+session end its turn while agent work is owed. If a session goes idle anyway, a watcher
+nudges it, and then tells a person once. A session can wait on CI with `the-loop wait`,
+and can ask a question that takes a stated default at a deadline
+(`the-loop ask --default … --after …`). See
+[interactive sessions](https://madarauchiha-314.github.io/the-loop/capabilities/interactive-sessions).
 
 Full reference: **[the-loop CLI](https://madarauchiha-314.github.io/the-loop/cli/)** ·
 [installation](https://madarauchiha-314.github.io/the-loop/cli/installation) ·
@@ -257,8 +264,8 @@ MIT — see [LICENSE](LICENSE).
 ## Codex
 
 Install the official Codex CLI, then run `the-loop install codex --scope project`
-to prepare the-loop's instructions and Stop hook. Review and trust the hook with
-Codex `/hooks`. To make Codex the daemon's default:
+to prepare the-loop's instructions, its Stop hook and its turn-start hook. Review and
+trust both hooks with Codex `/hooks`. To make Codex the daemon's default:
 
 ```yaml
 harnesses:

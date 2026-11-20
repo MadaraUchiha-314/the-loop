@@ -34,7 +34,8 @@ path. Read that page for the mechanics; this one covers only what differs.
   rather than a cached one.
 - **A source checkout is skipped**, naming the checkout: a development install is updated
   with `git pull` (and `uv sync`), not by installing a release over it.
-- **Codex setup refreshes its managed instruction block and merges its Stop hook.**
+- **Codex setup refreshes its managed instruction block and merges its Stop and
+  turn-start hooks.**
   Existing instructions and unrelated hooks are preserved. Trust a changed hook
   definition through Codex `/hooks` before expecting unattended continuation.
 

@@ -55,8 +55,11 @@ condition. The words live in the files.
 
 - MCP tool descriptions SHALL be `prompts/mcp/tools/<tool>.md`, passed explicitly to the
   MCP SDK's `add_tool`.
-- The plugin's stop hook (`hooks/the-loop-gate.py`) SHALL read its feedback text from
-  `hooks/prompts/gate-feedback.md`, beside the script, because it runs without the package.
+- The plugin's stop hook (`hooks/the-loop-gate.py`) SHALL read its own text from
+  `hooks/prompts/`, beside the script, because it runs without the package:
+  `gate-feedback.md` (the fallback's feedback), `gate-attempt.md` (the attempt count it
+  adds under the service's refusal, issue-551) and `gate-give-up.md`. The refusal itself
+  is the service's, from `cli/the_loop/prompts/stopcheck/`.
 
 **Left in code, on purpose:**
 
