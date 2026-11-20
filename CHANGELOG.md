@@ -1,3 +1,9 @@
+## v20.16.0 (2026-11-20)
+
+### Feat
+
+- **issue-543**: scoped spec per pull request of a multi-PR work item (#546)
+
 ## v20.15.0 (2026-11-19)
 
 ### Feat
