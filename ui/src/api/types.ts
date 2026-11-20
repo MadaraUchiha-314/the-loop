@@ -300,11 +300,20 @@ export interface EventRecord {
 /** `GET /api/v1/attention`. */
 export interface AttentionItem {
   workItem: string;
-  /** `session-paused` | `armed-without-session` | `awaiting-input` | `recent-error`. */
+  /**
+   * `session-paused` | `armed-without-session` | `awaiting-input` |
+   * `recent-error` | `stalled` | `declared-wait` (informational) — issue-551.
+   */
   kind: string;
   detail: string;
-  /** The raw event timestamp behind a `recent-error`, so age is renderable. */
+  /**
+   * The raw event timestamp behind a `recent-error`, or when a `stalled`
+   * session's idle period began, so age is renderable.
+   */
   at?: string;
+  /** On an `awaiting-input` row asked with a deadline: the answer that is taken, and when. */
+  default?: string;
+  defaultAt?: string;
   /** The instance that served this row — stamped by a manager (issue-374). */
   instance?: string;
 }

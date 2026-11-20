@@ -519,6 +519,14 @@ def load_config(config_path: Optional[Union[str, Path]] = None) -> dict:
     return data.get("eventLog") or {}
 
 
+def current_path() -> Optional[Path]:
+    """The file this process's records go to; ``None`` when no log is configured.
+
+    For a reader that must see what this process just wrote (issue-551: the
+    dispatcher asks whether the work item has an open ask)."""
+    return _log.path if _log is not None and _log.enabled else None
+
+
 def emit(event: str, level: str = "info", **fields) -> None:
     """Emit through the configured log; silently a no-op when unconfigured."""
     if _log is not None:

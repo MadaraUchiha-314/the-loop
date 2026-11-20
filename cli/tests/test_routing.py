@@ -3169,3 +3169,39 @@ def test_issue_533_sessions_list_shows_a_credentials_column_only_when_held(
     listed[:] = [dict(base, credentials={})]
     assert run_cli(["sessions", "list", "--registry-dir", registry_dir]) == 0
     assert "Credentials" not in capsys.readouterr().out
+
+
+def test_issue_551_sessions_list_shows_each_sessions_state(
+    tmp_path, capsys, monkeypatch
+):
+    """R7: the derived state is a column; a row without one shows `-`."""
+    from the_loop.commands import sessions_cmd
+
+    registry_dir = str(tmp_path / "sessions")
+    base = {
+        "workItem": {"ref": REF},
+        "harness": "claude",
+        "model": "",
+        "effort": "",
+        "harnessSessionId": "s1",
+        "tmuxTarget": "loop-x",
+        "status": "active",
+        "control": None,
+        "lastEventAt": "",
+    }
+    listed = [
+        dict(base, session={"state": "stalled"}),
+        dict(base, session={"state": "not-watched"}),
+        dict(base, session={"state": "asked"}),
+        dict(base),
+    ]
+    monkeypatch.setattr(sessions_cmd.core_sessions, "list_sessions", lambda **_: listed)
+    assert run_cli(["sessions", "list", "--registry-dir", registry_dir]) == 0
+    header, *rows = capsys.readouterr().out.splitlines()
+    assert "Status  State" in header
+    assert [row.split()[6:] for row in rows] == [
+        ["STALLED", "-", "-"],
+        ["not", "watched", "-", "-"],
+        ["asked", "-", "-"],
+        ["-", "-", "-"],
+    ]

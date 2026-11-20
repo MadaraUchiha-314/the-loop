@@ -239,6 +239,7 @@ class CoreFacade:
             pr=pr,
             pr_repo=pr_repo,
             spec_dir=spec_dir,
+            config=self.config,
         )
 
     def graph_complete(
@@ -411,6 +412,7 @@ class CoreFacade:
         default_answer: str = "",
         actor: str = "",
         instance: str = "",
+        default_after_seconds: Optional[int] = None,
     ) -> Dict[str, Any]:
         self._self(instance)
         return core_sessions.ask_session(
@@ -420,6 +422,7 @@ class CoreFacade:
             summary=summary,
             default_answer=default_answer,
             actor=actor,
+            default_after_seconds=default_after_seconds,
         )
 
     def wait_session(

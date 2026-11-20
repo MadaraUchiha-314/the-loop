@@ -206,6 +206,7 @@ class Graph(_Namespace):
             pr=pr,
             pr_repo=pr_repo,
             spec_dir=spec_dir,
+            config=self._config,
         )
 
     def complete(

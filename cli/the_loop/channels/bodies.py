@@ -10,9 +10,10 @@ replaces the self-marker with its visible form and converts the Markdown.
 
 from __future__ import annotations
 
+import re
 from typing import Mapping, Optional, Tuple
 
-from .. import strings
+from .. import durations, strings
 from ..authz import mark_self_authored
 from ..redact import (
     defang_control_keywords,
@@ -29,6 +30,7 @@ __all__ = [
     "TITLE_MAX_CHARS",
     "ask_body",
     "control_keywords",
+    "default_block",
     "issue_body",
     "issue_title",
     "ledger_body",
@@ -165,9 +167,54 @@ def relay_body(event: Event) -> str:
     return stamp(body, _envelope(event))
 
 
+#: Markdown's own punctuation, backslash-escaped where the-loop quotes a
+#: session's words inside a sentence of its own.
+_MARKDOWN_ACTIVE = re.compile(r"([\\`*_\[\]<>#|~!])")
+
+
+def _inert(text: str) -> str:
+    """``text`` on one line, as words only: no marker or envelope, no markup, no
+    link, and no mention that notifies anyone (issue-551, abuse case 6)."""
+    line = " ".join(neutralise_broadcasts(strip_html_comments(text)).split())
+    # A backslash does not stop GitHub's mention, so the `@` is cut from the name.
+    return _MARKDOWN_ACTIVE.sub(r"\\\1", line).replace("@", "@\u200b")
+
+
+def default_block(event: Event) -> str:
+    """What the-loop states below a question that has a default and a deadline
+    (issue-551, R6.1): the default and the time it is taken. ``""`` for an ask
+    without both — a default with no time is never taken by itself."""
+    from ..core.sessionstate import parse_ts  # core imports the channels
+
+    detail = event.detail or {}
+    default = str(detail.get("default") or "").strip()
+    moment = parse_ts(detail.get("default_at"))
+    if not default or moment is None:
+        return ""
+    block = strings.t(
+        "channels.bodies.ask.default-block",
+        default=_inert(default),
+        time=moment.strftime("%Y-%m-%d %H:%M UTC"),
+        wait=_wait_words(detail.get("default_after")),
+    )
+    requested = _wait_words(detail.get("default_requested"))
+    if requested:
+        # R6.5: the question says the operator's minimum replaced the wait.
+        block += strings.t("channels.bodies.ask.wait-raised", requested=requested)
+    return block
+
+
+def _wait_words(seconds: object) -> str:
+    text = str(seconds or "")
+    return durations.in_words(int(text)) if text.isdigit() and int(text) else ""
+
+
 def ask_body(event: Event) -> str:
-    """The ask's record is the question itself, marked (issue-208) and enveloped."""
-    return stamp(mark_self_authored(event.text), _envelope(event))
+    """The ask's record is the question itself, marked (issue-208) and enveloped,
+    with its default and deadline stated below it when it has them."""
+    return stamp(
+        mark_self_authored(event.text + default_block(event)), _envelope(event)
+    )
 
 
 def issue_title(text: str) -> str:

@@ -559,11 +559,15 @@ export function innerKey(workItemRef: string, prRef: string): string {
  * marker stamped centrally, and records the wait as this event. Reading it
  * costs one filtered `/events` call for the whole board.
  *
- * A `session.reply_sent` newer than the question closes it — the SAME
- * open/answered rule the service's attention surface applies
- * (`cli/the_loop/core/attention.py`); change one and the other is a reviewable
+ * A `session.reply_sent` newer than the question closes it, and so does an
+ * authorized answer (`session.ask_answered`) or the question's default being
+ * taken (`session.ask_default_taken`, issue-551) — the SAME open/answered rule
+ * the service's attention surface applies (`cli/the_loop/core/sessionstate.py`,
+ * read by `core/attention.py`); change one and the other is a reviewable
  * change, or the two surfaces disagree.
  */
+const ASK_CLOSERS = new Set(["session.reply_sent", "session.ask_answered", "session.ask_default_taken"]);
+
 export function awaitingInput(events: EventRecord[]): Record<string, EventRecord> {
   const open: Record<string, EventRecord> = {};
   const answered: Record<string, string> = {};
@@ -576,7 +580,7 @@ export function awaitingInput(events: EventRecord[]): Record<string, EventRecord
     // is two open questions, and a worker's unstamped log keys by ref alone.
     const key = boardKey(ref, typeof event.instance === "string" ? event.instance : undefined);
     if (event.event === "session.awaiting_input") open[key] = event;
-    if (event.event === "session.reply_sent") answered[key] = event.ts;
+    if (ASK_CLOSERS.has(event.event)) answered[key] = event.ts;
   }
   for (const [ref, asked] of Object.entries(open)) {
     const reply = answered[ref];
@@ -889,17 +893,23 @@ export interface AttentionEntry {
   gate?: { repo: string; workItem: string; node: string; pr?: number; prRepo?: string };
 }
 
-/** needs input > human gate > awaiting/armed/paused > errors (issue-283 B4). */
+/**
+ * needs input > human gate > awaiting/armed/paused/stalled > errors
+ * (issue-283 B4) > information: a declared wait asks for nothing (issue-551).
+ */
 const TIER_NEEDS_INPUT = 0;
 const TIER_GATE = 1;
 const TIER_WAITING = 2;
 const TIER_ERROR = 3;
+const TIER_INFO = 4;
 
 const KIND_TIER: Record<string, number> = {
   "awaiting-input": TIER_NEEDS_INPUT,
   "session-paused": TIER_WAITING,
   "armed-without-session": TIER_WAITING,
+  stalled: TIER_WAITING,
   "recent-error": TIER_ERROR,
+  "declared-wait": TIER_INFO,
 };
 
 /**

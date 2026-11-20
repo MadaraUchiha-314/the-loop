@@ -784,3 +784,74 @@ def test_the_poll_builder_wires_an_opener_by_default(tmp_path, monkeypatch):
     monkeypatch.setenv("THE_LOOP_CONFIG", str(tmp_path / "missing.yaml"))
     dispatcher, _ = poll._build_dispatcher({"registryDir": str(tmp_path / "local")})
     assert dispatcher.opener is not None
+
+
+# -- the derived state of each listed session (issue-551, R7) --------------------
+
+
+def _turn_log(tmp_path, *records):
+    from pathlib import Path
+
+    log = Path(layout_from_config(_config(tmp_path)).event_log)
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_text("".join(json.dumps(r) + "\n" for r in records))
+
+
+def test_list_sessions_says_not_watched_for_a_session_with_no_turn_record(tmp_path):
+    _register(tmp_path)
+    (row,) = core_sessions.list_sessions(config=_config(tmp_path))
+    assert row["session"]["state"] == "not-watched"
+    assert row["session"]["summary"] == "not watched"
+
+
+def test_list_sessions_carries_each_sessions_state_from_one_read(tmp_path, monkeypatch):
+    """Requirement: docs/specs/issue-551/requirements.md R7.1."""
+    from datetime import datetime, timezone
+
+    from the_loop.core import sessionstate
+
+    other = "github:octo/repo#6"
+    _register(tmp_path)
+    SessionRegistry(layout_from_config(_config(tmp_path)).local_dir).register(
+        Session(
+            work_item=WorkItemRef.parse(other),
+            harness="claude",
+            harness_session_id="sess-2",
+            cwd=str(tmp_path),
+        )
+    )
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    _turn_log(
+        tmp_path,
+        {
+            "ts": now,
+            "event": "session.turn_started",
+            "work_item": REF,
+            "node": "design",
+        },
+    )
+    reads = []
+    real = sessionstate.load
+    monkeypatch.setattr(
+        sessionstate, "load", lambda path: reads.append(path) or real(path)
+    )
+
+    rows = {r["ref"]: r for r in core_sessions.list_sessions(config=_config(tmp_path))}
+
+    assert len(reads) == 1
+    assert rows[REF]["session"]["state"] == "working"
+    assert rows[REF]["session"]["node"] == "design"
+    assert set(rows[REF]["session"]) == {"state", "node", "since", "detail", "summary"}
+    assert rows[other]["session"]["state"] == "not-watched"
+
+
+def test_list_sessions_survives_a_state_it_cannot_read(tmp_path, monkeypatch):
+    from the_loop.core import sessionsurface
+
+    def broken(*args, **kwargs):
+        raise OSError("the event log is not readable")
+
+    _register(tmp_path)
+    monkeypatch.setattr(sessionsurface, "Reader", broken)
+    (row,) = core_sessions.list_sessions(config=_config(tmp_path))
+    assert "session" not in row

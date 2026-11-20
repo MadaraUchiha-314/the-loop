@@ -48,9 +48,10 @@ _ASK_CLOSERS = frozenset(
 )
 
 #: Records that start a new nudge budget: the pointer moved, or a person's event
-#: reached the session. `dispatch.succeeded` is left out on purpose — it also
-#: records a CI event, an assignment and the watcher's own paste, and counting
-#: those would let a stuck session be nudged without end (abuse case 5).
+#: reached the session. `dispatch.succeeded` is not here: it also records a CI
+#: event, an assignment and the watcher's own paste, and counting those would
+#: let a stuck session be nudged without end (abuse case 5). It resets the
+#: budget only when it names the person (:func:`_delivered_a_person`).
 _BUDGET_RESETS = frozenset(
     {
         "graph.started",
@@ -61,9 +62,14 @@ _BUDGET_RESETS = frozenset(
     }
 )
 
+#: The dispatcher's delivery record. It carries `actor` only for an authorized
+#: person's comment or review.
+_DELIVERED = "dispatch.succeeded"
+
 #: Every event type the derivation reads. :func:`load` keeps nothing else.
 EVENTS = frozenset(
     {
+        _DELIVERED,
         _TURN_STARTED,
         _TURN_ENDED,
         "session.wait_declared",
@@ -295,7 +301,7 @@ def derive(
         if event in _ASK_CLOSERS:
             if ask is not None and ask.closed is None and ask.closed_by(record):
                 ask.closed = moment
-        if event in _BUDGET_RESETS:
+        if event in _BUDGET_RESETS or _delivered_a_person(record):
             nudges_spent, notified, last_nudge = 0, False, None
 
     open_ask = ask.view() if ask is not None and ask.closed is None else None
@@ -406,6 +412,10 @@ def derive(
     )
 
 
+def _delivered_a_person(record: Dict[str, Any]) -> bool:
+    return record.get("event") == _DELIVERED and bool(_text(record, "actor"))
+
+
 def _later(first: _Moment, second: Optional[_Moment]) -> _Moment:
     return second if second is not None and second[0] > first[0] else first
 
@@ -446,8 +456,11 @@ def load(path: Union[str, Path]) -> Dict[str, List[Dict[str, Any]]]:
     """
     grouped: Dict[str, List[Dict[str, Any]]] = {}
     for record in eventlog.read_events(path):
-        if record.get("event") not in EVENTS:
+        event = record.get("event")
+        if event not in EVENTS:
             continue
+        if event == _DELIVERED and not _delivered_a_person(record):
+            continue  # most of a busy log, and nothing the derivation reads
         ref = record.get("work_item")
         if isinstance(ref, str) and ref:
             grouped.setdefault(ref, []).append(record)

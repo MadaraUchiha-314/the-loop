@@ -19,6 +19,7 @@ import re
 import threading
 import time
 import uuid
+from datetime import datetime, timezone
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from string import Template
@@ -4188,13 +4189,16 @@ class Dispatcher:
             # With R8 in place no ordinary path reaches this: the first spawn
             # already carries the frozen choice. It stays because the cases it
             # covers are real and would otherwise be silent.
-            return self._respawn_tmux(
+            respawned = self._respawn_tmux(
                 endpoint,
                 routed,
                 prompt,
                 advance_after=gate_report is None,
                 owner=session.work_item,
             )
+            if respawned:
+                self._record_answer(endpoint, self._person_behind(routed))
+            return respawned
         result = self.tmux.deliver(
             endpoint, prompt, timeout=self.config.dispatch_timeout_seconds
         )
@@ -4205,20 +4209,27 @@ class Dispatcher:
             # deliver this event into it, instead of releasing for a
             # redelivery that would hit the same missing session forever
             # (issue-80).
-            return self._respawn_tmux(
+            respawned = self._respawn_tmux(
                 endpoint,
                 routed,
                 prompt,
                 advance_after=gate_report is None,
                 owner=session.work_item,
             )
+            if respawned:
+                self._record_answer(endpoint, self._person_behind(routed))
+            return respawned
         ok, error, verb = result.ok, result.error, "delivered into tmux session"
 
         if ok:
             logger.info("%s %s for %s", verb, session.harness, key)
+            person = self._person_behind(routed)
             eventlog.emit(
                 "dispatch.succeeded",
                 work_item=key,
+                # Only for an authorized person's comment or review (issue-551):
+                # the one delivery that starts a new nudge budget.
+                actor=person or None,
                 # Which conversation actually got it, when that is not the work
                 # item's own (issue-172).
                 endpoint=(endpoint.work_item.ref if endpoint is not session else None),
@@ -4227,6 +4238,7 @@ class Dispatcher:
                 gh_event=routed.event,
                 delivery_id=routed.delivery_id or None,
             )
+            self._record_answer(endpoint, person)
             self.registry.touch(
                 key,
                 delivery_id=routed.delivery_id or None,
@@ -4268,6 +4280,59 @@ class Dispatcher:
         if routed.delivery_id:
             self._release_delivery(routed.delivery_id)
         return False
+
+    def _person_behind(self, routed: RoutedEvent) -> str:
+        """The authorized user whose words ``routed`` carries; ``""`` otherwise.
+
+        A comment or a review only: a CI status, a label and an open/close
+        action carry no text of a person's. The-loop's own marked comment and an
+        unauthorized author never reach the dispatcher (the router drops both).
+        The allow-list is asked again here because a work-item collaborator is
+        let through as input and nothing more (issue-307): an answer that
+        cancels a default is an authorized user's (issue-551, abuse case 1).
+        """
+        if event_body(routed.event, routed.payload) is None:
+            return ""
+        actor = event_actor(routed.event, routed.payload) or ""
+        if not actor or not self._actor_authorized(routed, actor):
+            return ""
+        return actor
+
+    def _record_answer(self, endpoint: Session, person: str) -> None:
+        """Write `session.ask_answered` when ``person``'s delivered event reached
+        a conversation with an open ask (issue-551, R6.3).
+
+        Called only after a delivery succeeded. Whether an ask is open is the
+        derivation's answer, read from the log this process writes; the log is
+        read only for a person's event, never for a CI event or a label.
+        """
+        if not person:
+            return
+        from ..core import sessionstate  # core imports this module
+
+        ref = endpoint.work_item.ref
+        try:
+            path = eventlog.current_path()
+            if path is None:
+                return
+            state = sessionstate.derive(
+                sessionstate.load(path).get(ref, []),
+                now=datetime.now(timezone.utc),
+                watchdog=self.config.watchdog,
+                asks=self.config.asks,
+                work_item=ref,
+            )
+        except Exception as exc:  # noqa: BLE001 — the answer is already delivered
+            logger.warning("cannot read the open ask of %s: %s", ref, exc)
+            return
+        if state.open_ask is None:
+            return
+        eventlog.emit(
+            "session.ask_answered",
+            work_item=ref,
+            ask_id=state.open_ask.ask_id,
+            actor=person,
+        )
 
     # -- the handoff pick-up (issue-517) -----------------------------------------
 

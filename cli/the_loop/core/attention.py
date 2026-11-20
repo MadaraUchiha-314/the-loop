@@ -1,9 +1,10 @@
 """Core capability: what needs attention (issue-161, R6.3).
 
 Derived, never stored: paused sessions, recent delivery/dispatch failures from
-the event log, armed work items with no live session, and sessions waiting on a
-human answer (`session.awaiting_input` not yet closed by a `session.reply_sent`
-— issue-208). Graph-gate waits are
+the event log, armed work items with no live session, and what
+:mod:`sessionstate` derives from the event log (issue-551): an open question
+(issue-208), a stalled session and — as information — a declared wait.
+Graph-gate waits are
 repo-scoped (they live in each checkout's work-item state), so they surface through
 ``graphs.check`` per work item; this module aggregates only what the machine's
 own state can answer.
@@ -17,6 +18,7 @@ from typing import Any, Dict, List, Optional
 from .. import strings
 from . import events as core_events
 from . import sessions as core_sessions
+from . import sessionsurface
 from . import workitems as core_workitems
 
 #: How long a ``recent-error`` stays on the attention surface (issue-283 B5).
@@ -35,7 +37,9 @@ def _recent_error_cutoff(now: Optional[datetime] = None) -> str:
 def list_attention(config: Optional[dict] = None) -> List[Dict[str, Any]]:
     items: List[Dict[str, Any]] = []
 
-    sessions = core_sessions.list_sessions(config=config)
+    # One read of the event log serves every session's state (issue-551).
+    states = sessionsurface.Reader(config)
+    sessions = core_sessions.list_sessions(config=config, states=states)
     by_ref = {s["ref"]: s for s in sessions}
     # A pull request's session is stored *nested* under the work item it
     # delivers (``pullRequests``, issue-172), never as a record of its own — so
@@ -89,44 +93,71 @@ def list_attention(config: Optional[dict] = None) -> List[Dict[str, Any]]:
 
     log_path = layout_from_config(config or {}).event_log if config else None
 
-    # A question asked through `the-loop ask` is open until a reply through the
-    # control plane is at least as new (issue-208). The SAME open/answered rule
-    # the dashboard implements in ui/src/api/model.ts::awaitingInput — change
-    # one and the other is a reviewable change, or the two surfaces disagree.
-    asked: Dict[str, Dict[str, Any]] = {}
-    answered: Dict[str, str] = {}
-    for event in core_events.query_events(
-        log_path,
-        types=["session.awaiting_input", "session.reply_sent"],
-        limit=0,
-    ):
-        ref = str(event.get("work_item") or "")
-        if not ref:
-            continue
-        if event.get("event") == "session.awaiting_input":
-            asked[ref] = event
-        else:
-            answered[ref] = str(event.get("ts", ""))
-    for ref, event in asked.items():
-        reply_ts = answered.get(ref)
-        if reply_ts is not None and reply_ts >= str(event.get("ts", "")):
-            continue
+    # Whether a question is open, and whether a session is stalled or waits, is
+    # :mod:`sessionstate`'s answer (issue-551): an ask closes on a reply, an
+    # authorized answer or its default being taken. The dashboard mirrors the
+    # open-ask rule in ui/src/api/model.ts::awaitingInput — change one and the
+    # other is a reviewable change, or the two surfaces disagree.
+    active = {s["ref"] for s in sessions if s["status"] == "active"}
+    waits: List[Dict[str, Any]] = []
+    for ref in states.refs:
         if ref in ended:
             continue  # the item ended; nobody is waiting for the answer
-        question = str(event.get("question") or "").strip()
-        items.append(
-            {
+        state = states(ref)
+        ask = state.open_ask
+        if ask is not None:
+            detail = (
+                strings.t(
+                    "core.attention.awaiting-input-question", question=ask.question
+                )
+                if ask.question
+                else strings.t("core.attention.awaiting-input")
+            )
+            row: Dict[str, Any] = {
                 "workItem": ref,
                 "kind": "awaiting-input",
-                "detail": (
-                    strings.t(
-                        "core.attention.awaiting-input-question", question=question
-                    )
-                    if question
-                    else strings.t("core.attention.awaiting-input")
-                ),
+                "detail": detail,
             }
-        )
+            if ask.default_at is not None:
+                row["detail"] = strings.t(
+                    "core.attention.awaiting-input-default",
+                    detail=detail,
+                    default_at=sessionsurface.clock(ask.default_at, states.now),
+                )
+                row["default"] = ask.default
+                row["defaultAt"] = ask.default_at
+            items.append(row)
+        # A turn record outlives its session, so only a live session stalls or
+        # waits. Neither row is stored: each leaves when the state does (R7.5).
+        if ref not in active:
+            continue
+        if state.state == "stalled":
+            items.append(
+                {
+                    "workItem": ref,
+                    "kind": "stalled",
+                    "detail": strings.t(
+                        "core.attention.stalled",
+                        node=state.node or "-",
+                        elapsed=sessionsurface.elapsed(state.since, states.now),
+                        nudges=sessionsurface.nudges(state),
+                    ),
+                    "at": state.since or "",
+                }
+            )
+        wait = state.declared_wait
+        if state.state == "waiting" and state.reason == "declared-wait" and wait:
+            waits.append(
+                {
+                    "workItem": ref,
+                    "kind": "declared-wait",
+                    "detail": strings.t(
+                        "core.attention.declared-wait",
+                        condition=wait.condition,
+                        until=sessionsurface.clock(wait.until, states.now),
+                    ),
+                }
+            )
 
     # Recent errors age out (issue-283 B5): only errors from the last
     # RECENT_ERROR_MAX_AGE_HOURS are "recent", and a ``poll.*`` error whose work
@@ -170,4 +201,6 @@ def list_attention(config: Optional[dict] = None) -> List[Dict[str, Any]]:
                 "at": ts,
             }
         )
-    return items
+    # Information, not a call to act: a row has no severity field, so a
+    # declared wait says so in its text and comes last (issue-551).
+    return items + waits

@@ -728,12 +728,17 @@ class SessionsCommand(Command):
                 strings.t("cli.sessions.list.column.session-id"),
                 strings.t("cli.sessions.list.column.tmux"),
                 strings.t("cli.sessions.list.column.status"),
+                strings.t("cli.sessions.list.column.state"),
                 strings.t("cli.sessions.list.column.control"),
                 strings.t("cli.sessions.list.column.last-event"),
             )
         ]
+        # What each session is doing (issue-551, R7): the state the service
+        # derived from the event log. `-` for a row that carries none.
+        states = strings.section("cli.sessions.list.state")
         for s in sessions:
             record = s.get("control")
+            state = (s.get("session") or {}).get("state") or ""
             # What this session is actually running on (issue-358). `-` means
             # "the harness's own" — either the work item chose nothing, or the
             # record predates the-loop recording it. An effort level rides in the
@@ -751,6 +756,7 @@ class SessionsCommand(Command):
                     s["harnessSessionId"],
                     s["tmuxTarget"] or "-",
                     s["status"],
+                    states.get(state, state or "-"),
                     f"{record['command']} ({record['source']})" if record else "-",
                     s["lastEventAt"] or "-",
                 )

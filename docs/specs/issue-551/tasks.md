@@ -80,7 +80,7 @@ green.
   - _Depends on:_ 1, 2
   - _Requirements:_ R4.5, R4.6
   - _Test:_ T1 — `tests/test_session_state.py -k turn_started`; T10 — `tests/test_harness_gate.py -k turn_start_without_cli`
-- [ ] 7. Make the Stop hook ask the service
+- [x] 7. Make the Stop hook ask the service
   - The hook forwards the harness payload to `stop-check`, keeps its attempt cap,
     and reports a give-up. When the verb is missing or the service is silent, it
     falls back to `the-loop check` with a `wait` before the pointer counted as
@@ -103,7 +103,7 @@ green.
   - _Depends on:_ none
   - _Requirements:_ R5
   - _Test:_ T2 — `tests/test_inbound_readonly_integration.py`: `Scenario: a comment does not block an agent node`, `Scenario: a met exit gate still advances on a comment`, `Scenario: a human gate still classifies the comment it receives`
-- [ ] 10. Give an ask a deadline
+- [x] 10. Give an ask a deadline
   - `the-loop ask --after`. `session.awaiting_input` carries the default, its time
     and an ask id in the event log. The posted question states the default and the
     time. The dispatcher writes `session.ask_answered` when it delivers an
@@ -132,7 +132,7 @@ green.
   - _Depends on:_ 11
   - _Requirements:_ R4.4, R4.5, R6.2, R6.7, R6.8, R7.4
   - _Test:_ T2 — `Scenario: the stall notice is a short form in the work item's conversation`; T9 — the `text` fallback; T8 — abuse cases 3, 6
-- [ ] 13. Show the state on the status surfaces
+- [x] 13. Show the state on the status surfaces
   - The `session:` line and object of `the-loop check`, the state in
     `the-loop sessions list`, the `stalled` and `declared-wait` attention kinds, the
     default on an `awaiting-input` row, and the control-plane UI's mirror of the

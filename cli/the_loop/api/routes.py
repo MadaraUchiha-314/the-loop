@@ -180,6 +180,9 @@ class SessionAskBody(BaseModel):
     question: str
     summary: str = ""
     default: str = ""
+    # How long before `default` is taken (issue-551 R6). Raised to the operator's
+    # `routing.asks.minDefaultWaitSeconds` when it is under it.
+    defaultAfterSeconds: Optional[int] = Field(default=None, ge=1)
     # Recorded on the event for the audit trail; never trusted as authentication
     # (decision-059: the gateway owns auth).
     actor: str = ""
@@ -804,6 +807,7 @@ def build_router(
             default_answer=body.default,
             actor=body.actor,
             instance=body.instance,
+            default_after_seconds=body.defaultAfterSeconds,
         )
 
     @router.post(

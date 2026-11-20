@@ -24,11 +24,11 @@ Pure apart from the one event-log record; no Slack, no disk.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, List, Optional, Tuple
 
 from .. import eventlog, strings
-from .defuse import defuse
+from .defuse import MARKDOWN_LINK_RE, defuse
 from .mrkdwn import outside_code, to_mrkdwn, unfold
 from .render import HEADING_LINE_RE, ITEM_RE, QUOTE_RE, block_spans, heading_text
 from .voice import room_lead
@@ -40,6 +40,7 @@ __all__ = [
     "build_short_form",
     "cap_short_form",
     "cut_at_boundary",
+    "default_line",
     "is_session_authored",
     "long_form_adds",
     "sentence_ends",
@@ -230,6 +231,39 @@ def _with_preamble(preamble: str, body: str, limit: int) -> str:
     return f"{preamble}\n{capped}" if capped else preamble
 
 
+#: How much of a default answer the short form quotes; the ticket has all of it.
+DEFAULT_QUOTE_CHARS = 200
+
+
+def default_line(event: Any) -> str:
+    """The line a question with a default and a deadline gains (issue-551, R6.1):
+    when the session goes ahead, and with what. mrkdwn; ``""`` for any other
+    event, and for a default with no readable time.
+
+    The default is the session's own text, so it is flattened to one line, its
+    links are drawn as words and it is defused before it is quoted (abuse case
+    6). It is not drawn as mrkdwn: nothing in it becomes a link."""
+    if str(getattr(event, "event_type", "") or "") != "session.awaiting_input":
+        return ""
+    from ..core.sessionstate import parse_ts  # core imports the channels
+
+    detail = getattr(event, "detail", None) or {}
+    default = " ".join(str(detail.get("default") or "").split())
+    moment = parse_ts(detail.get("default_at"))
+    if not default or moment is None:
+        return ""
+    if len(default) > DEFAULT_QUOTE_CHARS:
+        default = default[: DEFAULT_QUOTE_CHARS - 1].rstrip() + "…"
+    after = str(detail.get("default_after") or "")
+    return strings.t(
+        "channels.shortform.default-line",
+        time=moment.strftime("%H:%M UTC"),
+        # A minute that has begun is counted, so the wait is never understated.
+        minutes=-(-int(after) // 60) if after.isdigit() else "?",
+        default=defuse(MARKDOWN_LINK_RE.sub(r"\1 (\2\3)", default)),
+    )
+
+
 def build_short_form(
     event: Any,
     *,
@@ -246,6 +280,28 @@ def build_short_form(
     line, the mentions; trusted, so not defused); it opens the text and counts
     toward the cap (R7, R9.3).
     """
+    tail = default_line(event)
+    if tail and len(tail) < limit:
+        # The line counts toward the cap, and is never the part that is cut.
+        short = _short_form(
+            event,
+            session_authored=session_authored,
+            preamble=preamble,
+            limit=limit - len(tail) - 1,
+        )
+        return replace(short, text=f"{short.text}\n{tail}".strip())
+    return _short_form(
+        event, session_authored=session_authored, preamble=preamble, limit=limit
+    )
+
+
+def _short_form(
+    event: Any,
+    *,
+    session_authored: Optional[bool],
+    preamble: str,
+    limit: int,
+) -> ShortForm:
     url = str(getattr(event, "url", "") or "")
     summary = _draw(str(getattr(event, "summary", "") or ""))
     if summary:

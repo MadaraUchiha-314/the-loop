@@ -380,6 +380,8 @@ def test_a_new_idle_period_on_the_same_node_inherits_what_was_spent():
         ev(28, "graph.forced", to="verification"),
         ev(28, "session.reply_sent", actor="rohith"),
         ev(28, "session.ask_answered", ask_id="a1", actor="rohith"),
+        # A person's comment the dispatcher delivered: the record names them.
+        ev(28, "dispatch.succeeded", via="tmux", actor="rohith"),
     ],
     ids=lambda record: record["event"],
 )
@@ -394,6 +396,8 @@ def test_a_daemon_delivery_does_not_reset_the_budget():
     """`dispatch.succeeded` also records a CI event and the watcher's own paste."""
     log = one_empty_turn_per_nudge() + [
         ev(28, "dispatch.succeeded", via="tmux", gh_event="check_run"),
+        ev(28, "dispatch.succeeded", via="tmux", actor=""),
+        ev(28, "dispatch.succeeded", via="tmux", actor=None),
         ev(28, "graph.assignment_delivered"),
         started(29),
         ended(30, "exit-met"),
@@ -759,6 +763,8 @@ def test_load_groups_the_records_that_matter_by_work_item(tmp_path):
             ev(2, "dispatch.succeeded"),
             {"ts": stamp(3), "event": "receiver.started"},
             ended(4, "exit-met"),
+            # Kept only when it names the person whose event it delivered.
+            ev(5, "dispatch.succeeded", actor="rohith"),
         ],
     )
     with open(path, "a", encoding="utf-8") as handle:
@@ -768,6 +774,7 @@ def test_load_groups_the_records_that_matter_by_work_item(tmp_path):
     assert [r["event"] for r in grouped[REF]] == [
         "session.turn_started",
         "session.turn_ended",
+        "dispatch.succeeded",
     ]
     assert state_at(grouped[REF], 20).state == "stalled"
     assert state_at(grouped.get("github:acme/widgets#9", []), 20).state == "not-watched"
@@ -925,3 +932,56 @@ def test_surfaces_detail_text_comes_from_the_string_catalog(monkeypatch):
     monkeypatch.setattr(sessionstate.strings, "t", spy)
     view_at([started(0), ended(5, "human-gate")], 6)
     assert seen and all(key.startswith("core.sessionstate.") for key in seen)
+
+
+# -- the `session:` line (design/messages.html § 6) -------------------------------
+
+
+def line_at(log, minutes: float) -> str:
+    from the_loop.core import sessionsurface
+
+    return sessionsurface.summary(state_at(log, minutes), at(minutes))
+
+
+def test_surfaces_line_for_each_state_reads_as_the_wording_contract():
+    """Requirement: R7.1–R7.3. T0 is 12:00, so minute 5 is 12:05."""
+    assert line_at([], 5) == "not watched"
+    assert line_at([started(3)], 5) == "working (turn running since 12:03)"
+
+    log = [started(0), ended(5, "exit-met", node="self-review")]
+    assert line_at(log, 9) == "idle at self-review since 12:05 (4 min)"
+    log += [
+        ev(15, "session.nudged", stall_id=stall_id(5), nudge=1),
+        ev(25, "session.nudged", stall_id=stall_id(5), nudge=2),
+    ]
+    assert line_at(log, 27) == ("STALLED at self-review since 12:05 (22 min, 2 nudges)")
+    log.append(ev(35, "session.stalled", stall_id=stall_id(5), idle_since=stamp(5)))
+    assert line_at(log, 40) == (
+        "STALLED at self-review since 12:05 (35 min, 2 nudges, a person was told)"
+    )
+
+    wait = [
+        started(0),
+        ev(4, "session.wait_declared", condition="CI on #552", until=stamp(34)),
+        ended(5, "declared-wait"),
+    ]
+    assert line_at(wait, 6) == "waiting for “CI on #552” until 12:34"
+
+    asked = [started(0), ask(1, ask_id="a1"), ended(2, "open-ask")]
+    assert line_at(asked, 5) == "asked 12:01; waiting for an answer"
+    asked[1] = ask(1, ask_id="a1", default="Move it.", default_at=stamp(31))
+    assert line_at(asked, 5) == "asked 12:01; default “Move it.” at 12:31"
+
+    gate = line_at([started(0), ended(5, "human-gate")], 6)
+    assert gate.startswith("waiting") and "human gate" in gate
+
+
+def test_surfaces_line_counts_one_nudge_and_names_another_day():
+    log = [
+        started(0),
+        ended(5, "exit-met", node=""),
+        ev(15, "session.nudged", stall_id=stall_id(5), nudge=1),
+    ]
+    # No node: the line says nothing about one. Three hours on: hours.
+    assert line_at(log, 190) == "STALLED since 12:05 (3 h 5 min, 1 nudge)"
+    assert "2026-11-20 12:05" in line_at(log, 60 * 24)

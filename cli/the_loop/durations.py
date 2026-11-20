@@ -13,7 +13,7 @@ import re
 
 from . import strings
 
-__all__ = ["parse_duration"]
+__all__ = ["clamp", "in_words", "parse_duration"]
 
 # ASCII digits only (`\d` also matches other scripts' digits), no leading zero,
 # and `fullmatch` so that a trailing newline is not accepted the way `$` would.
@@ -27,3 +27,18 @@ def parse_duration(text: str) -> int:
     if match is None:
         raise ValueError(strings.t("durations.invalid", text=repr(text)))
     return int(match.group(1)) * _SECONDS[match.group(2)]
+
+
+def clamp(seconds: int, minimum: int) -> int:
+    """``seconds``, raised to the operator's ``minimum`` when it is under it (R6.5)."""
+    return max(seconds, minimum)
+
+
+def in_words(seconds: int) -> str:
+    """``1800`` → ``30 minutes``, for a sentence a person reads. Whole minutes
+    when it is whole minutes, else seconds: a wait is never rounded in words."""
+    if seconds % 60:
+        return strings.t("durations.seconds", count=seconds)
+    if seconds == 60:
+        return strings.t("durations.minute")
+    return strings.t("durations.minutes", count=seconds // 60)

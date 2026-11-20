@@ -45,9 +45,15 @@ import { useStream, type StreamState } from "./useStream.ts";
  * The event types that put a work item in "waiting on you" — one filtered call
  * for the whole board rather than one per row. `awaiting_input` is emitted by
  * `the-loop ask` and closed by the `reply_sent` the reply route emits
- * (issue-208). See ui/README.md.
+ * (issue-208), by an authorized answer or by its default being taken
+ * (issue-551). See ui/README.md.
  */
-const QUESTION_EVENTS = ["session.awaiting_input", "session.reply_sent"];
+const QUESTION_EVENTS = [
+  "session.awaiting_input",
+  "session.reply_sent",
+  "session.ask_answered",
+  "session.ask_default_taken",
+];
 
 /** Simultaneous graph checks. Reads are cheap but not free — they build a runtime. */
 const GRAPH_CONCURRENCY = 4;

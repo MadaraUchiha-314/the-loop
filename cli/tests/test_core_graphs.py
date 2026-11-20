@@ -271,3 +271,102 @@ def test_check_names_the_state_file_it_read_or_looked_for(tmp_path):
     assert absent["statePath"] == str(
         tmp_path / "docs" / "specs" / "issue-2" / "work-item-state.json"
     )
+
+
+# -- the `session` object of the check report (issue-551, R7) --------------------
+
+
+def _session_fixture(tmp_path, records, ref="github:octo/repo#161", status="active"):
+    """A config whose registry holds one session for ``ref`` in this checkout,
+    and whose event log holds ``records``."""
+    import json
+    import pathlib
+
+    from the_loop.sessions.registry import Session, SessionRegistry
+    from the_loop.state import layout_from_config
+    from the_loop.workitem import WorkItemRef
+
+    repo_root = str(pathlib.Path(__file__).resolve().parents[2])
+    config = {"state": {"root": str(tmp_path / ".the-loop")}}
+    layout = layout_from_config(config)
+    registry = SessionRegistry(layout.local_dir)
+    registry.register(
+        Session(
+            work_item=WorkItemRef.parse(ref),
+            harness="claude",
+            harness_session_id="sess-1",
+            cwd=repo_root,
+        )
+    )
+    if status == "closed":
+        registry.close(ref)
+    log = pathlib.Path(layout.event_log)
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_text("".join(json.dumps({"work_item": ref, **r}) + "\n" for r in records))
+    return repo_root, config
+
+
+def _turn_started():
+    from datetime import datetime, timezone
+
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    return {"ts": ts, "event": "session.turn_started", "node": "design"}
+
+
+def test_check_carries_the_session_of_a_registered_work_item(tmp_path):
+    """Requirement: docs/specs/issue-551/requirements.md R7.1."""
+    repo_root, config = _session_fixture(tmp_path, [_turn_started()])
+
+    report = graphs.check(repo_root, "github:octo/repo#161", config=config)
+
+    session = report["session"]
+    assert (session["state"], session["node"]) == ("working", "design")
+    assert set(session) == {"state", "node", "since", "detail", "summary"}
+    assert session["summary"].startswith("working (turn running since ")
+    # A bare id resolves to the session registered for this checkout.
+    assert graphs.check(repo_root, "issue-161", config=config)["session"] == session
+
+
+def test_check_shows_a_session_with_no_turn_record_as_not_watched(tmp_path):
+    repo_root, config = _session_fixture(tmp_path, [])
+    session = graphs.check(repo_root, "issue-161", config=config)["session"]
+    assert (session["state"], session["summary"]) == ("not-watched", "not watched")
+
+
+def test_check_has_no_session_without_a_live_registered_one(tmp_path):
+    """The field is absent, never null and never an error (the contract)."""
+    repo_root, config = _session_fixture(tmp_path, [_turn_started()], status="closed")
+    assert "session" not in graphs.check(repo_root, "issue-161", config=config)
+
+    repo_root, config = _session_fixture(
+        tmp_path / "other", [_turn_started()], ref="github:octo/repo#999"
+    )
+    assert "session" not in graphs.check(repo_root, "issue-161", config=config)
+
+
+def test_check_survives_a_session_state_it_cannot_read(tmp_path, monkeypatch):
+    from the_loop.core import sessionsurface
+
+    repo_root, config = _session_fixture(tmp_path, [_turn_started()])
+
+    def broken(*args, **kwargs):
+        raise OSError("the event log is not readable")
+
+    monkeypatch.setattr(sessionsurface, "Reader", broken)
+    report = graphs.check(repo_root, "issue-161", config=config)
+    assert "session" not in report and report["nodes"]
+
+
+def test_reading_the_session_writes_nothing(tmp_path):
+    """`check` stays pure: the log and the registry are read, never written."""
+    import pathlib
+
+    repo_root, config = _session_fixture(tmp_path, [_turn_started()])
+    before = {
+        p: p.read_bytes() for p in pathlib.Path(tmp_path).rglob("*") if p.is_file()
+    }
+    graphs.check(repo_root, "issue-161", config=config)
+    after = {
+        p: p.read_bytes() for p in pathlib.Path(tmp_path).rglob("*") if p.is_file()
+    }
+    assert after == before

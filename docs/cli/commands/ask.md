@@ -40,6 +40,8 @@ the answer.
 | `--work-item` | required | The ref the question goes to: `github:…`, or `jira:<site>/<KEY>-<n>`, where the Jira ledger records it on the ticket with the visible self-marker. |
 | `--question` | — | The question text (markdown). |
 | `--question-file` | — | Read the question from a file; `-` reads stdin. Exactly one of the two. |
+| `--default` | — | The answer to take if nobody objects. A channel that takes button presses offers it as a one-tap reply. |
+| `--after` | — | How long to wait before the `--default` answer is taken: `45s`, `30m` or `2h`. It needs `--default`. A wait under `routing.asks.minDefaultWaitSeconds` is raised to it, and the output says so. The question states the default and the time; an authorized answer before that time cancels it. |
 
 ## Notes
 

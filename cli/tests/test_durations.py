@@ -2,7 +2,7 @@
 
 import pytest
 
-from the_loop.durations import parse_duration
+from the_loop.durations import clamp, parse_duration
 
 
 @pytest.mark.parametrize(
@@ -67,3 +67,19 @@ def test_anything_else_is_refused(text):
 def test_a_value_that_is_not_text_is_refused(value):
     with pytest.raises(ValueError):
         parse_duration(value)  # type: ignore[arg-type]
+
+
+# -- the operator's minimum (R6.5) -------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "seconds, minimum, used",
+    [(60, 1800, 1800), (1799, 1800, 1800), (1800, 1800, 1800), (7200, 1800, 7200)],
+)
+def test_a_wait_under_the_minimum_is_raised_to_it(seconds, minimum, used):
+    assert clamp(seconds, minimum) == used
+
+
+def test_a_parsed_duration_under_the_minimum_is_raised():
+    assert clamp(parse_duration("5m"), 1800) == 1800
+    assert clamp(parse_duration("2h"), 1800) == 7200

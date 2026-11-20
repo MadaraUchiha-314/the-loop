@@ -23,10 +23,11 @@ import shutil
 import uuid
 from collections import deque
 from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
-from .. import cli_config, envstate, eventlog, lifecycle, prompts
+from .. import cli_config, durations, envstate, eventlog, lifecycle, prompts
 from .. import strings
 from ..authz import mark_self_authored
 from ..cleanup import SESSION, TMUX, WORKSPACE
@@ -51,7 +52,9 @@ from ..sessions.registry import RegistryError, Session, SessionRegistry
 from ..state import layout_from_config, legacy_layout
 from ..webhook.dispatcher import SETTLED_START_GATE, TmuxConfig
 from ..webhook.router import RoutedEvent
+from ..watchconfig import AsksConfig
 from ..workitem import WorkItemRef
+from . import sessionstate
 
 logger = logging.getLogger("the-loop.core.sessions")
 
@@ -155,6 +158,7 @@ def list_sessions(
     config: Optional[dict] = None,
     registry_dir: str = "",
     portable_dir: str = "",
+    states: Optional[Any] = None,
 ) -> List[Dict[str, Any]]:
     """Every registered session, with its last recorded control command.
 
@@ -163,10 +167,22 @@ def list_sessions(
     string every caller actually keys on, and ``control``, the control record
     or ``None``. Nothing is projected away — the CLI, the API and the MCP tools
     all read one shape, and a field added to a session shows up in all three.
+
+    Each entry also carries ``session``, what the session is doing (issue-551,
+    R7): the object `the-loop check` reports, `not-watched` for a session with
+    no turn record. The event log is read once for the whole listing; a
+    caller that has read it already passes its ``states``.
     """
     registry = SessionRegistry(_registry_dir(config, registry_dir))
     control = _control_store(config, portable_dir)
     boundary, live_pids = _credential_view(config)
+    try:
+        from .sessionsurface import Reader
+
+        states = states or Reader(config)
+    except Exception:  # noqa: BLE001 — a listing never fails on this decoration
+        logger.debug("could not read the sessions' state", exc_info=True)
+        states = None
     sessions = []
     for session in registry.list_sessions(status=status):
         record = control.get(session.work_item)
@@ -175,6 +191,7 @@ def list_sessions(
             {
                 "ref": session.work_item.ref,
                 **session.to_dict(),
+                **({"session": states.view(session.work_item.ref)} if states else {}),
                 "control": record.to_dict() if record else None,
                 # issue-533, R7.1: name → fingerprint, only for a live session.
                 "credentials": (
@@ -741,6 +758,10 @@ def close_session(
 
 # -- ask & reply (issue-208) -----------------------------------------------------
 
+#: A default answer is posted on the thread and pasted back into the session, so
+#: it is capped (issue-551, design § Security design).
+MAX_DEFAULT_LENGTH = 600
+
 
 def ask_session(
     ref: str,
@@ -749,8 +770,14 @@ def ask_session(
     summary: str = "",
     default_answer: str = "",
     actor: str = "",
+    default_after_seconds: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Post an agent's question on its work item and record the wait.
+
+    ``default_after_seconds`` (issue-551, R6) is how long a person has before
+    ``default_answer`` is taken. It needs a default, and a wait under the
+    operator's ``routing.asks.minDefaultWaitSeconds`` is raised to it: the
+    question, the record and this call's answer all state the time that is used.
 
     ``actor`` is who asked, for the audit trail; empty means this process's own
     user. The service is handed the CLI's (issue-482): a question asked through it
@@ -770,6 +797,30 @@ def ask_session(
     work_item = WorkItemRef.parse(ref)  # ValueError on a malformed ref
     if not question or not question.strip():
         raise ValueError("the question is empty; nothing to ask")
+    default_answer = (default_answer or "").strip()
+    if len(default_answer) > MAX_DEFAULT_LENGTH:
+        raise ValueError(
+            strings.t(
+                "core.sessions.ask.default-too-long",
+                length=len(default_answer),
+                limit=MAX_DEFAULT_LENGTH,
+            )
+        )
+    requested = default_after_seconds
+    wait: Optional[int] = None
+    if requested is not None:
+        if (
+            isinstance(requested, bool)
+            or not isinstance(requested, int)
+            or requested < 1
+        ):
+            raise ValueError(strings.t("core.sessions.ask.wait-not-positive"))
+        if not default_answer:
+            raise ValueError(strings.t("core.sessions.ask.after-needs-default"))
+        minimum = AsksConfig.from_mapping(
+            _routing(config).get("asks") or {}
+        ).min_default_wait_seconds
+        wait = durations.clamp(requested, minimum)
     control = _control_config(config)
     actor = actor or _local_actor()
     # One event on the bus (issue-309): the ledger records it FIRST — the record
@@ -778,6 +829,7 @@ def ask_session(
     # never depends on what any channel did. The ledger is built over this
     # verb's own writer so the token config resolved here is the one used.
     from ..channels.base import Event, load_channels
+    from ..channels.bodies import default_block
     from ..channels.bus import publish as bus_publish
     from ..channels.github import GitHubLedger
 
@@ -829,22 +881,33 @@ def ask_session(
     question, summary = asked.question or question, asked.summary
     channel_results = []
     ok, error, url = False, "", ""
-    try:
-        detail = {"actor": actor}
-        if default_answer:
-            detail["default"] = default_answer
-        published = bus_publish(
-            Event(
-                event_type="session.awaiting_input",
-                work_item=work_item.ref,
-                text=question,
-                detail=detail,
-                source="cli",
-                summary=summary or "",
-            ),
-            dict(config or {}),
-            ledger=ledger,
+    # What closes this ask names it (issue-551): an answer to an earlier
+    # question must not cancel this one's default.
+    ask_id = uuid.uuid4().hex
+    default_at = ""
+    detail = {"actor": actor, "ask_id": ask_id}
+    if default_answer:
+        detail["default"] = default_answer
+    if wait is not None:
+        # The event log's own timestamp form, which the derivation parses back.
+        default_at = sessionstate._stamp(
+            datetime.now(timezone.utc) + timedelta(seconds=wait)
         )
+        detail["default_at"] = default_at
+        # For the channels' wording only; the record states the time itself.
+        detail["default_after"] = str(wait)
+        if wait != requested:
+            detail["default_requested"] = str(requested)
+    event = Event(
+        event_type="session.awaiting_input",
+        work_item=work_item.ref,
+        text=question,
+        detail=detail,
+        source="cli",
+        summary=summary or "",
+    )
+    try:
+        published = bus_publish(event, dict(config or {}), ledger=ledger)
         record = published.record
         ok = bool(record and record.ok)
         error = (record.error if record else "") or ""
@@ -856,11 +919,13 @@ def ask_session(
             from .tickets import post_on_ticket
 
             ok, error, url = post_on_ticket(
-                work_item, mark_self_authored(question), config
+                work_item, mark_self_authored(question + default_block(event)), config
             )
         elif not ok:
             ok, error, url = post_issue_comment_with_url(
-                work_item, mark_self_authored(question), api=control.github
+                work_item,
+                mark_self_authored(question + default_block(event)),
+                api=control.github,
             )
     # How many channels took the question (issue-409). `ok` is still the record's
     # answer alone — a channel outage must not fail the ask (R4.4) — but a count
@@ -876,6 +941,9 @@ def ask_session(
         comment_url=url or None,
         comment_posted=ok,
         channels_posted=channels_posted,
+        ask_id=ask_id,
+        default=default_answer or None,
+        default_at=default_at or None,
     )
     messages: List[Dict[str, str]] = []
     if ok:
@@ -958,10 +1026,36 @@ def ask_session(
                 "text": strings.t("core.sessions.ask.recorded-wait-anyway"),
             }
         )
+    if wait is not None:
+        # Said whether or not the comment landed: the time is recorded either way.
+        if wait != requested:
+            messages.append(
+                {
+                    "stream": "out",
+                    "text": strings.t(
+                        "core.sessions.ask.wait-raised",
+                        requested=durations.in_words(requested or 0),
+                        wait=durations.in_words(wait),
+                    ),
+                }
+            )
+        messages.append(
+            {
+                "stream": "out",
+                "text": strings.t(
+                    "core.sessions.ask.default-at",
+                    default_at=default_at,
+                    wait=durations.in_words(wait),
+                ),
+            }
+        )
     return {
         "workItem": work_item.ref,
         "asked": ok,
         "commentUrl": url,
+        "askId": ask_id,
+        "defaultAt": default_at or None,
+        "defaultAfterSeconds": wait,
         "exitCode": 0 if ok else 1,
         "messages": messages,
     }

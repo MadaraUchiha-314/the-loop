@@ -196,6 +196,7 @@ def check(
     pr: Optional[int] = None,
     pr_repo: str = "",
     spec_dir: str = "",
+    config: Optional[dict] = None,
 ) -> Dict[str, Any]:
     """`the-loop check` for one work item: the status report as a dict.
 
@@ -226,6 +227,10 @@ def check(
     findings against a directory that is not the work item's. A found state file
     always wins, and `--recompute` over a spec directory that is present still
     evaluates its artifacts.
+
+    **A work item with a live session on this machine also carries `session`**
+    (issue-551, R7): the state :mod:`sessionstate` derives from the event log.
+    ``config`` is the operator's CLI config; without one it is read best-effort.
     """
     named = work_item
     work_item = work_item_id(work_item)
@@ -238,6 +243,62 @@ def check(
             "nodes": [],
             "repoResolved": False,
         }
+    report = _check_report(repo, named, work_item, recompute, pr, pr_repo, spec_dir)
+    session = _session_view(repo, named, work_item, config)
+    if session is not None:
+        report["session"] = session
+    return report
+
+
+def _session_view(
+    repo: str, named: str, work_item: str, config: Optional[dict]
+) -> Optional[Dict[str, Any]]:
+    """The contract's `session` object for the work item's live session on this
+    machine, else ``None`` (issue-551, R7).
+
+    The session is the registered one whose ref ``named`` is, or — for a bare
+    id, which names no repository — the one working that id in this checkout.
+    A read of the registry and the event log: nothing is written or emitted,
+    and a state that cannot be read is no state, never a failed check.
+    """
+    try:
+        from ..graph.bootstrap import load_cli_config_best_effort
+        from ..graph.refs import identity_key
+        from ..sessions import SessionRegistry
+        from ..state import layout_from_config
+        from . import sessionsurface
+
+        config = config or load_cli_config_best_effort()
+        registry_dir = (
+            str((config.get("routing") or {}).get("registryDir") or "")
+            or layout_from_config(config).local_dir
+        )
+        wanted = identity_key(named.strip())
+        here = Path(repo).resolve()
+        for session in SessionRegistry(registry_dir).list_sessions():
+            ref = session.work_item.ref
+            if not session.is_live:
+                continue
+            if identity_key(ref) == wanted or (
+                work_item_id(ref) == work_item
+                and session.cwd
+                and Path(session.cwd).resolve() == here
+            ):
+                return sessionsurface.Reader(config).view(ref)
+    except Exception as exc:  # noqa: BLE001 — the session line is a decoration
+        logger.debug("could not read the session's state: %s", exc)
+    return None
+
+
+def _check_report(
+    repo: str,
+    named: str,
+    work_item: str,
+    recompute: bool,
+    pr: Optional[int],
+    pr_repo: str,
+    spec_dir: str,
+) -> Dict[str, Any]:
     runtime = _runtime(repo, pr, pr_repo, work_item, spec_dir=spec_dir)
     report = runtime.status(work_item, recompute=recompute).as_dict()
     if report["stateFound"] or pr is not None or named.strip() == work_item:

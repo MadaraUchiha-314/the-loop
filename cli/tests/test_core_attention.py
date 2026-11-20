@@ -294,3 +294,172 @@ def test_an_ended_item_asks_for_no_attention(tmp_path):
     path.write_text(json.dumps(record))
     kinds = {i["kind"] for i in attention.list_attention(config)}
     assert {"awaiting-input", "armed-without-session"} <= kinds
+
+
+# -- the derived state of a session on the attention list (issue-551, R7) --------
+
+
+def _minutes_ago(minutes):
+    return _iso(datetime.now(timezone.utc) - timedelta(minutes=minutes))
+
+
+def _session(tmp_path, ref=REF):
+    config = _config(tmp_path)
+    SessionRegistry(layout_from_config(config).local_dir).register(
+        Session(
+            work_item=WorkItemRef.parse(ref),
+            harness="claude",
+            harness_session_id="sess-1",
+            cwd=str(tmp_path),
+        )
+    )
+    return config
+
+
+def _turn(ref, ts, event, **fields):
+    return {"ts": ts, "event": event, "level": "info", "work_item": ref, **fields}
+
+
+def _of_kind(config, kind):
+    return [i for i in attention.list_attention(config) if i["kind"] == kind]
+
+
+def test_a_stalled_session_is_listed_and_leaves_when_the_stall_ends(tmp_path):
+    """
+    Feature: the attention list shows a stall
+      Scenario: a session stays idle past the threshold, then works again
+        Given a live session whose turn ended 22 minutes ago with work owed
+        And two nudges were sent
+        When the attention list is read
+        Then one `stalled` row names the node, the idle time and the nudges
+        When a turn starts
+        Then the row is gone, with no person's action
+
+    Requirement: docs/specs/issue-551/requirements.md R7.1, R7.5
+    """
+    config = _session(tmp_path)
+    idle_since = _minutes_ago(22)
+    stall = f"{REF}@{idle_since}"
+    log = [
+        _turn(REF, _minutes_ago(30), "session.turn_started", node="self-review"),
+        _turn(
+            REF,
+            idle_since,
+            "session.turn_ended",
+            node="self-review",
+            reason="exit-met",
+        ),
+        _turn(REF, _minutes_ago(12), "session.nudged", stall_id=stall, nudge=1),
+        _turn(REF, _minutes_ago(2), "session.nudged", stall_id=stall, nudge=2),
+    ]
+    _log(tmp_path, log)
+    assert _of_kind(config, "stalled") == [
+        {
+            "workItem": REF,
+            "kind": "stalled",
+            "detail": "self-review · idle 22 min · 2 nudges",
+            "at": idle_since,
+        }
+    ]
+
+    _log(tmp_path, log + [_turn(REF, _minutes_ago(0), "session.turn_started")])
+    assert _of_kind(config, "stalled") == []
+
+
+def test_an_idle_session_within_the_threshold_is_not_listed(tmp_path):
+    config = _session(tmp_path)
+    _log(
+        tmp_path,
+        [_turn(REF, _minutes_ago(4), "session.turn_ended", reason="exit-met")],
+    )
+    assert _of_kind(config, "stalled") == []
+
+
+def test_a_stall_is_listed_only_for_a_live_session_of_an_open_item(tmp_path):
+    """A turn record outlives its session; a stall with no session is nobody's."""
+    stale = [_turn(REF, _hours_ago(5), "session.turn_ended", reason="exit-met")]
+    _log(tmp_path, stale)
+    assert _of_kind(_config(tmp_path), "stalled") == []
+
+    config = _session(tmp_path)
+    assert len(_of_kind(config, "stalled")) == 1
+    control = ControlStore(
+        layout_from_config(config).portable_dir,
+        legacy=legacy_layout(layout_from_config(config)),
+    )
+    control.record_ended(REF, {"state": "closed", "reason": "issue-closed"})
+    assert _of_kind(config, "stalled") == []
+
+
+def test_a_declared_wait_is_listed_as_information(tmp_path):
+    """Requirement: docs/specs/issue-551/requirements.md R7.2."""
+    config = _session(tmp_path)
+    until = _iso(datetime.now(timezone.utc) + timedelta(minutes=30))
+    _log(
+        tmp_path,
+        [
+            _turn(REF, _minutes_ago(6), "session.turn_started"),
+            _turn(
+                REF,
+                _minutes_ago(5),
+                "session.wait_declared",
+                condition="CI on #552",
+                until=until,
+            ),
+            _turn(REF, _minutes_ago(4), "session.turn_ended", reason="declared-wait"),
+        ],
+    )
+    (row,) = _of_kind(config, "declared-wait")
+    assert set(row) == {"workItem", "kind", "detail"}
+    assert row["workItem"] == REF
+    assert row["detail"].startswith("“CI on #552” · until ")
+    assert row["detail"].endswith("(informational)")
+    # Informational rows come last: the list has no severity field to carry it.
+    assert attention.list_attention(config)[-1] == row
+    assert _of_kind(config, "stalled") == []
+
+
+def test_an_open_question_with_a_deadline_carries_its_default(tmp_path):
+    """Requirement: docs/specs/issue-551/requirements.md R7.3."""
+    config = _config(tmp_path)
+    default_at = _iso(datetime.now(timezone.utc) + timedelta(minutes=30))
+    asked = dict(
+        _ask(REF, _minutes_ago(1)),
+        ask_id="a1",
+        default="Move T5 to after merge.",
+        default_at=default_at,
+    )
+    _log(tmp_path, [asked])
+    (row,) = _of_kind(config, "awaiting-input")
+    assert row["default"] == "Move T5 to after merge."
+    assert row["defaultAt"] == default_at
+    assert row["detail"].startswith("agent is waiting for input: Which auth mode?")
+    assert "default at " in row["detail"]
+
+    # A question with no deadline has neither key (the contract).
+    _log(tmp_path, [_ask(REF, _minutes_ago(1))])
+    (plain,) = _of_kind(config, "awaiting-input")
+    assert set(plain) == {"workItem", "kind", "detail"}
+
+
+def test_an_answer_or_a_taken_default_closes_the_question(tmp_path):
+    """The open/closed rule is the derivation's: three records close an ask."""
+    config = _config(tmp_path)
+    asked = dict(_ask(REF, _minutes_ago(9)), ask_id="a1")
+    for closer in ("session.ask_answered", "session.ask_default_taken"):
+        _log(tmp_path, [asked, _turn(REF, _minutes_ago(5), closer, ask_id="a1")])
+        assert _of_kind(config, "awaiting-input") == [], closer
+
+
+def test_the_event_log_is_read_once_for_the_session_states(tmp_path, monkeypatch):
+    from the_loop.core import sessionstate
+
+    config = _session(tmp_path)
+    _log(tmp_path, [_ask(REF, _minutes_ago(1)), _ask(ARMED, _minutes_ago(1))])
+    reads = []
+    real = sessionstate.load
+    monkeypatch.setattr(
+        sessionstate, "load", lambda path: reads.append(path) or real(path)
+    )
+    assert len(_of_kind(config, "awaiting-input")) == 2
+    assert len(reads) == 1

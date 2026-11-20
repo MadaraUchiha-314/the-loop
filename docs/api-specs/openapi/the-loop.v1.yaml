@@ -689,10 +689,13 @@ paths:
 
         A work item with a daemon-driven session also carries `session`
         (issue-551): `state` (working | idle | stalled | waiting | asked |
-        not-watched), `node`, `since` (when that state began) and `detail`
+        not-watched), `node`, `since` (when that state began), `detail`
         (what a waiting session waits for and until when, the question of an
-        asked one). `not-watched` is a session with no turn record. The field
-        is **absent** when the work item has no such session.
+        asked one) and `summary` (the state as the one line `the-loop check`
+        prints, with times of day in the service's zone). `not-watched` is a
+        session with no turn record. The field is **absent** when the work
+        item has no live session on the service's machine, or its state
+        cannot be read.
       operationId: graphCheck
       requestBody:
         content:
@@ -884,6 +887,12 @@ paths:
   /api/v1/sessions:
     get:
       summary: List Sessions
+      description: |-
+        Every registered session: the registry's record, `ref`, `control` and
+        `credentials`. Since issue-551 each row also carries `session`, the
+        object `graphCheck` describes: what the session is doing, derived from
+        the event log, with `state` `not-watched` for a session with no turn
+        record. Absent when the state cannot be read.
       operationId: listSessions
       parameters:
       - name: status
@@ -1841,9 +1850,13 @@ paths:
         The work items that need a person, or that a person should know about.
         Each row carries `workItem`, `kind` and `detail`. `kind` is one of
         `session-paused`, `armed-without-session`, `awaiting-input`,
-        `recent-error` and, since issue-551, `stalled` (a session that stayed
-        idle with work owed after its nudges were spent) and `declared-wait`
-        (informational: what a session waits for and until when).
+        `recent-error` and, since issue-551, `stalled` (a live session that
+        stayed idle with work owed past the idle threshold: `detail` names the
+        node, the idle time, the nudges sent and whether a person was told,
+        and `at` is when the idle period began) and `declared-wait`
+        (informational: what a session waits for and until when; listed
+        last). Both are derived on every read, so a row leaves when its state
+        does.
 
         An `awaiting-input` row whose question was asked with a deadline also
         carries `default`, the answer that is taken, and `defaultAt`, when
