@@ -428,7 +428,14 @@ flowchart LR
   in place (`chat.update`) and the long-form parts are edited one for one. Extra new
   parts are posted, and parts the new text no longer needs are deleted
   (`chat.delete`). An edit is only made to a message posted with previews off, and the
-  live check confirms an edit keeps them off.
+  live check confirms an edit keeps them off. A 429 on an edit is retried like a post.
+  Only when Slack says the message cannot be edited any more (`message_not_found`,
+  `cant_update_message`, `edit_window_closed`) is it posted fresh. When a reply in the
+  middle of a thread is gone, every part from it on is posted fresh and the old replies
+  after it are deleted, so the thread keeps its order. Any other failure raises, and
+  the outbox retries the edit; nothing is posted twice. The one window left: a post
+  Slack accepted whose timestamp was lost to a crash is posted again on the retry,
+  because `chat.postMessage` takes no idempotency key.
 
   **Defusing** (`defuse.py`), on both forms, before Slack parses anything: the-loop's
   markers and other HTML comments are stripped; broadcast sequences (`<!here>`,
