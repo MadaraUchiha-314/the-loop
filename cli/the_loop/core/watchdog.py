@@ -36,7 +36,7 @@ from ..watchconfig import AsksConfig, WatchdogConfig
 from . import graphs as core_graphs
 from . import sessions as core_sessions
 from . import sessionstate, sessionsurface, stopcheck
-from .sessionstate import Due, SessionState
+from .sessionstate import Due, OpenAsk, SessionState
 
 logger = logging.getLogger("the-loop.core.watchdog")
 
@@ -380,11 +380,19 @@ class _Cycle:
                 return record
         return {}
 
+    def _open_ask(self, ask_id: Optional[str]) -> Optional[OpenAsk]:
+        """The open ask an act is owed for. Several can be open at once, and
+        each act uses its own ask's words."""
+        for ask in self.state.open_asks:
+            if ask.ask_id == ask_id:
+                return ask
+        return None
+
     def _take_default(self, due: Due) -> None:
-        ask = self.state.open_ask
+        ask = self._open_ask(due.ask_id)
         # Fail closed: the derivation owes this only for a default with a
         # readable time, and it is checked again before anything is typed.
-        if ask is None or ask.ask_id != due.ask_id or not ask.default:
+        if ask is None or ask.legacy or not ask.default:
             return
         if sessionstate.parse_ts(ask.default_at) is None:
             return
@@ -416,8 +424,8 @@ class _Cycle:
         )
 
     def _remind(self, due: Due) -> None:
-        ask = self.state.open_ask
-        if ask is None or ask.ask_id != due.ask_id:
+        ask = self._open_ask(due.ask_id)
+        if ask is None or ask.legacy:
             return
         if not eventlog.emit(
             "session.ask_reminded", work_item=self.ref, ask_id=ask.ask_id

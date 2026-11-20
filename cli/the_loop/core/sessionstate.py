@@ -41,11 +41,15 @@ _TURN_ENDED = "session.turn_ended"
 #: A turn that ended for one of these waits on something with no time limit.
 _UNLIMITED_WAITS = frozenset({"human-gate", "complete", "graph-wait"})
 
-#: Records that close an ask. Each is written only after the authorized-actor
-#: guard passed, or by the watcher itself (design § Security design).
-_ASK_CLOSERS = frozenset(
-    {"session.reply_sent", "session.ask_answered", "session.ask_default_taken"}
-)
+#: A person spoke to the session. Each is written only after the
+#: authorized-actor guard passed, and closes every open ask whichever one it
+#: names: after a person's word no default may be taken.
+_ANSWERS = frozenset({"session.reply_sent", "session.ask_answered"})
+
+#: The watcher took an ask's default. It closes the ask it names and no other.
+_DEFAULT_TAKEN = "session.ask_default_taken"
+
+_ASK_CLOSERS = _ANSWERS | {_DEFAULT_TAKEN}
 
 #: Records that start a new nudge budget: the pointer moved, or a person's event
 #: reached the session. `dispatch.succeeded` is not here: it also records a CI
@@ -150,6 +154,9 @@ class SessionState:
     nudges_spent: int = 0
     #: The one stall notice of this visit to the node was already sent.
     notified: bool = False
+    #: Every ask nothing has closed, oldest first.
+    open_asks: Tuple[OpenAsk, ...] = ()
+    #: The most recent of them.
     open_ask: Optional[OpenAsk] = None
     declared_wait: Optional[DeclaredWait] = None
     #: In the order the watcher performs them.
@@ -191,7 +198,7 @@ _Moment = Tuple[datetime, str]
 
 
 class _Ask:
-    """The latest ask while the log is walked."""
+    """One open ask while the log is walked."""
 
     def __init__(self, record: Dict[str, Any], asked: _Moment) -> None:
         self.record = record
@@ -199,14 +206,7 @@ class _Ask:
         explicit = _text(record, "ask_id")
         self.explicit = bool(explicit)
         self.ask_id = explicit or asked[1]
-        self.closed: Optional[_Moment] = None
         self.reminded = False
-
-    def closed_by(self, record: Dict[str, Any]) -> bool:
-        other = _text(record, "ask_id")
-        # `reply_sent` names no ask, and neither does an ask written before
-        # issue-551: then the order of the records decides.
-        return not (self.explicit and other) or other == self.ask_id
 
     def view(self) -> OpenAsk:
         default = _text(self.record, "default") or None
@@ -250,7 +250,9 @@ def derive(
     # The wait made since the last turn record, and the one behind the last end.
     wait: Optional[Tuple[_Moment, Dict[str, Any]]] = None
     wait_at_end: Optional[Tuple[_Moment, Dict[str, Any]]] = None
-    ask: Optional[_Ask] = None
+    # The open asks by id, oldest first, and when an ask was last closed.
+    asks_open: Dict[str, _Ask] = {}
+    ask_closed: Optional[_Moment] = None
     nudges_spent = 0
     notified = False
     last_nudge: Optional[datetime] = None
@@ -280,10 +282,13 @@ def derive(
         elif event == "session.wait_declared":
             wait = (moment, record)
         elif event == "session.awaiting_input":
-            ask = _Ask(record, moment)
+            asked = _Ask(record, moment)
+            asks_open.pop(asked.ask_id, None)
+            asks_open[asked.ask_id] = asked
         elif event == "session.ask_reminded":
-            if ask is not None and _text(record, "ask_id") == ask.ask_id:
-                ask.reminded = True
+            reminded = asks_open.get(_text(record, "ask_id"))
+            if reminded is not None:
+                reminded.reminded = True
         elif event in ("session.nudged", "session.stalled"):
             if event == "session.nudged":
                 attempt = (_text(record, "stall_id"), record.get("nudge"))
@@ -313,14 +318,18 @@ def derive(
             if ended is not None and ended in unresumed:
                 unresumed.remove(ended)
 
-        if event in _ASK_CLOSERS:
-            if ask is not None and ask.closed is None and ask.closed_by(record):
-                ask.closed = moment
+        if event in _ANSWERS:
+            if asks_open:
+                asks_open, ask_closed = {}, moment
+        elif event == _DEFAULT_TAKEN:
+            if asks_open.pop(_text(record, "ask_id"), None) is not None:
+                ask_closed = moment
         if event in _BUDGET_RESETS or _delivered_a_person(record):
             nudges_spent, notified, last_nudge = 0, False, None
             last_attempt = None
 
-    open_ask = ask.view() if ask is not None and ask.closed is None else None
+    open_asks = tuple(ask.view() for ask in asks_open.values())
+    open_ask = open_asks[-1] if open_asks else None
 
     due: List[Due] = []
     # A stall is ended whatever the switch says now: it may have been made
@@ -357,10 +366,16 @@ def derive(
             if reason in _UNLIMITED_WAITS:
                 state = "waiting"
             elif reason == "open-ask":
-                if open_ask is not None:
-                    state, until = "waiting", open_ask.default_at
+                if open_asks:
+                    # The wait ends when the last ask closes. That has a time
+                    # only when every open ask has a default.
+                    ends = [parse_ts(ask.default_at) for ask in open_asks]
+                    known = [end for end in ends if end is not None]
+                    if len(known) == len(ends):
+                        until = _stamp_of(open_asks, max(known))
+                    state = "waiting"
                 else:
-                    idle = _later(at, ask.closed if ask is not None else None)
+                    idle = _later(at, ask_closed)
             elif reason == "declared-wait" and wait_at_end is not None:
                 lapse = _lapse(wait_at_end, limit)
             elif reason == "background-work":
@@ -402,19 +417,21 @@ def derive(
                 elif not notified:
                     due.append(Due("notify", stall_id=stall_id_now))
 
-    if open_ask is not None and not open_ask.legacy:
-        deadline = parse_ts(open_ask.default_at)
-        asked_at = parse_ts(open_ask.asked_at)
+    for ask in open_asks:
+        if ask.legacy:
+            continue
+        deadline = parse_ts(ask.default_at)
+        asked_at = parse_ts(ask.asked_at)
         if deadline is not None:
             if now >= deadline:
-                due.append(Due("take-default", ask_id=open_ask.ask_id))
+                due.append(Due("take-default", ask_id=ask.ask_id))
         elif (
             asks.reminder_seconds > 0
-            and not open_ask.reminded
+            and not ask.reminded
             and asked_at is not None
             and now - asked_at >= timedelta(seconds=asks.reminder_seconds)
         ):
-            due.append(Due("remind", ask_id=open_ask.ask_id))
+            due.append(Due("remind", ask_id=ask.ask_id))
 
     return SessionState(
         work_item=work_item,
@@ -427,10 +444,19 @@ def derive(
         stall_id=stall_id_now,
         nudges_spent=nudges_spent,
         notified=notified,
+        open_asks=open_asks,
         open_ask=open_ask,
         declared_wait=declared,
         due=tuple(due),
     )
+
+
+def _stamp_of(asks: Tuple[OpenAsk, ...], moment: datetime) -> Optional[str]:
+    """The stored text of the default time that parses to ``moment``."""
+    for ask in asks:
+        if parse_ts(ask.default_at) == moment:
+            return ask.default_at
+    return None
 
 
 def _position_unknown(reason: str, node: str) -> bool:

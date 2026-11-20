@@ -127,7 +127,7 @@ def decide(
 def _excuse(session: SessionState, background_work: bool) -> str:
     """What the session really waits on, as a turn end's reason; ``""`` for
     nothing."""
-    if session.open_ask is not None and not session.open_ask.legacy:
+    if any(not ask.legacy for ask in session.open_asks):
         return "open-ask"
     if session.declared_wait is not None and session.declared_wait.covers_stop:
         return "declared-wait"

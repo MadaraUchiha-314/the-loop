@@ -485,6 +485,31 @@ def test_a_default_for_a_dead_pane_closes_the_ask_and_says_so(world):
     assert len(world.published) == 1
 
 
+def test_an_earlier_asks_default_is_taken_with_its_own_text(world):
+    """Requirement: R6.2 — ask A's default is due at 10:30; ask B is asked at
+    10:10. At 10:31 A's default is taken with A's text and B stays open."""
+    ask(world)
+    world.emit(
+        10,
+        "session.awaiting_input",
+        question="And T6?",
+        ask_id="ask-2",
+        default="Drop T6.",
+        default_at=world.stamp(90),
+    )
+    world.cycle(31)
+    world.cycle(32)
+    (text,) = world.pasted()
+    assert "Move T5 to after merge." in text and "Drop T6." not in text
+    (taken,) = world.records("session.ask_default_taken")
+    assert (taken["ask_id"], taken["default"]) == ("ask-1", "Move T5 to after merge.")
+
+    world.emit(40, "session.ask_answered", ask_id="ask-2", actor="octocat")
+    world.cycle(600)
+    assert len(world.records("session.ask_default_taken")) == 1
+    assert not any("Drop T6." in text for text in world.pasted())
+
+
 @pytest.mark.parametrize("default_at", [None, "soon", ""])
 def test_a_default_without_a_readable_time_is_never_taken(world, default_at):
     ask(world, after=None, default_at=default_at)

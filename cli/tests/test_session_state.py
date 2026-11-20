@@ -588,6 +588,62 @@ def test_a_closing_record_for_another_ask_leaves_this_one_open():
     assert state.due == (Due("take-default", ask_id="a2"),)
 
 
+def two_asks():
+    """Ask A with a default due at minute 30, then ask B ten minutes later."""
+    return [
+        started(0),
+        ask(1, ask_id="A", default="Move it.", default_at=stamp(30)),
+        ask(10, ask_id="B"),
+        ended(11, "open-ask"),
+    ]
+
+
+def test_every_open_ask_is_tracked_and_owed_its_own_act():
+    """Requirement: R6.2, R6.7 — a second ask does not hide the first one's
+    deadline."""
+    log = two_asks()
+    early = state_at(log, 29)
+    assert [a.ask_id for a in early.open_asks] == ["A", "B"]
+    assert early.open_ask is not None and early.open_ask.ask_id == "B"
+    assert early.due == ()
+    assert state_at(log, 31).due == (Due("take-default", ask_id="A"),)
+    # Both are owed at once when both are late.
+    assert state_at(log, 131).due == (
+        Due("take-default", ask_id="A"),
+        Due("remind", ask_id="B"),
+    )
+
+
+def test_a_default_taken_closes_only_its_own_ask():
+    log = two_asks() + [ev(31, "session.ask_default_taken", ask_id="A")]
+    state = state_at(log, 32)
+    assert [a.ask_id for a in state.open_asks] == ["B"]
+    assert (state.state, state.reason, state.until) == ("waiting", "open-ask", None)
+    assert state.due == ()
+    log.append(ev(131, "session.ask_reminded", ask_id="B"))
+    assert state_at(log, 60 * 24).open_asks[0].reminded is True
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        ev(20, "session.reply_sent", actor="rohith"),
+        ev(20, "session.ask_answered", ask_id="B", actor="rohith"),
+        ev(20, "session.ask_answered", ask_id="A", actor="rohith"),
+        ev(20, "session.ask_answered", actor="rohith"),
+    ],
+    ids=["reply", "answered-B", "answered-A", "answered-no-id"],
+)
+def test_a_persons_answer_closes_every_open_ask(answer):
+    """Requirement: R6.3 — a person spoke, so no default is taken after it,
+    whichever ask the record names."""
+    state = state_at(two_asks() + [answer], 60 * 24)
+    assert state.open_asks == () and state.open_ask is None
+    # Nothing is owed for an ask; the session is idle from the answer on.
+    assert acts(state) == ["nudge"]
+    assert (state.state, state.idle_since) == ("stalled", stamp(20))
+
+
 def test_legacy_ask_without_an_id_is_named_by_its_time_and_closed_by_a_reply():
     log = [ask(0)]
     state = state_at(log, 5)
