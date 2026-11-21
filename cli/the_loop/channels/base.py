@@ -54,10 +54,11 @@ __all__ = [
     "render",
 ]
 
-#: The event types a channel subscribes to when its config names none. The ask
-#: is the one conversation-shaped event the loop emitted first (issue-208); a
-#: channel that wants more opts in per event type.
-DEFAULT_EVENTS: Tuple[str, ...] = ("session.awaiting_input",)
+#: The event types a channel subscribes to when its config names none: the two
+#: that need a person. The ask is the one conversation-shaped event the loop
+#: emitted first, and the stall notice says a session stopped with work still
+#: to do. A channel that wants more opts in per event type.
+DEFAULT_EVENTS: Tuple[str, ...] = ("session.awaiting_input", "session.stalled")
 
 #: The grant a channel holds when its config names none: a message is input to
 #: the waiting session and nothing more — 12.1.0's behaviour, exactly.

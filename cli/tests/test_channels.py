@@ -208,8 +208,10 @@ def test_room_style_is_read_and_defaults_to_agentic(tmp_path, caplog):
 
 def test_default_events_carry_the_ask(tmp_path):
     channel = make_channel(tmp_path, FakeSlackClient())
-    assert DEFAULT_EVENTS == ("session.awaiting_input",)
+    # The two events that need a person: the ask, and the stall notice (issue-551).
+    assert DEFAULT_EVENTS == ("session.awaiting_input", "session.stalled")
     assert channel.wants("session.awaiting_input")
+    assert channel.wants("session.stalled")
     assert not channel.wants("channel.posted")
 
 

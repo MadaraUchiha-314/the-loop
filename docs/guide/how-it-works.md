@@ -71,7 +71,7 @@ commands/          init, work-on, upgrade-the-loop, and the granular commands
 skills/the-loop/   operating-model skill (+ reference/ and templates/)
 skills/writing/    the-loop:writing — how the artifacts a human reads are written
 rules/             the-loop.mdc (Cursor always-applied reminder rule)
-hooks/             hooks.json (Claude Code SessionStart reminder)
+hooks/             hooks.json and the hook scripts: Stop gate, turn start, PR recorder
 cli/               the-loop Python CLI (the_loop package)
   the_loop/graph/    the five pdlc-*-loop.yaml graphs, runtime, hooks
 docs/

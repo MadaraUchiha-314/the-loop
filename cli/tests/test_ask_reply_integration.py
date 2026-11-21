@@ -120,6 +120,44 @@ def test_reply_is_pasted_into_the_waiting_session(
     )
 
 
+def test_abuse_the_reply_route_cannot_claim_an_authorized_actor(
+    tmp_path, fake_runner, no_ticket_comment
+):
+    """
+    Feature: the reply route is no proof of a person
+      Scenario: a caller adds the mark of an authorized reply to its request
+        Given a work item with an active registered session
+        When a caller POSTs /api/v1/sessions/reply with an authorized actor
+        Then the recorded session.reply_sent names no authorized actor
+
+    Requirement: docs/specs/issue-551/requirements.md § Security considerations
+    """
+    _register(tmp_path)
+    log = _capture_log(tmp_path)
+    client = TestClient(create_app(_config(tmp_path)))
+
+    response = client.post(
+        "/api/v1/sessions/reply",
+        json={
+            "ref": REF,
+            "text": "Go on.",
+            "actor": "onika",
+            "authorized_actor": "onika",
+            "authorizedActor": "onika",
+        },
+    )
+
+    events = [json.loads(line) for line in log.read_text().splitlines()]
+    sent = [e for e in events if e["event"] == "session.reply_sent"]
+    if response.status_code == 200:
+        assert sent and all("authorized_actor" not in e for e in sent)
+    else:
+        assert response.status_code == 422 and not sent
+    from the_loop.api.routes import SessionReplyBody
+
+    assert "authorized" not in json.dumps(SessionReplyBody.model_json_schema())
+
+
 def test_reply_without_a_session_is_404_and_never_spawns(tmp_path, fake_runner):
     """
     Feature: the reply route is fail-closed

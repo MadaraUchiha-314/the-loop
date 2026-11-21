@@ -56,14 +56,16 @@ flowchart LR
   channel may subscribe to it, may publish it, and whether the ledger records it. The
   config parser warns against it, `the-loop channels status` prints it with ticks, and
   the [channels options](/config/cli/channels-options) page lists it — a test pins the
-  three together. Subscribable: `session.awaiting_input`, the six graph notifications
+  three together. Subscribable: `session.awaiting_input`, the four session notices of
+  issue-551 (`session.stalled`, `session.stall_ended`, `session.ask_default_taken`,
+  `session.ask_reminded`; see § Session notices), the six graph notifications
   (`work-item-complete` now fires from the `complete` node), the three lifecycle events
   (`phase.started`, `phase.completed`, `work-item.closed` — issue-378), `comment.agent`,
   `comment.human`, `standing.started`. Publishable: `work-item.reply`, `gate.feedback`,
   `control.command`, `work-item.create`, — since issue-334 — `instance.command`,
   `standing.command`, and — since issue-389 — `context.added`, `decision.recorded`.
-  Recorded: the ask and the six ticket-bound publishable ones; the two command grants
-  have no ticket and are not. The two issue-389 rows are grants and **not**
+  Recorded: the ask, the four session notices and the six ticket-bound publishable ones;
+  the two command grants have no ticket and are not. The two issue-389 rows are grants and **not**
   subscriptions: what a message may become and what a channel hears stay disjoint sets
   (decision-103), and `comment.agent` already carries every marked record.
 - **The bus is the only caller of a channel.** WHEN any component publishes an event THEN
@@ -456,17 +458,18 @@ flowchart LR
 
   | State | Emoji | Set by |
   |---|---|---|
-  | working | ⚙️ `gear` | phase and progress events |
+  | working | ⚙️ `gear` | phase and progress events, a stall that ended, an ask's default taken |
   | waiting on a human | ⏳ `hourglass_flowing_sand` | the session's question, a decision, an approval gate |
   | in review | 👀 `eyes` | the review phases |
-  | blocked or failed | 🛑 `octagonal_sign` | an escalation, a failed outcome |
+  | blocked or failed | 🛑 `octagonal_sign` | an escalation, a failed outcome, a stalled session (`session.stalled`) |
   | complete | ✅ `white_check_mark` | `work-item-complete`, `work-item.closed` |
 
   WHEN the state or the status message changes THEN the reactor adds the new reaction
   and removes the old one. It only ever removes a reaction it added itself, and a
   failed reaction never fails a delivery. Bookkeeping events still move it.
 - **A wait mentions its people once** (issue-549 R7). WHEN a message waits on a person
-  (the session's question, a decision, an approval gate) THEN the short form opens by
+  (the session's question, a decision, an approval gate, a stall notice, an ask's
+  reminder) THEN the short form opens by
   mentioning each authorized user whose Slack identity resolves to a member id. A wait
   is mentioned **once**: an edit or a re-announcement of the same wait mentions no one,
   and a gate that reopens is a new wait. An identity that does not resolve is mentioned
@@ -1022,6 +1025,66 @@ flowchart LR
   — issue-413 — `channel.split_suspected` (warning) / `channel.split_cleared`.
   Payloads carry ids, event types and counts, never text.
 
+### Session notices (issue-551)
+
+> [decision-155](../decisions/decision-155.md) ·
+> [the watcher](interactive-sessions.md#session-states-and-the-watcher-issue-551)
+
+The watcher publishes four events when a session stalls or an ask's deadline passes.
+Each one is a short Slack message and a marked comment on the work item. The watcher's
+rules for when each fires are in [interactive-sessions](interactive-sessions.md).
+
+- **The default subscription** of a channel SHALL be `session.awaiting_input` and
+  `session.stalled`: the two events that need a person. An explicit `subscribe` list
+  replaces the default, so a config that already lists its events hears a stall only
+  once `session.stalled` is added to the list. `the-loop channels status` SHALL print a
+  warning line while a Slack channel's list names `session.awaiting_input` and not
+  `session.stalled`.
+- The Slack channel SHALL hear a follow-up event when it subscribes to the event the
+  follow-up is about: `session.stall_ended` with `session.stalled`, and
+  `session.ask_default_taken` and `session.ask_reminded` with
+  `session.awaiting_input`. A Jira channel SHALL hear only the events its `subscribe`
+  names.
+
+| Event | Slack | Ledger (GitHub or Jira comment) |
+|---|---|---|
+| `session.stalled` | One message per stall: the work item, the node, how long the session has been idle, how many nudges did not restart it, how to wake it. It mentions who must act. Status reaction 🛑. | "the session is idle": the node, the idle time, the nudges, and how to wake or attach to the session. For a work item's own session whose step cannot be read, both surfaces name no node and no nudges, and say that the-loop cannot tell which step it is at. |
+| `session.stall_ended` | The stall notice is edited in place to its resolved line. Status reaction returns to ⚙️. Nothing is posted. | A short follow-up comment with the idle period. GitHub cannot edit the notice in place. |
+| `session.awaiting_input` with a deadline | The short form gains a line: the time the default is taken, the minutes left and the default. | The question gains a block: the default, the time it is taken, and that an authorized answer before then wins. |
+| `session.ask_default_taken` | The question's message is edited: it keeps its words, loses its default button and gains the outcome line. Status reaction returns to ⚙️. Nothing is posted. | "default taken": the time, the default, a link to the question, and that it is not an approval. |
+| `session.ask_default_taken` for a session that could not be told | The same edit. The outcome line says that the default applies and that the session has not been told. | The same comment, saying that the default applies and that the session has not been told, with how to tell it. |
+| `session.ask_reminded` | One message under the question, mentioning who must answer. | "still waiting": how long, a link to the question, and that the work item does not move until an authorized user answers. |
+
+- Each open question SHALL keep its own Slack message. "Default taken" edits the
+  message of the ask it names, and a reminder goes under the question it names, however
+  many questions were asked after it. The edit forgets that message. A question that a
+  person answered is not edited and keeps its words. The Slack channel SHALL remember
+  at most 8 questions per work item, and forget the oldest past that.
+- A stall that ended before any notice was posted SHALL leave no trace on a channel:
+  Slack has no message to edit, and the event is kept off the ledger.
+- Each of the four messages SHALL be its short form only. No long form follows it in a
+  room's thread.
+- The stall notice SHALL be exempt from the room policy's duplicate rule, because a
+  second stall at the same node is a new notice. The watcher's own record keeps it to
+  one per stall.
+- WHEN the requested wait was raised to `routing.asks.minDefaultWaitSeconds` THEN the
+  question SHALL say so.
+- **The default answer is session-written text and SHALL be drawn as inert words.**
+  It is capped at 600 characters when asked. On Slack it is flattened to one line of at
+  most 200 characters, its links are drawn as words, and it is defused. Slack's mrkdwn
+  has no escape character, so `*`, `_`, `~` and the backtick are drawn as look-alike
+  characters that style nothing. On the ledger it is flattened to one line, its
+  markdown punctuation is escaped and its `@` mentions are broken so that they notify
+  nobody. On both, a bare address is broken with a zero-width space inside `://` and
+  after `www`, so neither GitHub nor Slack links it.
+- WHEN a stall ends THEN the Slack status reaction SHALL return to ⚙️ whenever a notice
+  had been posted, also when the notice cannot be edited. The notice is forgotten only
+  after it was edited, so a replay of the event can still edit it.
+- Every comment the ledger writes for these events SHALL carry the agent-comment
+  marker, so no gate reads it as an answer.
+- A declared wait's condition SHALL NOT be published on a channel. It is capped at 200
+  characters, flattened to one printable line and shown on the status surfaces only.
+
 ### Jira
 
 Jira is a ledger and a subscriber channel since
@@ -1144,7 +1207,7 @@ ticket, with no Jira work items, ingress or ledger:
      jira:
        enabled: true
        subscribe: [work-item.started, phase.started, phase.completed,
-                   session.awaiting_input, work-item.closed]
+                   session.awaiting_input, session.stalled, work-item.closed]
    ```
 
 4. An authorized user declares the room on the work item:
@@ -1239,6 +1302,7 @@ ticket, with no Jira work items, ingress or ledger:
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-551 | **Four session notices** (2026-11-20): `session.stalled` (one notice per stall, 🛑), `session.stall_ended` (the Slack notice edited in place, a follow-up comment on the ledger), `session.ask_default_taken` (the question's message edited, a marked comment that is never an approval) and `session.ask_reminded` (one reminder under the question). The default subscription became `session.awaiting_input` and `session.stalled`. A question with a deadline states its default and the time it is taken; the default is drawn as inert words | [spec](../specs/issue-551/), [decision-155](../decisions/decision-155.md), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/551) |
 | issue-549 | **A short form for the phone, the whole text in a room's thread** (2026-11-19): every Slack message is a short form (the agent's `--summary`, else a runtime lead, else a built line that logs `channels.short_form_missing`; 600 characters), and in a declared room the whole text follows in its thread as `markdown` blocks of up to 11,000 characters with `(n/m)` marks; the central channel gets the short form only. The digest, `maxChars` and `longMessages` are retired (the keys deprecated and ignored). One policy for every conversation, with a bookkeeping rule; idempotent delivery by event id; no link previews; progress edits across parts; one status reaction of five; mentions once per wait; a 12-hour recap; gate buttons in the item's own conversation through a case-insensitive identity key, room presses, the gate message edited after its answer, and an approve-on-GitHub line where no press can arrive. `the-loop comment --summary` and `summary` on the comment API | [spec](../specs/issue-549/), [decision-154](../decisions/decision-154.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/549) |
 | issue-532 | Graph notifications behind a gateway post first time (2026-11-16): `graph/bootstrap.py::build_runtime` copies `gateway` and `instance` into the runtime config, so `posting_path()` resolves `gateway` for the `notify` hook and `publish_lifecycle` instead of `none`, and the gateway call names this instance | [spec](../specs/issue-532/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/532) |
 | issue-498 | A relayed command still opens its comment (2026-10-23): the ledger's `gate.feedback` / `control.command` relay record puts the person's words first, unquoted, and the attribution after them, because a control keyword now counts only where a comment opens with it | [spec](../specs/issue-498/), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/498) |

@@ -42,6 +42,7 @@ from ..core import lifecycle as core_lifecycle
 from ..core import repo as core_repo
 from ..core import sessions as core_sessions
 from ..core import standing as core_standing
+from ..core import stopcheck as core_stopcheck
 from ..core import workitems as core_workitems
 
 __all__ = [
@@ -238,6 +239,7 @@ class CoreFacade:
             pr=pr,
             pr_repo=pr_repo,
             spec_dir=spec_dir,
+            config=self.config,
         )
 
     def graph_complete(
@@ -410,6 +412,7 @@ class CoreFacade:
         default_answer: str = "",
         actor: str = "",
         instance: str = "",
+        default_after_seconds: Optional[int] = None,
     ) -> Dict[str, Any]:
         self._self(instance)
         return core_sessions.ask_session(
@@ -419,7 +422,30 @@ class CoreFacade:
             summary=summary,
             default_answer=default_answer,
             actor=actor,
+            default_after_seconds=default_after_seconds,
         )
+
+    def wait_session(
+        self, ref: str, condition: str, seconds: int, instance: str = ""
+    ) -> Dict[str, Any]:
+        self._self(instance)
+        return core_stopcheck.declare_wait(ref, condition, seconds, config=self.config)
+
+    def stop_check_session(
+        self,
+        ref: str,
+        background_work: bool = False,
+        gave_up: bool = False,
+        instance: str = "",
+    ) -> Dict[str, Any]:
+        self._self(instance)
+        return core_stopcheck.stop_check(
+            ref, config=self.config, background_work=background_work, gave_up=gave_up
+        )
+
+    def turn_start_session(self, ref: str, instance: str = "") -> Dict[str, Any]:
+        self._self(instance)
+        return core_stopcheck.turn_start(ref, config=self.config)
 
     def reply_session(
         self,

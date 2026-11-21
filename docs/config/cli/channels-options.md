@@ -28,7 +28,8 @@ channels:
     botTokenEnv: THE_LOOP_SLACK_BOT_TOKEN   # xoxb-, chat:write + channels.history
     appTokenEnv: THE_LOOP_SLACK_APP_TOKEN   # xapp-, only for read.mode: socket (a gateway holds its own)
     channel: C0123ABCDEF                     # the channel the bot posts into
-    subscribe: [session.awaiting_input, phase-approval-pending, comment.agent]
+    subscribe: [session.awaiting_input, session.stalled, phase-approval-pending,
+                comment.agent]
     publish: [work-item.reply, gate.feedback]
     verbosity: normal
     room:
@@ -132,7 +133,7 @@ channels:
   jira:
     enabled: true
     subscribe: [work-item.started, phase.started, phase.completed,
-                session.awaiting_input, work-item.closed]
+                session.awaiting_input, session.stalled, work-item.closed]
     verbosity: normal
 ```
 
@@ -148,12 +149,16 @@ is logged (fail closed).
 ### `jira.subscribe`
 
 - **Type:** `string[]`
-- **Default:** `["session.awaiting_input"]`
+- **Default:** `["session.awaiting_input", "session.stalled"]`
 
 The event types this channel receives, exactly as [`slack.subscribe`](#slacksubscribe)
 — for example `work-item.started`, `phase.started`, `phase.completed`,
 `session.awaiting_input` and `work-item.closed`. `the-loop channels status` prints the
-catalog. A name outside it is kept, with a warning.
+catalog. A name outside it is kept, with a warning. An explicit list replaces the
+default, so a list written before `session.stalled` existed needs it added to hear a
+stall. One difference from Slack: this
+channel hears `session.stall_ended`, `session.ask_default_taken` and
+`session.ask_reminded` only when the list names them.
 
 ### `jira.verbosity`
 
@@ -229,7 +234,13 @@ use a name when you want the file to read the way people talk.
 ### `slack.subscribe`
 
 - **Type:** `string[]`
-- **Default:** `["session.awaiting_input"]`
+- **Default:** `["session.awaiting_input", "session.stalled"]`
+
+An explicit list **replaces** the default. A list written before `session.stalled`
+existed therefore hears questions and not stalls: add `session.stalled` to it, or a
+session that stays idle with work still to do is announced nowhere in Slack.
+[`the-loop channels status`](/cli/commands/channels) prints a `[!]` line while the list
+names `session.awaiting_input` and not `session.stalled`.
 
 The event types this channel **receives**. Was `events` before issue-309 —
 [`the-loop migrate-config`](/cli/commands/migrate-config) renames it. The names come
@@ -239,6 +250,10 @@ from **one catalog** (printed with subscription ticks by
 | Event | Fires when |
 |-------|-----------|
 | `session.awaiting_input` | an agent asked a human a question (`the-loop ask`) and is waiting — the default subscription |
+| `session.stalled` | a session stayed idle with work still to do, and its nudges were spent, or could not be sent because its terminal is gone or its node cannot be resolved, or a work item's own session stayed idle and the-loop cannot tell which step it is at — one notice per stall, with the 🛑 status reaction, asking a person to look; in the default subscription, because it is the other event that needs a person ([issue-551](https://github.com/MadaraUchiha-314/the-loop/issues/551)) |
+| `session.stall_ended` | a stalled session took a turn again — the stall notice is edited in place to say so, and the status reaction returns to ⚙️. A channel subscribed to `session.stalled` hears it without naming it; nothing is posted for a stall nobody was told about (issue-551) |
+| `session.ask_default_taken` | nobody answered a question by its deadline, so its stated default applies — the question's message is edited to say so, and to say when the session could not be told. A channel subscribed to `session.awaiting_input` hears it without naming it. It is never an approval of anything (issue-551) |
+| `session.ask_reminded` | a question with no default has waited `routing.asks.reminderSeconds` — one reminder under the question, never repeated. A channel subscribed to `session.awaiting_input` hears it without naming it (issue-551) |
 | `decision-pending` | the graph reached a point where a human decision or opinion is genuinely required |
 | `phase-approval-pending` | a spec-chain phase (requirements, design + testing plan) is ready for its human gate — the message carries a link and an excerpt of the artifact |
 | `pr-review-pending` | a pull request delivering the work item is ready for human review |

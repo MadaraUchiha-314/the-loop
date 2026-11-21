@@ -559,15 +559,21 @@ export function innerKey(workItemRef: string, prRef: string): string {
  * marker stamped centrally, and records the wait as this event. Reading it
  * costs one filtered `/events` call for the whole board.
  *
- * A `session.reply_sent` newer than the question closes it — the SAME
- * open/answered rule the service's attention surface applies
- * (`cli/the_loop/core/attention.py`); change one and the other is a reviewable
- * change, or the two surfaces disagree.
+ * A work item can have several questions open at once; the one shown is the
+ * most recent that is still open. A person's word — `session.reply_sent`, or an
+ * authorized answer (`session.ask_answered`) — closes every open question of
+ * the work item. A default being taken (`session.ask_default_taken`) closes
+ * the one question it names. This is the SAME open/answered rule the service's
+ * attention surface applies (`cli/the_loop/core/sessionstate.py`, read by
+ * `core/attention.py`); change one and the other is a reviewable change, or the
+ * two surfaces disagree.
  */
+const ANSWERS = new Set(["session.reply_sent", "session.ask_answered"]);
+
 export function awaitingInput(events: EventRecord[]): Record<string, EventRecord> {
-  const open: Record<string, EventRecord> = {};
-  const answered: Record<string, string> = {};
-  // Oldest first, so the last write per ref wins.
+  // Per work item, its open questions by id, in the order they were asked.
+  const asks = new Map<string, Map<string, EventRecord>>();
+  // Oldest first, so each record acts on the questions asked before it.
   for (const event of events) {
     const ref = eventRef(event);
     if (!ref) continue;
@@ -575,12 +581,24 @@ export function awaitingInput(events: EventRecord[]): Record<string, EventRecord
     // instance whose log it came from, so the same ref asked on two instances
     // is two open questions, and a worker's unstamped log keys by ref alone.
     const key = boardKey(ref, typeof event.instance === "string" ? event.instance : undefined);
-    if (event.event === "session.awaiting_input") open[key] = event;
-    if (event.event === "session.reply_sent") answered[key] = event.ts;
+    const named = event["ask_id"];
+    const id = typeof named === "string" ? named : "";
+    if (event.event === "session.awaiting_input") {
+      const mine = asks.get(key) ?? new Map<string, EventRecord>();
+      // A question recorded without an id is known by when it was asked.
+      mine.delete(id || event.ts);
+      mine.set(id || event.ts, event);
+      asks.set(key, mine);
+    } else if (ANSWERS.has(event.event)) {
+      asks.delete(key);
+    } else if (event.event === "session.ask_default_taken") {
+      asks.get(key)?.delete(id);
+    }
   }
-  for (const [ref, asked] of Object.entries(open)) {
-    const reply = answered[ref];
-    if (reply !== undefined && reply >= asked.ts) delete open[ref];
+  const open: Record<string, EventRecord> = {};
+  for (const [key, mine] of asks) {
+    const latest = [...mine.values()].at(-1);
+    if (latest !== undefined) open[key] = latest;
   }
   return open;
 }
@@ -889,17 +907,23 @@ export interface AttentionEntry {
   gate?: { repo: string; workItem: string; node: string; pr?: number; prRepo?: string };
 }
 
-/** needs input > human gate > awaiting/armed/paused > errors (issue-283 B4). */
+/**
+ * needs input > human gate > awaiting/armed/paused/stalled > errors >
+ * information: a declared wait asks for nothing.
+ */
 const TIER_NEEDS_INPUT = 0;
 const TIER_GATE = 1;
 const TIER_WAITING = 2;
 const TIER_ERROR = 3;
+const TIER_INFO = 4;
 
 const KIND_TIER: Record<string, number> = {
   "awaiting-input": TIER_NEEDS_INPUT,
   "session-paused": TIER_WAITING,
   "armed-without-session": TIER_WAITING,
+  stalled: TIER_WAITING,
   "recent-error": TIER_ERROR,
+  "declared-wait": TIER_INFO,
 };
 
 /**

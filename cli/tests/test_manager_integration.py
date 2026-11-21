@@ -438,3 +438,67 @@ def test_a_proxied_ticket_create_carries_issue_type_and_parent(fleet, monkeypatc
         "labels": [],
     }
     assert typed == {**plain, "issueType": "Story", "parent": "PROJ-1"}
+
+
+@pytest.fixture
+def session_calls(monkeypatch):
+    """The four session operations a spawned session makes, recorded with the
+    instance whose config ran them."""
+    from the_loop.core import sessions as core_sessions
+    from the_loop.core import stopcheck as core_stopcheck
+
+    calls = []
+
+    def recorder(operation):
+        def run(ref, *args, config=None, **kwargs):
+            name = ((config or {}).get("instance") or {}).get("name")
+            calls.append((operation, name, ref))
+            return {"workItem": ref, "exitCode": 0, "messages": []}
+
+        return run
+
+    monkeypatch.setattr(core_sessions, "ask_session", recorder("ask"))
+    monkeypatch.setattr(core_stopcheck, "declare_wait", recorder("wait"))
+    monkeypatch.setattr(core_stopcheck, "stop_check", recorder("stop-check"))
+    monkeypatch.setattr(core_stopcheck, "turn_start", recorder("turn-start"))
+    return calls
+
+
+SESSION_OPERATIONS = {
+    "ask": {"question": "Which auth?", "default": "OAuth", "defaultAfterSeconds": 1800},
+    "wait": {"condition": "CI on #20", "seconds": 600},
+    "stop-check": {"backgroundWork": True},
+    "turn-start": {},
+}
+
+
+@pytest.mark.parametrize("operation", sorted(SESSION_OPERATIONS))
+def test_a_manager_serves_a_sessions_own_operations(fleet, session_calls, operation):
+    """
+    Feature: one surface, two roles
+      Scenario: a session asks, waits, and reports its turns through a manager
+        Given the fleet above
+        When the operation is POSTed to the manager for the manager's own work
+             item, and then for a work item a member manages
+        Then the manager runs the first itself and the member runs the second,
+             each answer is stamped with the instance that ran it,
+             and neither is a server error
+
+    Requirement: docs/specs/issue-551/requirements.md R2.1, R5.1, R6.1;
+                 docs/specs/issue-374/requirements.md R2.1, R2.3
+    """
+    path = f"/api/v1/sessions/{operation}"
+    body = SESSION_OPERATIONS[operation]
+
+    own = fleet["manager"].post(path, json={"ref": REF_HQ, **body})
+    assert own.status_code == 200, own.text
+    assert own.json()["instance"] == "hq"
+
+    routed = fleet["manager"].post(path, json={"ref": REF_B, **body})
+    assert routed.status_code == 200, routed.text
+    assert routed.json()["instance"] == "ci-box"
+
+    assert session_calls == [(operation, "hq", REF_HQ), (operation, "ci-box", REF_B)]
+    assert [url for _, url in fleet["dispatcher"].calls if path in url] == [
+        B_URL + path
+    ]

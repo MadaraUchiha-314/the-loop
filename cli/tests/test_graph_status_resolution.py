@@ -298,3 +298,60 @@ def test_a_mutating_verb_keeps_the_working_directory(
     assert not (
         Path(os.getcwd()) / "docs" / "specs" / WORK_ITEM / "work-item-state.json"
     ).exists()
+
+
+# -- the `session:` line (issue-551, R7) -----------------------------------------
+
+
+def _turn_log(tmp_path: Path, *records: dict) -> None:
+    """Point the CLI config's event log at a file holding ``records``."""
+    log = tmp_path / "events.jsonl"
+    log.write_text("".join(json.dumps({"work_item": REF, **r}) + "\n" for r in records))
+    config = Path(os.environ["THE_LOOP_CLI_CONFIG"])
+    config.write_text(config.read_text() + f"eventLog:\n  path: {log}\n")
+
+
+def test_check_prints_one_session_line_for_a_registered_session(
+    tmp_path, monkeypatch, elsewhere, capsys
+):
+    """
+    Feature: `check` says what the session is doing
+      Scenario: a daemon-driven session whose turn is running
+        Given a registered session and a `session.turn_started` record for it
+        When the operator runs `check` as a table and as json
+        Then the table has one `session:` line and the json a `session` object
+        And the exit code is the one the graph alone decides
+
+    Requirement: docs/specs/issue-551/requirements.md R7.1
+    """
+    from datetime import datetime, timezone
+
+    checkout = _checkout(tmp_path / "worktree")
+    _registry(tmp_path, monkeypatch, checkout)
+    assert _check(REF) == 1
+    assert "  session: not watched\n" in capsys.readouterr().out
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    _turn_log(tmp_path, {"ts": now, "event": "session.turn_started", "node": NODE})
+    assert _check(REF) == 1
+    lines = [
+        line
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith("  session:")
+    ]
+    assert len(lines) == 1
+    assert lines[0].startswith("  session: working (turn running since ")
+
+    _check(REF, fmt="json")
+    assert json.loads(capsys.readouterr().out)["session"]["state"] == "working"
+
+
+def test_check_prints_no_session_line_without_a_session(tmp_path, monkeypatch, capsys):
+    checkout = _checkout(tmp_path / "worktree")
+    monkeypatch.chdir(checkout)
+    monkeypatch.setenv("THE_LOOP_CLI_CONFIG", str(tmp_path / "none.yaml"))
+
+    _check(WORK_ITEM)
+    assert "session:" not in capsys.readouterr().out
+    _check(WORK_ITEM, fmt="json")
+    assert "session" not in json.loads(capsys.readouterr().out)

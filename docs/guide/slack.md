@@ -253,8 +253,9 @@ channels:
   slack:
     enabled: true
     channel: C0123ABCDEF
-    subscribe: [session.awaiting_input, phase-approval-pending, pr-review-pending,
-                comment.agent, work-item-complete, standing.started]
+    subscribe: [session.awaiting_input, session.stalled, phase-approval-pending,
+                pr-review-pending, comment.agent, work-item-complete,
+                standing.started]
     publish: [work-item.reply, gate.feedback, control.command,
               instance.command, standing.command]
     kickoff:

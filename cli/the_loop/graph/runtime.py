@@ -21,9 +21,10 @@ from typing import Any, Dict, FrozenSet, List, Mapping, Optional, Tuple
 from .. import eventlog, lifecycle, strings
 from ..lifecycle import PhaseChanged, WaitingForInput
 from ..lifecycle import WorkItem as LifecycleWorkItem
-from .chain import ChainOutcome, run_chain
+from .chain import ChainOutcome, hook_of, run_chain
 from .contract import BLOCK, PASS, SKIP, WAIT, HookContext, WorkItem
 from .model import Graph, GraphConfigError, artifact_names, load_graph
+from .registry import reads_event
 from ..sessions.refs import jira_site
 from .refs import derive_ref
 from .state import (
@@ -203,6 +204,14 @@ class NodeReport:
     messages: List[str] = field(default_factory=list)
     forced: bool = False
     attempts: int = 0
+    #: The node this advance moved the pointer INTO, ``""`` when it did not
+    #: move. Not part of :meth:`as_dict`: `check` reports verdicts, and a
+    #: claim's answer says where it landed in its own fields.
+    entered: str = ""
+    #: Whether that node's entry chain pushed its assignment into a session —
+    #: the daemon's channel. A claim's answer then leaves the assignment out, so
+    #: no session reads it twice.
+    assignment_delivered: bool = False
 
     @property
     def satisfied(self) -> bool:
@@ -1365,8 +1374,9 @@ class Runtime:
         state.completions[claimed] = {"at": utc_now(), "by": actor or "cli"}
         state.save(self.state_dir(item))
         report = self.advance(work_item_id, ref=ref)
-        after = WorkItemState.load(self.state_dir(item), work_item_id).current_node
-        return {
+        landed = WorkItemState.load(self.state_dir(item), work_item_id)
+        after = landed.current_node
+        answer = {
             "node": claimed,
             "status": report.status,
             "outcome": report.outcome,
@@ -1374,6 +1384,37 @@ class Runtime:
             "currentNode": after,
             "messages": report.messages,
             "reason": "",
+        }
+        if after != current and report.entered == after:
+            answer.update(self._next_assignment(item, landed, report))
+        return answer
+
+    def _next_assignment(
+        self, item: WorkItem, state: "WorkItemState", report: NodeReport
+    ) -> Dict[str, Any]:
+        """``assignment`` and ``next`` for the node a claim entered.
+
+        ``advanced to <node>`` told the claiming session where it stood and not
+        what to do there, and it ended its turn. Empty — both keys absent — when
+        the entry chain already pushed the assignment into a session, and
+        at a terminal node, where nothing is left to assign.
+        """
+        from .hooks.assignment import claim_assignment
+
+        node = self.graph.node(report.entered)
+        if report.assignment_delivered or node.terminal:
+            return {}
+        ctx = self._context(
+            item, node, "entry", surface=self._surface(state), handoff=state.handoff
+        )
+        return {
+            "assignment": claim_assignment(ctx),
+            "next": {
+                "node": node.id,
+                "actor": node.actor,
+                "command": str(node.command or ""),
+                "continue": node.actor == "agent",
+            },
         }
 
     def advance(
@@ -1389,6 +1430,38 @@ class Runtime:
         human-gate hook such as ``classify-feedback`` see the comments that just
         arrived; without it the gate has nothing to classify and waits forever.
         """
+        return self._advance(work_item_id, ref, event, inbound=False)
+
+    def advance_on_event(
+        self,
+        work_item_id: str,
+        ref: str = "",
+        event: Optional[Mapping[str, Any]] = None,
+    ) -> NodeReport:
+        """An inbound event reached the work item's session.
+
+        A comment is not a claim. A human-owned node, or a node whose exit chain
+        has a hook that declared it reads the event, is advanced exactly as
+        :meth:`advance` does — the gate classifies what arrived. Any other node
+        is read without the event: a met gate still advances, and an unmet one
+        writes nothing — no block, no park, no escalation. Those now come only
+        from the session's own claim (:meth:`complete`).
+        """
+        return self._advance(work_item_id, ref, event, inbound=True)
+
+    def _exit_reads_event(self, node: Any) -> bool:
+        """Whether a hook of ``node``'s exit chain declared ``reads_event``."""
+        return any(
+            reads_event(self.graph.hook_for(hook_of(spec))) for spec in node.exit
+        )
+
+    def _advance(
+        self,
+        work_item_id: str,
+        ref: str,
+        event: Optional[Mapping[str, Any]],
+        inbound: bool,
+    ) -> NodeReport:
         item = self.work_item(work_item_id, ref)
         state = WorkItemState.load(self.state_dir(item), work_item_id)
         skips = self.declared_skips(state)
@@ -1400,6 +1473,13 @@ class Runtime:
             # the very node its author declared away (issue-177).
             node_id = self._route_skips(state, item, self.graph.start, skips)
         node = self.graph.node(node_id)
+        # An event nobody on this node reads only LOOKS at the gate:
+        # the chain runs once, without it, and an unmet verdict is not recorded.
+        read_only = (
+            inbound and node.actor != "human" and not self._exit_reads_event(node)
+        )
+        if read_only:
+            event = None
 
         outcome = self.evaluate(
             node_id,
@@ -1424,6 +1504,13 @@ class Runtime:
         # confirmation comment — and it does so on the wait and block paths as
         # much as on the passing one, so this is read before any of them return.
         self._note_degradations(report, item, node_id, outcome)
+
+        if read_only and not outcome.satisfied:
+            # The one write kept: a lock `import-handoff` already put on disk
+            # must be recognised when the gate is next run.
+            if self._record_handoff_locks(state, outcome):
+                state.save(self.state_dir(item))
+            return report
 
         if outcome.status == WAIT:
             state.park(node_id, outcome.render() or "awaiting a human")
@@ -1561,6 +1648,14 @@ class Runtime:
             outcome=outcome.outcome,
         )
         report.messages.append(f"advanced to {target}")
+        # Imported here: the hooks package reaches back into `the_loop.core`.
+        from .hooks.assignment import DELIVER_ASSIGNMENT
+
+        report.entered = target
+        report.assignment_delivered = any(
+            result.hook == DELIVER_ASSIGNMENT and result.data.get("delivered")
+            for result in entered.results
+        )
         # The entry chain of the node just ENTERED — attributed to that node,
         # not to the one this advance left. This is where the phase-selection
         # checklist and the phase label are posted, and where issue-194's silence

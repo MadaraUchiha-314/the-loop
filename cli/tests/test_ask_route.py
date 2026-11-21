@@ -22,18 +22,27 @@ REF = "github:octo/repo#5"
 def captured(monkeypatch):
     calls = []
 
-    def fake_ask(ref, question, config=None, summary="", default_answer="", actor=""):
+    def fake_ask(
+        ref,
+        question,
+        config=None,
+        summary="",
+        default_answer="",
+        actor="",
+        default_after_seconds=None,
+    ):
         if not question.strip():
             raise ValueError("the question is empty; nothing to ask")
-        calls.append(
-            {
-                "ref": ref,
-                "question": question,
-                "summary": summary,
-                "default": default_answer,
-                "actor": actor,
-            }
-        )
+        call = {
+            "ref": ref,
+            "question": question,
+            "summary": summary,
+            "default": default_answer,
+            "actor": actor,
+        }
+        if default_after_seconds is not None:
+            call["after"] = default_after_seconds
+        calls.append(call)
         return {"exitCode": 0, "messages": [{"stream": "out", "text": "asked"}]}
 
     monkeypatch.setattr(core_sessions, "ask_session", fake_ask)
@@ -77,6 +86,43 @@ def test_an_empty_question_is_a_400(tmp_path, captured):
     client = TestClient(create_app({"state": {"root": str(tmp_path / ".the-loop")}}))
     response = client.post("/api/v1/sessions/ask", json={"ref": REF, "question": " "})
     assert response.status_code == 400
+
+
+def test_the_route_passes_the_wait_before_the_default(tmp_path, captured):
+    """issue-551 R6.1: the service applies the operator's minimum, so it is handed
+    the wait as the session gave it."""
+    client = TestClient(create_app({"state": {"root": str(tmp_path / ".the-loop")}}))
+    body = {"ref": REF, "question": "A or B?", "default": "A"}
+    response = client.post(
+        "/api/v1/sessions/ask", json={**body, "defaultAfterSeconds": 300}
+    )
+    assert response.status_code == 200, response.text
+    assert captured[0]["after"] == 300
+    refused = client.post(
+        "/api/v1/sessions/ask", json={**body, "defaultAfterSeconds": 0}
+    )
+    assert refused.status_code == 422
+
+
+@pytest.mark.routed
+def test_the_cli_sends_the_wait_in_seconds(monkeypatch, captured, capsys):
+    from the_loop import client
+
+    posted = []
+    monkeypatch.setattr(client, "healthy", lambda *_a, **_k: True)
+    monkeypatch.setattr(
+        client.Client,
+        "post",
+        lambda self, path, body: (
+            posted.append((path, body)) or {"exitCode": 0, "messages": []}
+        ),
+    )
+    asked = ["ask", "--work-item", REF, "--question", "A or B?", "--default", "A"]
+    assert main([*asked, "--after", "45m"]) == 0
+    assert posted[0][1]["defaultAfterSeconds"] == 2700
+    assert main([*asked, "--after", "soon"]) == 2
+    assert "is not a duration" in capsys.readouterr().err
+    assert len(posted) == 1
 
 
 @pytest.mark.routed

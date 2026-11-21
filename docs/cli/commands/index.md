@@ -33,6 +33,7 @@ that item's own checkout, the same way the repo-scoped commands do.
 | [`standing`](/cli/commands/standing) | The sessions the-loop keeps for itself — no work item, addressed by name: `list`, `start`, `stop`, `restart`, and `say` to talk to one. |
 | [`instances`](/cli/commands/instances) | The fleet a manager serves: `list` on any instance; `register` / `unregister` on a manager, writing the registry through the same splice as the Settings tab. |
 | [`ask`](/cli/commands/ask) | Post an agent's question on its work item — marker stamped centrally, wait recorded as `session.awaiting_input`. |
+| [`wait`](/cli/commands/wait) | Declare what a session waits for and until when — recorded as `session.wait_declared`; covers the one stop that ends the turn. |
 | [`comment`](/cli/commands/comment) | Post the agent's comment on its work item — marked, enveloped, mirrored to subscribed channels. |
 | [`ticket`](/cli/commands/ticket) | `show` a ticket (body, comments, attachment links) as JSON, `create` one (on Jira with an issue type and parent epic), `close` a registered work item's, or list the Jira `projects` one can go in. |
 | [`handoff`](/cli/commands/handoff) | A conversation handoff's record: `post` it on the issue, `show` the one frozen in state, `import` the carried files that verify, `note` the committed branch and PR (issue-517). |

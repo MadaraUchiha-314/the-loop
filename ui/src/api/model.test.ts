@@ -673,6 +673,22 @@ describe("attentionEntries", () => {
     expect(entries.map((entry) => entry.kind)).toEqual(["awaiting input"]);
   });
 
+  it("shows a stall as a wait and a declared wait as information, below every other kind (issue-551)", () => {
+    const views = buildWorkItemViews({
+      workItems: [RECORD],
+      sessions: [SESSION],
+      attention: [
+        { workItem: RECORD.ref, kind: "declared-wait", detail: "“CI on #552” · until 17:40 (informational)" },
+        { workItem: RECORD.ref, kind: "recent-error", detail: "dispatch.failed", at: "2026-08-12T10:00:00Z" },
+        { workItem: RECORD.ref, kind: "stalled", detail: "self-review · idle 22 min · 2 nudges", at: "2026-08-12T09:00:00Z" },
+      ],
+    });
+    const entries = attentionEntries(views);
+    expect(entries.map((entry) => entry.kind)).toEqual(["stalled", "recent error", "declared wait"]);
+    expect(entries.map((entry) => entry.urgent)).toEqual([false, false, false]);
+    expect(entries[0]!.detail).toBe("self-review · idle 22 min · 2 nudges");
+  });
+
   it("dedupes repeated reports per (item, kind), newest first, with a count (issue-283 B3)", () => {
     const views = buildWorkItemViews({
       workItems: [RECORD],
@@ -856,6 +872,35 @@ describe("awaitingInput", () => {
       ask("github:octo/repo#15", "2026-08-12T10:09:00Z", "and now?"),
     ]);
     expect(questionOf(open["github:octo/repo#15"])).toBe("and now?");
+  });
+
+  it("closes a question on an authorized answer or on its default being taken (issue-551)", () => {
+    for (const event of ["session.ask_answered", "session.ask_default_taken"]) {
+      expect(
+        awaitingInput([
+          { ...ask("github:octo/repo#15", "2026-08-12T10:00:00Z"), ask_id: "a1" },
+          { ts: "2026-08-12T10:05:00Z", event, work_item: "github:octo/repo#15", ask_id: "a1" },
+        ]),
+      ).toEqual({});
+    }
+  });
+
+  it("keeps the other open question when one question's default is taken (issue-551)", () => {
+    const ref = "github:octo/repo#15";
+    const two = [
+      { ...ask(ref, "2026-08-12T10:00:00Z", "first?"), ask_id: "a1" },
+      { ...ask(ref, "2026-08-12T10:01:00Z", "second?"), ask_id: "a2" },
+    ];
+    // The default of the later one is taken: the earlier one is still open.
+    const earlier = awaitingInput([...two, { ts: "2026-08-12T10:31:00Z", event: "session.ask_default_taken", work_item: ref, ask_id: "a2" }]);
+    expect(questionOf(earlier[ref])).toBe("first?");
+    // The default of the earlier one is taken: the later one is still open.
+    const later = awaitingInput([...two, { ts: "2026-08-12T10:31:00Z", event: "session.ask_default_taken", work_item: ref, ask_id: "a1" }]);
+    expect(questionOf(later[ref])).toBe("second?");
+    // A person's answer closes every open question, whichever one it names.
+    for (const event of ["session.ask_answered", "session.reply_sent"]) {
+      expect(awaitingInput([...two, { ts: "2026-08-12T10:05:00Z", event, work_item: ref, ask_id: "a1" }])).toEqual({});
+    }
   });
 
   it("finds nothing in a log from a service that has no such verb", () => {

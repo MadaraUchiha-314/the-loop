@@ -1077,6 +1077,79 @@ Interface/IP ttyd binds. Keep `127.0.0.1` unless the network layer protects wide
 
 ttyd listen port.
 
+## Idle sessions and unanswered questions
+
+A session the daemon drives must not go idle unnoticed (issue-551). The control-plane
+service watches each live session's turn records. A session that ended a turn with work
+owed, and took no new turn, is told to continue. When the nudges are spent, a person is
+told once, in the work item's conversation (`session.stalled`).
+
+The same watcher keeps the deadline of a question asked with
+[`the-loop ask`](/cli/commands/ask): it takes the default when nobody answered in time, or
+posts one reminder when the question has no default.
+
+A config without these two blocks behaves as the defaults say. A session whose harness
+hooks are not installed writes no turn record, is not watched, and is shown as
+`not watched`.
+
+### `watchdog.enabled`
+
+- **Type:** `boolean`
+- **Default:** `true`
+- **Since:** issue-551
+
+Run the watchdog. `false` sends no nudge and no stall notice. The Stop gate, the turn
+records and the ask deadlines below are not affected.
+
+### `watchdog.idleSeconds`
+
+- **Type:** `integer` (1 or more)
+- **Default:** `600`
+- **Since:** issue-551
+
+How long a session may sit idle, with work owed and no wait in effect, before it is
+nudged. The time is counted from the moment the reason for its last stop lapsed, not from
+the turn's end: a session whose declared wait expired at 17:40 is idle from 17:40.
+
+### `watchdog.maxNudges`
+
+- **Type:** `integer` (0 or more)
+- **Default:** `2`
+- **Since:** issue-551
+
+How many nudges one visit to a node gets before the stall notice (`session.nudged`). The
+count belongs to the node visit, not to the idle period, so a session that answers every
+nudge with one empty turn is not nudged forever. `0` skips the nudges and goes to the
+notice.
+
+### `watchdog.maxWaitSeconds`
+
+- **Type:** `integer` (1 or more)
+- **Default:** `3600`
+- **Since:** issue-551
+
+The longest wait `the-loop wait` accepts; a longer one is refused. It is also the longest
+time background work the harness reports is believed without a new turn.
+
+### `asks.minDefaultWaitSeconds`
+
+- **Type:** `integer` (1 or more)
+- **Default:** `1800`
+- **Since:** issue-551
+
+The shortest time a person gets to answer before `the-loop ask --default … --after …`
+takes its default. A shorter `--after` is raised to this, and the command's output says
+so.
+
+### `asks.reminderSeconds`
+
+- **Type:** `integer` (0 or more)
+- **Default:** `7200`
+- **Since:** issue-551
+
+How long a question with no default stays unanswered before one reminder is posted on its
+thread (`session.ask_reminded`). `0` sends no reminder.
+
 ## Invoking the harness
 
 ### `harnessArgs.claude`

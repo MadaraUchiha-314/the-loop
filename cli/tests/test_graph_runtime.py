@@ -207,3 +207,69 @@ def test_start_persists_the_pointer_before_the_entry_chain_runs(repo):
     Runtime(repo, graph=compile_graph(graph)).start("issue-1")
 
     assert seen["on_disk"] == "design"
+
+
+# -- Runtime.advance_on_event (issue-551, R5) --------------------------------------
+
+
+def _agent_node_with(hook_name, repo):
+    graph = {
+        "start": "work",
+        "nodes": [
+            {"id": "work", "exit": [hook_name]},
+            {"id": "done", "terminal": True},
+        ],
+        "edges": [{"from": "work", "to": "done", "on": "pass"}],
+    }
+    runtime = Runtime(repo, graph=compile_graph(graph))
+    runtime.start("issue-1")
+    return runtime
+
+
+def test_an_agent_node_whose_hook_reads_the_event_is_graded_with_it(repo):
+    """R5.3 — the hook declared it, so the event reaches it and its block counts."""
+    from the_loop.graph.contract import HookResult, Message
+    from the_loop.graph.registry import hook
+
+    seen = []
+
+    @hook("listens-551", reads_event=True)
+    def _listens(ctx):
+        seen.append(ctx.event)
+        return HookResult.blocked("listens-551", [Message(text="not yet")])
+
+    runtime = _agent_node_with("listens-551", repo)
+
+    report = runtime.advance_on_event("issue-1", event={"comments": []})
+
+    assert seen == [{"comments": []}]
+    assert report.status == "block"
+    state = WorkItemState.load(repo / "docs" / "specs" / "issue-1", "issue-1")
+    assert "not yet" in state.nodes["work"].last_block
+
+
+def test_an_agent_node_whose_hooks_declare_nothing_is_only_read(repo):
+    """R5.1 — no event is handed over, and neither a block nor a wait is written."""
+    from the_loop.graph.contract import HookResult, Message
+    from the_loop.graph.registry import hook
+
+    seen, verdict = [], ["block"]
+
+    @hook("silent-551")
+    def _silent(ctx):
+        seen.append(ctx.event)
+        if verdict[0] == "wait":
+            return HookResult.waiting("silent-551", "not yet")
+        return HookResult.blocked("silent-551", [Message(text="not yet")])
+
+    runtime = _agent_node_with("silent-551", repo)
+    state_file = repo / "docs" / "specs" / "issue-1" / STATE_FILENAME
+    before = state_file.read_text()
+
+    blocked = runtime.advance_on_event("issue-1", event={"comments": []})
+    verdict[0] = "wait"
+    waiting = runtime.advance_on_event("issue-1", event={"comments": []})
+
+    assert seen == [None, None]
+    assert (blocked.status, waiting.status) == ("block", "wait")
+    assert state_file.read_text() == before

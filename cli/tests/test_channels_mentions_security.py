@@ -383,3 +383,36 @@ def test_a_strangers_mention_is_silent_even_when_the_bot_id_is_unknown(tmp_path)
     )
     assert outcome == {"outcome": "unauthorized-actor"}
     assert client.ephemeral == [] and sink.recorded == []
+
+
+def test_abuse_only_an_authorized_members_reply_is_vouched_for(tmp_path, monkeypatch):
+    """A reply resets the watcher's budgets only when the channel checked its
+    author against the allow-list. A collaborator's reply is input: delivered,
+    and vouched for by nobody."""
+    from the_loop.core import sessions as core_sessions
+
+    config = config_for(tmp_path)
+    declare(config)
+    _collaborator(config)
+    sink, client = Sink(), Client()
+    calls: list = []
+
+    def reply_session(ref, text, **kwargs):
+        calls.append(kwargs)
+        return {"delivered": True}
+
+    monkeypatch.setattr(core_sessions, "reply_session", reply_session)
+    for user, ts in (("UHUMAN", "1900.1"), ("UCOLLAB", "1900.2")):
+        outcome = inbound.handle_socket_event(
+            {"ts": ts, "channel": ROOM, "user": user, "text": f"<@{BOT}> go on"},
+            config,
+            post_comment=sink.post_comment,
+            create_issue=sink.create_issue,
+            client_factory=lambda token: client,
+            addressed=True,
+        )
+        assert outcome["outcome"] == "processed" and outcome["delivered"] is True
+    authorized, collaborator = calls
+    assert authorized["actor"] == authorized["authorized_actor"] == "slack:UHUMAN"
+    assert collaborator["actor"] == "slack:UCOLLAB"
+    assert "authorized_actor" not in collaborator

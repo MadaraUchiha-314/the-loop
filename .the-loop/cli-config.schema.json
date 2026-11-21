@@ -761,6 +761,55 @@
             }
           }
         },
+        "watchdog": {
+          "type": "object",
+          "description": "When a daemon-driven session that went idle is nudged, and when a person is told (issue-551). The control-plane service watches every live session's turn records: a session that ended a turn with work owed and took no new turn for `idleSeconds` is told to continue, at most `maxNudges` times for one visit to a node, and then one stall notice is published (`session.stalled`). A session whose harness hooks are not installed writes no turn record and is not watched.",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true,
+              "description": "Run the watchdog. false sends no nudge and no stall notice. The Stop gate, the turn records and the ask deadlines (`routing.asks`) are not affected."
+            },
+            "idleSeconds": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 600,
+              "description": "How long a session may sit idle, with work owed and no wait in effect, before it is nudged. Counted from the moment the reason for its last stop lapsed, not from the turn's end: a session whose declared wait expired at 17:40 is idle from 17:40."
+            },
+            "maxNudges": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 2,
+              "description": "How many nudges one visit to a node gets before the stall notice. The count is kept per node visit, not per idle period, so a session that answers every nudge with one empty turn is not nudged forever. 0 skips the nudges and goes to the notice."
+            },
+            "maxWaitSeconds": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 3600,
+              "description": "The longest wait `the-loop wait` accepts; a longer one is refused. Also the longest time background work the harness reports is believed without a new turn."
+            }
+          }
+        },
+        "asks": {
+          "type": "object",
+          "description": "The deadline of a question asked with `the-loop ask` (issue-551): how long a default waits before it is taken, and when an unanswered question with no default is reminded.",
+          "additionalProperties": false,
+          "properties": {
+            "minDefaultWaitSeconds": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1800,
+              "description": "The shortest time a person gets to answer before `the-loop ask --default ... --after ...` takes its default. A shorter `--after` is raised to this, and the command's output says so."
+            },
+            "reminderSeconds": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 7200,
+              "description": "How long a question with no default stays unanswered before one reminder is posted on its thread (`session.ask_reminded`). 0 sends no reminder."
+            }
+          }
+        },
         "control": {
           "type": "object",
           "description": "Execution control: the keywords an AUTHORIZED user steers the-loop with, in a comment on the work item or its PR (issue-106). Before this, `authorizedUsers` said WHO may be an input and `autoExecuteLabel` (now `autoExecuteLabels`) said WHICH items may run — nothing said WHEN, so labelling an issue was itself an irreversible trigger. A comment carrying a declared keyword is interpreted by the-loop and NOT forwarded to the harness; the five session commands are also available as `the-loop sessions start|pause|resume|stop|cleanup`, which post the same keyword back to the ticket (marked as the-loop's own so it is never read back). Control parsing runs strictly AFTER the existing guards — the self-comment marker and authorizedUsers — so it never becomes a second, weaker way in; the parser recognises the fixed vocabulary only and yields one of the declared commands, never text from the comment.",
@@ -1669,7 +1718,8 @@
                 "type": "string"
               },
               "default": [
-                "session.awaiting_input"
+                "session.awaiting_input",
+                "session.stalled"
               ],
               "description": "The event types this channel RECEIVES, as `channels.slack.subscribe` — e.g. work-item.started, phase.started, phase.completed, session.awaiting_input, work-item.closed. `the-loop channels status` prints the catalog."
             },
@@ -1716,9 +1766,10 @@
                 "type": "string"
               },
               "default": [
-                "session.awaiting_input"
+                "session.awaiting_input",
+                "session.stalled"
               ],
-              "description": "The event types this channel RECEIVES (was `events` before issue-309). session.awaiting_input is the ask (`the-loop ask`); the graph's notification events (phase-approval-pending, pr-review-pending, decision-pending, security-sign-off-pending, conflict-escalated, work-item-complete), the loop's lifecycle events (phase.started, phase.completed — every phase of every graph, published by the runtime as the `loop:<phase>` label changes; work-item.closed — the issue closed or the pull request merged, issue-378) and the ledger's comment events (comment.agent — the agent's own comments; comment.human — an authorized user's or collaborator's) are the rest of the catalog — add the ones you want. `the-loop channels status` prints the catalog with ticks."
+              "description": "The event types this channel RECEIVES (was `events` before issue-309). session.awaiting_input is the ask (`the-loop ask`) and session.stalled the notice that a session stopped with work still to do (issue-551): the two that need a person, and the default; the graph's notification events (phase-approval-pending, pr-review-pending, decision-pending, security-sign-off-pending, conflict-escalated, work-item-complete), the loop's lifecycle events (phase.started, phase.completed — every phase of every graph, published by the runtime as the `loop:<phase>` label changes; work-item.closed — the issue closed or the pull request merged, issue-378) and the ledger's comment events (comment.agent — the agent's own comments; comment.human — an authorized user's or collaborator's) are the rest of the catalog — add the ones you want. `the-loop channels status` prints the catalog with ticks."
             },
             "publish": {
               "type": "array",

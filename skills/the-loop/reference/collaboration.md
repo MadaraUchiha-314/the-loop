@@ -21,7 +21,8 @@ PR.
 ## Where questions go, and where artifacts are iterated (issue-134)
 
 Two rules. The first is configurable, because only the operator knows where they are.
-The second is not, because it is a property of the artifact.
+The second is not, because it is a property of the artifact. Sections 3 and 4 then say
+when to ask at all, and when a session's turn may end.
 
 ### 1. The interaction channel is declared, not guessed
 
@@ -37,8 +38,9 @@ A session driven by the CLI daemon is **told** where its answers come from, via
   **centrally** (see the rule below — no agent memory involved), and records the wait
   as a `session.awaiting_input` event, which is what lets the control plane surface the
   question (`attention`, the dashboard's card) and answer it straight into the session
-  (`POST /api/v1/sessions/reply`). The session then **stops and waits**: the reply
-  reaches it as the next event. Only if the CLI is unavailable, post the comment with
+  (`POST /api/v1/sessions/reply`). The reply reaches the session as the next event.
+  Whether the session waits for it or carries on depends on the case (§ 3 below).
+  Only if the CLI is unavailable, post the comment with
   `gh` (or a GitHub MCP server) and mark it yourself. Never block on an interactive prompt, and never read
   silence as consent — if genuinely blocked, log the conflict, escalate once, and move
   to the next available work. The daemon enforces the first half for Claude Code: a
@@ -58,7 +60,9 @@ document, which is what a reviewer on a phone actually needs to act (issue-393 R
 full question text is still recorded on the ticket. When you would proceed a certain way
 absent an objection, pass that as `--default "…"` (e.g. `--default "Defaults are fine"`):
 the room then offers a **one-tap button** that replies with exactly that text (R12.1), so
-the human can approve without typing. So the normal shape of a question is:
+the human can approve without typing. A `--default` alone is only that button: nothing
+takes it for the person. Add `--after <duration>` and the default is taken when the wait
+ends (§ 3, case 2). So the normal shape of a question is:
 
 ```sh
 the-loop ask --work-item <ref> \
@@ -191,6 +195,86 @@ author at `phase-selection` (issue-183) — and it applies to the **outer** loop
 See `docs/decisions/decision-051.md` for why the mode is a two-value enum, and
 `docs/decisions/decision-069.md` for why the artifact rule now names two surfaces rather
 than one.
+
+### 3. RULE: decide, ask with a default, or ask and wait (issue-551)
+
+Before you ask, find which of three cases the choice is. Each case has one action.
+
+| Case | What you do |
+|---|---|
+| **1.** A reversible choice with a recommended option | Take the recommended option. Say so on the work item, with `the-loop comment`. Do not ask. |
+| **2.** A choice where a person's view is worth having, but not worth blocking for | Ask with `--default` and `--after`. Keep working on what does not depend on the answer. |
+| **3.** An irreversible act, a security decision, or anything that needs a person's authority: an approval, a gate answer, accepting a risk | Ask without a default, and wait. |
+
+A case 2 question looks like this:
+
+```sh
+the-loop ask --work-item <ref> \
+  --question-file q.md \
+  --summary "Two retry helpers exist. I plan to reuse the one in net/. Say so if the new one is preferred." \
+  --default "Reuse the helper in net/" \
+  --after 30m
+```
+
+- The posted question states the default and the time at which it is taken.
+- If no authorized user answers by that time, the daemon tells the session to proceed
+  with the default, and says so on the same thread.
+- An authorized answer before that time wins, and the default is not taken.
+- An answer after that time still reaches the session, as a comment. Correct course
+  then.
+- The operator sets a minimum wait: 30 minutes by default
+  (`routing.asks.minDefaultWaitSeconds`). A shorter `--after` is raised to it, and the
+  command's output says so. `--after` without `--default` is refused.
+
+**A default is never a gate answer and never an approval.** The-loop does not accept one
+at a human gate, and a session must not treat one as a person's authority. In case 3,
+"never read silence as consent" still holds: wait for the person, however long it takes.
+An ask without a default gets one reminder where it was asked, and no more.
+
+### 4. RULE: a turn ends only for one of five reasons (issue-551)
+
+This section's short name is **§ When a turn may end**. A daemon-driven session ends its
+turn only when one of these holds. The Stop gate checks the same list
+(`reference/automation.md` § Predictability & execution guarantees).
+
+1. The pointer is on a human-owned node, or the work item is complete.
+2. The work item has an open ask.
+3. The work item has a declared wait that has not expired.
+4. Work the session started is still running in the background.
+5. The node waits on a condition the graph itself reports as a wait, such as unfinished
+   inner loops.
+
+Anything else: continue. A boundary between two agent-owned nodes is not a reason. A
+finished task is not a reason. A full context window is not a reason
+(`reference/context.md`).
+
+Reason 2 covers a case 2 ask too, but only when no work is left that does not depend on
+the answer. Until then, keep working.
+
+**Take the step you announce.** A session that says what it will do next does it in the
+same turn. If it cannot, it records why: with an ask (§ 3) or with a declared wait
+(below). Never end a turn on "next I will…".
+
+**To wait on something that is not a person, declare the wait.** CI on a pull request
+and another session's pull request are examples:
+
+```sh
+the-loop wait --work-item <ref> --for "CI on PR 12" --until 30m
+```
+
+- **It covers one stop:** the stop that ends the turn the wait was declared in. If the
+  next turn still waits, it declares again.
+- **Its limit** is 60 minutes by default (`routing.watchdog.maxWaitSeconds`). A longer
+  wait is refused.
+- **It is not for a person.** On a human-owned node the verb is refused. Ask a person
+  with `the-loop ask`.
+- **Background work needs a wait only where the harness reports none.** Claude Code
+  tells the Stop gate which background tasks are still running, so a session there
+  declares no wait for them. A harness that gives no such list (Codex, Cursor) needs a
+  declared wait for background work too.
+
+When a wait expires and the session is idle with agent work owed, the daemon nudges the
+session. If the nudges do not help, it tells a person.
 
 ## RULE: mark every comment/reply as the-loop's own (loop prevention)
 

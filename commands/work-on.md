@@ -172,9 +172,12 @@ a gate (`tasks.md`) advances on shape alone.
    spec doc are made as **edits to that file, not new comments**.
 
 8. **Implementation** (`implementation`). Entering implementation crosses the big phase
-   boundary: **clear the context window (the fixed phase-boundary rule)** and execute
+   boundary: **in an interactive session, clear the context window (the fixed
+   phase-boundary rule)** and execute
    against the locked spec files read from disk, not the drafting
-   conversation (plan-mode style; `reference/context.md`). Execute the task DAG
+   conversation (plan-mode style; `reference/context.md`). **A daemon-driven session
+   does not clear and does not end its turn here:** it compacts or hands the work to
+   fresh subagents, and continues in the same turn. Execute the task DAG
    autonomously. **Tick each task in `tasks.md` (`- [ ]` → `- [x]`) as it completes.**
    Run tests (unit/integration per config) at logical checkpoints — self-checking as
    you go — and write no progress log: the harness keeps the transcript and git keeps the

@@ -26,8 +26,10 @@ the-loop comment --work-item github:OWNER/REPO#N --body-file review.md \
    the whole comment in the message's thread
    ([issue-549](https://github.com/MadaraUchiha-314/the-loop/issues/549)).
 
-It prints the comment's URL. To **ask** a human and wait for the answer, use
-[`ask`](/cli/commands/ask) instead: it records the wait, and `comment` does not.
+It prints the comment's URL. To **ask** a human, use [`ask`](/cli/commands/ask)
+instead: it records the wait, and `comment` does not. `ask` either waits for the
+answer, or with `--default … --after …` keeps working and takes the default at its
+deadline.
 
 ## Flags
 

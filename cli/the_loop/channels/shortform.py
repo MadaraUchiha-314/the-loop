@@ -24,24 +24,27 @@ Pure apart from the one event-log record; no Slack, no disk.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, List, Optional, Tuple
 
 from .. import eventlog, strings
-from .defuse import defuse
+from .defuse import MARKDOWN_LINK_RE, defuse
 from .mrkdwn import outside_code, to_mrkdwn, unfold
 from .render import HEADING_LINE_RE, ITEM_RE, QUOTE_RE, block_spans, heading_text
 from .voice import room_lead
 
 __all__ = [
     "SESSION_EVENTS",
+    "SHORT_ONLY_EVENTS",
     "SUMMARY_MAX_CHARS",
     "ShortForm",
     "build_short_form",
     "cap_short_form",
     "cut_at_boundary",
+    "default_line",
     "is_session_authored",
     "long_form_adds",
+    "quoted_default",
     "sentence_ends",
     "sentences",
 ]
@@ -230,6 +233,56 @@ def _with_preamble(preamble: str, body: str, limit: int) -> str:
     return f"{preamble}\n{capped}" if capped else preamble
 
 
+#: How much of a default answer the short form quotes; the ticket has all of it.
+DEFAULT_QUOTE_CHARS = 200
+
+
+def default_line(event: Any) -> str:
+    """The line a question with a default and a deadline gains: when the
+    session goes ahead, and with what. mrkdwn; ``""`` for any other event, and
+    for a default with no readable time.
+
+    The default is the session's own text, so it is flattened to one line, its
+    links are drawn as words and it is defused before it is quoted. It is not
+    drawn as mrkdwn: nothing in it becomes a link."""
+    if str(getattr(event, "event_type", "") or "") != "session.awaiting_input":
+        return ""
+    from ..core.sessionstate import parse_ts  # core imports the channels
+
+    detail = getattr(event, "detail", None) or {}
+    default = quoted_default(str(detail.get("default") or ""))
+    moment = parse_ts(detail.get("default_at"))
+    if not default or moment is None:
+        return ""
+    after = str(detail.get("default_after") or "")
+    return strings.t(
+        "channels.shortform.default-line",
+        time=moment.strftime("%H:%M UTC"),
+        # A minute that has begun is counted, so the wait is never understated.
+        minutes=-(-int(after) // 60) if after.isdigit() else "?",
+        default=default,
+    )
+
+
+#: mrkdwn has no escape character, so the four that style text are drawn as
+#: their look-alikes: the words read the same and style nothing.
+_MRKDWN_INERT = str.maketrans({"*": "∗", "_": "ˍ", "~": "∼", "`": "ˋ"})
+
+
+def quoted_default(text: str) -> str:
+    """A default answer as Slack may quote it: one line, within
+    :data:`DEFAULT_QUOTE_CHARS`, its links drawn as words, defused, with no
+    bare address Slack would link and no character that styles the quote.
+    ``""`` for an empty one."""
+    from .bodies import break_autolinks  # bodies imports this module
+
+    default = " ".join(text.split())
+    if len(default) > DEFAULT_QUOTE_CHARS:
+        default = default[: DEFAULT_QUOTE_CHARS - 1].rstrip() + "…"
+    default = defuse(MARKDOWN_LINK_RE.sub(r"\1 (\2\3)", default))
+    return break_autolinks(default).translate(_MRKDWN_INERT)
+
+
 def build_short_form(
     event: Any,
     *,
@@ -246,6 +299,28 @@ def build_short_form(
     line, the mentions; trusted, so not defused); it opens the text and counts
     toward the cap (R7, R9.3).
     """
+    tail = default_line(event)
+    if tail and len(tail) < limit:
+        # The line counts toward the cap, and is never the part that is cut.
+        short = _short_form(
+            event,
+            session_authored=session_authored,
+            preamble=preamble,
+            limit=limit - len(tail) - 1,
+        )
+        return replace(short, text=f"{short.text}\n{tail}".strip())
+    return _short_form(
+        event, session_authored=session_authored, preamble=preamble, limit=limit
+    )
+
+
+def _short_form(
+    event: Any,
+    *,
+    session_authored: Optional[bool],
+    preamble: str,
+    limit: int,
+) -> ShortForm:
     url = str(getattr(event, "url", "") or "")
     summary = _draw(str(getattr(event, "summary", "") or ""))
     if summary:
@@ -302,9 +377,24 @@ def _normalise(text: str) -> str:
     return " ".join(text.split())
 
 
+#: The watcher's messages: each is its short form and nothing else.
+#: Their ``text`` is the same statement worded for the ticket, not a long form.
+SHORT_ONLY_EVENTS = frozenset(
+    {
+        "session.stalled",
+        "session.stall_ended",
+        "session.ask_default_taken",
+        "session.ask_reminded",
+    }
+)
+
+
 def long_form_adds(event: Any, short: ShortForm) -> bool:
     """Whether ``event``'s long form says more than ``short`` (R3.3): False when
-    it is empty once defused, or when the short form already holds all of it."""
+    it is empty once defused, when the short form already holds all of it, or
+    for an event that is only ever its short form."""
+    if str(getattr(event, "event_type", "") or "") in SHORT_ONLY_EVENTS:
+        return False
     text = str(getattr(event, "text", "") or "")
     drawn = _normalise(_draw(text))
     if not drawn:

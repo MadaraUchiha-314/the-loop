@@ -803,6 +803,9 @@ def process_reply(
         deliver,
         kind=kind,
         detail=frame_detail,
+        # A collaborator's reply is input and nothing more: only the
+        # allow-list's own member is vouched for.
+        authorized=speaker.authorized,
     )
     if reply_noted and not delivered:
         _restore_reply_thread(bot, reply.work_item, *reply_noted)
@@ -1051,12 +1054,18 @@ def _deliver(
     *,
     kind: str = "reply",
     detail: Optional[Mapping[str, str]] = None,
+    authorized: bool = False,
 ) -> Tuple[bool, str]:
     """``(delivered, error)`` — the error is the refusal's text when it was not.
 
     ``kind`` and ``detail`` select the frame a recorded act is typed under
     (issue-389 R3.7); a plain reply passes neither, so every existing deliverer
-    — the tests' seams included — is called exactly as before."""
+    — the tests' seams included — is called exactly as before.
+
+    ``authorized`` says the author passed the allow-list check. The session
+    reply path is then told who that was, and records it; a deliverer the
+    caller handed in, and a standing session's, are called as before."""
+    vouched = False
     if deliver is None and parse_standing_ref(reply.work_item):
         # The other namespace's delivery (issue-277). Bound late for the same
         # reason the work-item one is: a test or embedder patching
@@ -1068,9 +1077,12 @@ def _deliver(
         from ..core import sessions as core_sessions
 
         deliver = core_sessions.reply_session
+        vouched = authorized
     extra: Dict[str, Any] = {}
     if kind != "reply":
         extra = {"kind": kind, "detail": dict(detail or {})}
+    if vouched:
+        extra["authorized_actor"] = f"{reply.channel}:{reply.author}"
     try:
         result = deliver(
             reply.work_item,

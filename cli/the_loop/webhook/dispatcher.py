@@ -19,6 +19,7 @@ import re
 import threading
 import time
 import uuid
+from datetime import datetime, timezone
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from string import Template
@@ -140,6 +141,7 @@ from ..harness_plugins import PluginConfig
 from ..identity import github_logins, parse_authorized_users
 from ..linkage import WorkItemVerifier
 from ..trust import TrustConfig, TrustResult, is_too_broad
+from ..watchconfig import AsksConfig, WatchdogConfig
 from ..workspace import RepoTarget, Workspace, WorkspaceError, repo_target_from_payload
 from .cimonitor import (
     REASON_EXHAUSTED,
@@ -485,6 +487,10 @@ class RoutingConfig:
     # Which CI events wake a session, and how many failing commits a check gets
     # before the session is told to stop and escalate (issue-462).
     ci: CiConfig = field(default_factory=CiConfig)
+    # When an idle session is nudged and a person is told, and the deadline of
+    # an ask's default.
+    watchdog: WatchdogConfig = field(default_factory=WatchdogConfig)
+    asks: AsksConfig = field(default_factory=AsksConfig)
 
     @classmethod
     def from_mapping(
@@ -547,6 +553,8 @@ class RoutingConfig:
             interaction=InteractionConfig.from_mapping(data.get("interaction") or {}),
             instance=InstanceConfig.from_mapping(data.get("_instance") or {}),
             ci=CiConfig.from_mapping(data.get("ci") or {}),
+            watchdog=WatchdogConfig.from_mapping(data.get("watchdog") or {}),
+            asks=AsksConfig.from_mapping(data.get("asks") or {}),
         )
 
 
@@ -4181,13 +4189,18 @@ class Dispatcher:
             # With R8 in place no ordinary path reaches this: the first spawn
             # already carries the frozen choice. It stays because the cases it
             # covers are real and would otherwise be silent.
-            return self._respawn_tmux(
+            respawned = self._respawn_tmux(
                 endpoint,
                 routed,
                 prompt,
                 advance_after=gate_report is None,
                 owner=session.work_item,
             )
+            if respawned:
+                self._record_answer(
+                    session, endpoint, routed, self._person_behind(routed)
+                )
+            return respawned
         result = self.tmux.deliver(
             endpoint, prompt, timeout=self.config.dispatch_timeout_seconds
         )
@@ -4198,20 +4211,29 @@ class Dispatcher:
             # deliver this event into it, instead of releasing for a
             # redelivery that would hit the same missing session forever
             # (issue-80).
-            return self._respawn_tmux(
+            respawned = self._respawn_tmux(
                 endpoint,
                 routed,
                 prompt,
                 advance_after=gate_report is None,
                 owner=session.work_item,
             )
+            if respawned:
+                self._record_answer(
+                    session, endpoint, routed, self._person_behind(routed)
+                )
+            return respawned
         ok, error, verb = result.ok, result.error, "delivered into tmux session"
 
         if ok:
             logger.info("%s %s for %s", verb, session.harness, key)
+            person = self._person_behind(routed)
             eventlog.emit(
                 "dispatch.succeeded",
                 work_item=key,
+                # Only for an authorized person's comment or review:
+                # the one delivery that starts a new nudge budget.
+                actor=person or None,
                 # Which conversation actually got it, when that is not the work
                 # item's own (issue-172).
                 endpoint=(endpoint.work_item.ref if endpoint is not session else None),
@@ -4220,6 +4242,7 @@ class Dispatcher:
                 gh_event=routed.event,
                 delivery_id=routed.delivery_id or None,
             )
+            self._record_answer(session, endpoint, routed, person)
             self.registry.touch(
                 key,
                 delivery_id=routed.delivery_id or None,
@@ -4261,6 +4284,79 @@ class Dispatcher:
         if routed.delivery_id:
             self._release_delivery(routed.delivery_id)
         return False
+
+    def _person_behind(self, routed: RoutedEvent) -> str:
+        """The authorized user whose words ``routed`` carries; ``""`` otherwise.
+
+        A comment or a review only: a CI status, a label and an open/close
+        action carry no text of a person's. The-loop's own marked comment and an
+        unauthorized author never reach the dispatcher (the router drops both).
+        The allow-list is asked again here because a work-item collaborator is
+        let through as input and nothing more: an answer that cancels a
+        default is an authorized user's.
+        """
+        if event_body(routed.event, routed.payload) is None:
+            return ""
+        actor = event_actor(routed.event, routed.payload) or ""
+        if not actor or not self._actor_authorized(routed, actor):
+            return ""
+        return actor
+
+    def _record_answer(
+        self, session: Session, endpoint: Session, routed: RoutedEvent, person: str
+    ) -> None:
+        """Write `session.ask_answered` for every open ask ``person``'s delivered
+        event answers.
+
+        An ask is logged under the ref the session named when it asked — the
+        work item or one of its pull requests — while the event is delivered to
+        whichever conversation routing picked. So the open asks of all three are
+        closed: the session's own work item, the conversation that received the
+        event, and the issue or pull request the person wrote on. A person spoke
+        on this work item, and a default taken over their words is the worse
+        mistake.
+
+        Called only after a delivery succeeded. Whether an ask is open is the
+        derivation's answer, read from the log this process writes; the log is
+        read once, and only for a person's event, never for a CI event or a
+        label.
+        """
+        if not person:
+            return
+        from ..core import sessionstate  # core imports this module
+
+        refs = [session.work_item.ref, endpoint.work_item.ref]
+        refs += [item.ref for item in routed.work_items if _item_kind(item, routed)]
+        try:
+            path = eventlog.current_path()
+            if path is None:
+                return
+            grouped = sessionstate.load(path)
+            now = datetime.now(timezone.utc)
+            states = [
+                sessionstate.derive(
+                    grouped.get(ref, []),
+                    now=now,
+                    watchdog=self.config.watchdog,
+                    asks=self.config.asks,
+                    work_item=ref,
+                )
+                for ref in dict.fromkeys(refs)
+            ]
+        except Exception as exc:  # noqa: BLE001 — the answer is already delivered
+            logger.warning(
+                "cannot read the open asks of %s: %s", session.work_item.ref, exc
+            )
+            return
+        for state in states:
+            if state.open_ask is None:
+                continue
+            eventlog.emit(
+                "session.ask_answered",
+                work_item=state.work_item,
+                ask_id=state.open_ask.ask_id,
+                actor=person,
+            )
 
     # -- the handoff pick-up (issue-517) -----------------------------------------
 

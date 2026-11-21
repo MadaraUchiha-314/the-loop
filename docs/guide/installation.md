@@ -18,8 +18,8 @@ the-loop upgrade                     # later, when a release lands
 ```
 
 It drives Claude Code's own plugin installer and prepares Codex's bundled instructions
-and native Stop hook. Review and trust the Codex hook through `/hooks` before
-unattended execution. It prints every command before running it
+and its two native hooks (Stop and turn start). Review and trust the Codex hooks through
+`/hooks` before unattended execution. It prints every command before running it
 (`--dry-run` to preview), and reports what it skipped and why. See
 [`install`](/cli/commands/install) · [`upgrade`](/cli/commands/upgrade).
 

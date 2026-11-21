@@ -34,11 +34,13 @@ validating a config, never copied into the projects the-loop is run on.
   [release-publishing](release-publishing.md), decision-028).
 - WHERE Claude Code uses the SessionStart hook (`hooks/hooks.json`) the Cursor package
   SHALL use the always-applied rule `rules/the-loop.mdc` instead. `hooks/hooks.json`
-  SHALL also declare the Stop gate (`the-loop-gate.py`) and, since issue-370, the
+  SHALL also declare the Stop gate (`the-loop-gate.py`), since issue-551 the turn-start
+  hook (`the-loop-turn-start.py`, on `UserPromptSubmit`) and, since issue-370, the
   `PostToolUse` recorder (`the-loop-link-pr.py`, which runs `sessions link-pr --discover`
   after a `git push` or a pull-request-creating call — issue-447, no `gh` output parsed);
-  Cursor has a hook surface for the first and none for
-  the second, so there the skill's prose rule is what records a pull request.
+  Cursor has a hook surface for the first two (`.cursor/hooks.json`: `stop` and
+  `beforeSubmitPrompt`) and none for the third, so there the skill's prose rule is what
+  records a pull request. Codex gets the same three from `hooks/codex-hooks.json`.
 - Work-item and process templates SHALL be internal to the plugin, shipped under
   `skills/the-loop/templates/` (`manifest.templatesDir`) and read from
   `${CLAUDE_PLUGIN_ROOT}` when an artifact is authored. `/the-loop:init` SHALL NOT copy
@@ -160,6 +162,7 @@ validating a config, never copied into the projects the-loop is run on.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-551 | The plugin ships a turn-start hook beside the Stop gate (2026-11-20): `the-loop-turn-start.py` on Claude Code and Codex `UserPromptSubmit` and Cursor `beforeSubmitPrompt`, stdlib-only like the gate | [spec](../specs/issue-551/), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/551) |
 | issue-514 | `/the-loop:init` split three ways: `/init` sets up the repository only (harness config, collaborators, docs trees, phase labels, hooks), `/init-cli` the operator's CLI config (posture, walkthrough, Slack, Jira, arming labels, credentials), `/init-gateway` a gateway host's `gateway-config.yaml`; a repository that only uses the-loop is no longer asked about a daemon | [spec](../specs/issue-514/), [decision-149](../decisions/decision-149.md) |
 | issue-447 | The plugin's `PostToolUse` recorder became trigger-agnostic — a push or any pull-request-creating call runs `sessions link-pr --discover` — and the skill and slash commands send the harness's GitHub acts through `the-loop` verbs instead of `gh` | [spec](../specs/issue-447/), [decision-140](../decisions/decision-140.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/447) |
 | issue-415 | The onboarding covers what people install the-loop for: `cli-config.schema.json` gained its own `x-onboarding` block (seven groups, every block covered), an **autonomy ladder** turns "how much should it do unattended?" into one question with three rungs that provably cannot reach a human gate, init establishes the deployment shape before proposing an ingress, walks and probes the Slack setup, and preflights every credential the configs name — presence only, never a value | [spec](../specs/issue-415/), [onboarding guide](https://madarauchiha-314.github.io/the-loop/guide/onboarding), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/415) |

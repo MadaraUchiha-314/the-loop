@@ -278,3 +278,79 @@ def test_a_very_long_url_never_pushes_the_short_form_past_its_cap():
     short = build_short_form(event, session_authored=True)
     assert len(short.text) <= SUMMARY_MAX_CHARS
     assert "Drafted the design." in short.text
+
+
+# -- a question with a default and a deadline (issue-551 R6.1) ----------------------
+
+
+def _ask(default, /, **detail):
+    return Event(
+        event_type="session.awaiting_input",
+        work_item=REF,
+        text="Move T5 to after merge?",
+        summary="Move T5 to after merge?",
+        source="cli",
+        url=URL,
+        event_id="ev-1",
+        detail={
+            "default": default,
+            "default_at": "2026-11-20T08:47:00.000Z",
+            "default_after": "1800",
+            **detail,
+        },
+    )
+
+
+def test_a_question_with_a_deadline_gains_one_line():
+    short = build_short_form(_ask("Move T5 to after merge."))
+    assert short.text.split("\n") == [
+        "Move T5 to after merge?",
+        "if nobody answers by *08:47 UTC* (30 min), the session goes ahead "
+        "with: _“Move T5 to after merge.”_",
+    ]
+
+
+@pytest.mark.parametrize(
+    "detail",
+    [{"default_at": ""}, {"default_at": "soon"}, {"default": ""}],
+    ids=["no time", "unreadable time", "no default"],
+)
+def test_a_default_that_is_never_taken_adds_no_line(detail):
+    short = build_short_form(_ask("Move T5.", **detail))
+    assert short.text == "Move T5 to after merge?"
+
+
+def test_the_deadline_line_counts_toward_the_cap_and_is_never_cut():
+    event = _ask("d" * 600)
+    event = Event(**{**event.__dict__, "summary": "One sentence. " * 80})
+    short = build_short_form(event)
+    assert len(short.text) <= SUMMARY_MAX_CHARS
+    assert short.text.endswith("…”_")
+    assert "if nobody answers by *08:47 UTC*" in short.text
+
+
+def test_abuse_a_default_with_markup_and_mentions_renders_inert():
+    """issue-551 abuse case 6, the default-text half: the session's default is
+    quoted in the room, and nothing in it pages, notifies or links."""
+    import json
+
+    from the_loop.channels.slack import render_short_blocks
+
+    event = _ask(
+        "<!here> ask <@U123> and <!channel>,\nthen [approve](https://evil.example/x) "
+        "or [run](javascript:alert(1)) <https://evil.example|GitHub> <!-- the-loop -->"
+    )
+    short = build_short_form(event)
+    payload = json.dumps(
+        {
+            "text": short.fallback,
+            "blocks": render_short_blocks(event, short.text, interactive=False),
+        },
+        ensure_ascii=False,
+    )
+    assert "<!" not in payload and "<@" not in payload
+    assert "<https://" not in payload, "no Slack link opens"
+    assert "](" not in payload, "a markdown link is drawn as words"
+    tail = short.text.split("\n")[-1]
+    assert "\n" not in tail and "@U123" in tail
+    assert "approve (https:\u200b//evil.example/x)" in tail

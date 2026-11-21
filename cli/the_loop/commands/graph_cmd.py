@@ -497,6 +497,13 @@ class CheckCommand(Command):
                     if note:
                         print(f"  {note}")
                     print(f"  {_state_line(report, recompute=args.recompute)}")
+                    # What the session is doing. Absent when
+                    # no session of this machine works the item.
+                    session = report.get("session") or {}
+                    if session.get("summary"):
+                        print(
+                            strings.t("cli.check.session", summary=session["summary"])
+                        )
                 # Only nodes at or before the pointer are findings; anything
                 # beyond it is simply not done yet, and saying "BLOCK" about it
                 # would make an ok work item read as a broken one.

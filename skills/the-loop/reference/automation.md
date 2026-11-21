@@ -329,7 +329,7 @@ runs `gh`; these verbs close the last hop, the agent's own session.
 |---|---|
 | read the ticket at session start (body, comments, attachment links) | `the-loop ticket show <ref>` (JSON) |
 | post the paper trail — spec-gate replies, the completion summary, the reviewer briefing, a decision record | `the-loop comment --work-item <ref> --body-file <path\|->` |
-| ask a human and wait | `the-loop ask --work-item <ref> --question-file <path\|->` |
+| ask a human (`--default … --after …` asks without blocking; `collaboration.md` § 3) | `the-loop ask --work-item <ref> --question-file <path\|->` |
 | open a ticket (`/the-loop:create-ticket`) | `the-loop ticket create --repository <owner/repo> --title … --body-file … [--label …]` |
 | open the pull request — and record it | `the-loop pr create --work-item <ref> --title … --body-file …` |
 | read CI and the open review threads during `needs-review` | `the-loop pr status <pr>` · `the-loop pr threads <pr>` (JSON) |
@@ -374,11 +374,20 @@ The PDLC is largely fixed; the harness should not re-derive it each run. Steps a
 predictable via:
 
 - **Harness hooks** — force steps to run at lifecycle points. In Claude Code:
-  `hooks/hooks.json` — a SessionStart reminder, a Stop gate (`the-loop-gate.py`, which
-  asks `the-loop check` whether the node the work item is at is complete — never one it
-  has not entered), and a PostToolUse recorder
+  `hooks/hooks.json` — a SessionStart reminder, a Stop gate (`the-loop-gate.py`, below),
+  a UserPromptSubmit recorder (`the-loop-turn-start.py`, which records that a turn
+  started), and a PostToolUse recorder
   (`the-loop-link-pr.py`, which runs `sessions link-pr` for a pull request the session
-  just created). A hook is how a step stops depending on the model remembering a rule;
+  just created). **The Stop gate asks `the-loop sessions stop-check` whether the turn
+  may end** (issue-551). The control-plane service decides, from four things: the graph
+  (the node the work item is at — never one it has not entered), the open ask, the
+  declared wait, and the harness's list of running background tasks. It refuses the stop
+  while agent work is owed and none of the five reasons of `collaboration.md` § 4
+  holds; the refusal names the node, the unmet checks and the command that resumes it.
+  The hook keeps its attempt cap, unchanged: after the cap it lets the stop through and
+  reports that it gave up. With an older CLI that has no `stop-check`, or when the
+  service does not answer, the hook falls back to `the-loop check`, which knows nothing
+  of asks or waits. A hook is how a step stops depending on the model remembering a rule;
   prefer one whenever the step is mechanical and its inputs are in the payload. In Cursor:
   the always-applied rule `rules/the-loop.mdc` carries the SessionStart reminder and
   `.cursor/hooks.json` the gate (Cursor has no SessionStart or PostToolUse equivalent), so

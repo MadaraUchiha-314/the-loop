@@ -42,11 +42,12 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Header, Query, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.routing import APIRoute
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .. import eventlog, sessioncreds
 from ..cli_config import ConfigHolder
 from ..core.github_ops import DEFAULT_LOG_LINES
+from ..core.sessions import MAX_DEFAULT_LENGTH
 from ..workitem import WorkItemRef
 from ..yamlpatch import SpliceError
 from . import stream as api_stream
@@ -179,7 +180,12 @@ class SessionAskBody(BaseModel):
     ref: str
     question: str
     summary: str = ""
-    default: str = ""
+    # Posted on the thread and pasted back into the session, so it is short.
+    default: str = Field(default="", max_length=MAX_DEFAULT_LENGTH)
+    # How long before `default` is taken. Raised to the operator's
+    # `routing.asks.minDefaultWaitSeconds` when it is under it, and refused over
+    # 7 days.
+    defaultAfterSeconds: Optional[int] = Field(default=None, ge=1)
     # Recorded on the event for the audit trail; never trusted as authentication
     # (decision-059: the gateway owns auth).
     actor: str = ""
@@ -195,6 +201,32 @@ class SessionReplyBody(BaseModel):
     actor: str = ""
     comment: bool = True
     # Which instance this is for (issue-374 R2.6): empty means this one.
+    instance: str = ""
+
+
+class SessionWaitBody(BaseModel):
+    ref: str
+    # What the session waits for, in its own words.
+    condition: str = Field(max_length=200)
+    # Refused over the operator's `routing.watchdog.maxWaitSeconds`.
+    seconds: int = Field(ge=1)
+    # Which instance this is for: empty means this one.
+    instance: str = ""
+
+
+class SessionStopCheckBody(BaseModel):
+    ref: str
+    # What the harness's own Stop payload reports, never the session's word.
+    backgroundWork: bool = False
+    # The hook allowed this stop after its own attempts ran out.
+    gaveUp: bool = False
+    # Which instance this is for: empty means this one.
+    instance: str = ""
+
+
+class SessionTurnStartBody(BaseModel):
+    ref: str
+    # Which instance this is for: empty means this one.
     instance: str = ""
 
 
@@ -778,7 +810,39 @@ def build_router(
             default_answer=body.default,
             actor=body.actor,
             instance=body.instance,
+            default_after_seconds=body.defaultAfterSeconds,
         )
+
+    @router.post(
+        f"{API_PREFIX}/sessions/wait",
+        operation_id="waitSession",
+    )
+    def wait_session(body: SessionWaitBody) -> Dict[str, Any]:
+        body = scrubbed(body, "condition")
+        return facade.wait_session(
+            body.ref, body.condition, body.seconds, instance=body.instance
+        )
+
+    @router.post(
+        f"{API_PREFIX}/sessions/stop-check",
+        operation_id="stopCheckSession",
+    )
+    def stop_check_session(body: SessionStopCheckBody) -> Dict[str, Any]:
+        # Served for the Stop hook: the verdict needs the event log's
+        # asks and waits, which a session the daemon spawned does not hold.
+        return facade.stop_check_session(
+            body.ref,
+            background_work=body.backgroundWork,
+            gave_up=body.gaveUp,
+            instance=body.instance,
+        )
+
+    @router.post(
+        f"{API_PREFIX}/sessions/turn-start",
+        operation_id="turnStartSession",
+    )
+    def turn_start_session(body: SessionTurnStartBody) -> Dict[str, Any]:
+        return facade.turn_start_session(body.ref, instance=body.instance)
 
     @router.post(
         f"{API_PREFIX}/sessions/reply",

@@ -257,9 +257,14 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
 - **Ask on the declared channel; iterate artifacts on a durable surface.** A session the CLI daemon
   drives is *told* where its answers come from (`routing.interaction.mode`, rendered into
   the prompt): `work-item` (the default) means every question is a **comment on the ticket
-  or PR** and the session then waits for the reply to arrive as an event — never block on
+  or PR**, and the reply arrives as an event — never block on
   an interactive prompt, never read silence as consent; `cli` means a human is attached to
-  this terminal, so ask here and record the *outcome* on the ticket. **Independently of
+  this terminal, so ask here and record the *outcome* on the ticket. **Before you ask,
+  find the case** (`reference/collaboration.md` § 3): take a reversible, recommended
+  option and say so without asking; ask with `--default` and `--after` and keep working
+  when a view is worth having but not worth blocking for; ask without a default and wait
+  only for what needs a person's authority. A daemon-driven session ends its turn only
+  for the five reasons of § 4 there, and it takes the step it announces. **Independently of
   the mode:** once an artifact exists (`brainstorm.md`, `requirements.md`/`bugfix.md`,
   `design.md`, `testing-plan.md`, `tasks.md`, `context.md`), iterate on it **only** on a durable,
   reviewable surface — never interactively, where the reasoning dies with the scrollback.
@@ -318,7 +323,10 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   committed/noted). Then: **clear** at phase boundaries
   (locked spec → fresh window for implementation, plan-mode style), **compact** after
   each completed task and mid-task (never clear mid-task), and isolate high-volume
-  exploration in subagents. The checked-in artifacts are the memory that makes resets
+  exploration in subagents. **"Clear" applies to an interactive session only.** A
+  daemon-driven session never ends its turn at a boundary between two agent-owned
+  nodes: it checkpoints, compacts or hands the next node's work to a fresh subagent, and
+  continues in the same turn. The checked-in artifacts are the memory that makes resets
   affordable. The boundaries are fixed rules; see `reference/context.md`.
 - **Review before escalating.** Run the operator's `reviews.selfReviewCount`
   self-reviews then `reviews.criticReviewCount` critic reviews (a different
@@ -418,6 +426,8 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   resolved, evidence recorded).
 - **Keep moving; log conflicts.** Resolvable ambiguity → assume a reasonable default and
   continue; genuine block → log to `docs/decisions/conflicts.md`, escalate once, move on.
+  Which choices need a person at all, and when a turn may end, are the rules of
+  `reference/collaboration.md` § 3 and § 4.
 - **Learnings lifecycle.** Capture → write-gate (rule-of-three) → consolidate (size cap)
   → inject a capped index (under 200 lines; written on the third occurrence), under
   `docs/learnings/`. See `reference/automation.md`.
@@ -612,7 +622,8 @@ GitHub MCP server of the harness's (issue-447). They need no `gh` login and, whe
 daemon runs, no token in the session at all — the service holds it. `the-loop ticket
 show <ref>` reads the ticket (body, comments, attachment links) at session start;
 `the-loop comment` posts the paper trail (spec-gate replies, the completion summary, the
-reviewer briefing, decision records); `the-loop ask` asks and waits; `the-loop ticket
+reviewer briefing, decision records); `the-loop ask` asks a person (it does not block the work when given `--default` and
+`--after`); `the-loop ticket
 create` opens a ticket; `the-loop pr create` opens a pull request **and** records it
 against the work item; `the-loop pr status` / `pr threads` read CI and open review
 threads during `needs-review`, `pr checks --failing` shows which checks failed with the

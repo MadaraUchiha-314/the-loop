@@ -335,6 +335,256 @@ still carrying the key is warned about and otherwise ignored).
   recorded conversation when possible and starting a fresh one otherwise. There is no
   migration tool, and pre-issue-156 registry files remain readable as they are.
 
+### Session states and the watcher (issue-551)
+
+> [decision-155](../decisions/decision-155.md) ·
+> [the Stop gate](process-graph.md#the-stop-gate-issue-429-issue-551) ·
+> [`routing.watchdog` and `routing.asks`](../config/cli/routing-options.md#idle-sessions-and-unanswered-questions)
+
+A session never goes idle unnoticed. The session's harness records when each turn starts
+and ends. One watcher in the control-plane service reads those records, nudges an idle
+session, and tells a person when the nudges do not restart it.
+
+#### Turn records
+
+- A session's harness SHALL record each turn through two plugin hooks. The turn-start
+  hook (`hooks/the-loop-turn-start.py`) runs `the-loop sessions turn-start`, which
+  records `session.turn_started`. The Stop hook asks the Stop gate, which records
+  `session.turn_ended` with the reason the stop was allowed.
+
+  | Harness | Turn start | Turn end |
+  |---|---|---|
+  | Claude Code | `UserPromptSubmit` | `Stop` |
+  | Codex | `UserPromptSubmit` | `Stop` |
+  | Cursor | `beforeSubmitPrompt` | `stop` |
+
+- For a Codex session the daemon hosts, the-loop SHALL install both hooks in
+  `$CODEX_HOME/hooks.json`, beside each other. See § Codex hosting.
+- The turn-start hook SHALL never block or delay a prompt. Every path exits 0. Claude
+  Code and Codex get no output, and Cursor is answered `{"continue": true}`. A missing
+  CLI, an unknown work item and a slow service are silent no-ops.
+- Both hooks SHALL act only when `THE_LOOP_WORK_ITEM` is set. The service answers them
+  only for a work item that has a live registered session. For any other work item the
+  turn-start hook does nothing. The Stop hook does not stop there: it falls back to
+  `the-loop check --recompute`, which still judges the work item and can refuse the
+  stop. That path records nothing. See
+  [process-graph](process-graph.md#the-stop-gate-issue-429-issue-551).
+
+#### The states
+
+Every status surface, the Stop gate and the watcher read one derivation of the event
+log, so they cannot disagree about a session.
+
+```mermaid
+stateDiagram-v2
+  [*] --> NotWatched: no turn record
+  NotWatched --> Working: turn_started
+  Working --> Waiting: turn_ended (human-gate, complete, graph-wait,<br/>open-ask, declared-wait, background-work)
+  Working --> Idle: turn_ended (exit-met, inconclusive, gate-gave-up)
+  Waiting --> Idle: the reason lapses (ask closed,<br/>wait over, background limit reached)
+  Idle --> Stalled: idle threshold passes
+  Stalled --> Stalled: nudge, then one notice
+  Waiting --> Working: turn_started
+  Idle --> Working: turn_started
+  Stalled --> Working: turn_started (stall_ended)
+```
+
+- **Working**: the last turn record is a start.
+- **Waiting**: the last turn ended for a reason that is still in effect.
+  - `human-gate`, `complete` and `graph-wait` have no time limit.
+  - `open-ask` lasts until every open ask that carries an ask id is closed. A session
+    can have several asks open at once. A reply, or an authorized person's delivered
+    comment or review, closes all of them. A default being taken closes the one ask it
+    names. The status surfaces show this state as `asked`. An ask recorded by an older
+    version, with no id, holds no wait, as it excuses no stop.
+  - `declared-wait` lasts until the wait's stated end.
+  - `background-work` lasts `routing.watchdog.maxWaitSeconds` from the turn's end.
+- **Idle**: the turn ended and no reason is in effect. Idle starts at the moment the
+  reason lapsed, not at the turn's end. A turn that ended with `exit-met`,
+  `inconclusive` or `gate-gave-up` is idle from its end.
+- **Stalled**: idle for `routing.watchdog.idleSeconds` or longer. One case never
+  becomes a stall: a turn of a pull request's own session that ended `inconclusive`
+  with no node on record. The Stop gate reads the outer loop, which has no position
+  for a pull request's ref, so nothing says work is owed. That session stays idle, and
+  the surfaces say that the-loop cannot tell where it stands. A work item's own session
+  whose turn ended that way does become a stall: its state could not be read, which
+  the session itself can cause by removing the file. The surfaces show it as stalled
+  and say that the-loop cannot tell where the work item stands.
+- WHEN the pointer moves after the last turn record, and no turn has started since,
+  THEN the state SHALL follow the pointer. The session is idle at the new node from
+  the moment of the move (reason `pointer-moved`), unless the graph parked that node
+  for this visit. A parked node is waited on with no time limit:
+  - reason `human-gate` when the node is a person's. The graph parks a human-owned
+    node as it is entered, and records that park just before the move.
+  - reason `graph-wait` when the node's exit reported a wait. The graph parks an
+    agent's node that way too, so this park does not say that a person owns the node.
+
+  A park belongs to one visit. WHEN the pointer moves to another node THEN the park
+  SHALL be forgotten, so a later return to that node is idle and can be nudged.
+- **Not watched**: the session has no turn record. Its harness hooks are not
+  installed, so the watcher leaves it alone and every surface says `not watched`.
+
+#### The watcher
+
+- The watcher SHALL run as one thread of the control-plane service, on a fixed
+  30-second tick, whichever ingress is on (webhook receiver, poller or gateway). It
+  SHALL look at every live session in the registry, and at each pull request's own
+  session beside it. A manager-role service runs it for its own sessions, as a worker
+  does.
+- The watcher SHALL read the config again on every tick. A change to `routing.watchdog`
+  or `routing.asks` in the file takes effect on the next tick, with no restart.
+- The watcher remembers an act only through its record in the event log. WHEN the event
+  log is off, or the service writes to a file other than the one the watcher reads,
+  THEN the cycle SHALL do nothing, and one warning in the service log SHALL say so.
+  WHEN the record of one act cannot be written THEN that act SHALL NOT happen.
+- Just before it performs an act, the watcher SHALL read that work item's records again
+  and SHALL perform the act only if they still owe it; an act no longer owed is dropped,
+  and the next tick decides afresh.
+- WHEN a session is stalled THEN the watcher SHALL paste a nudge into it and record
+  `session.nudged`. It SHALL nudge again each idle threshold after its last nudge, up
+  to `routing.watchdog.maxNudges` nudges.
+- The nudge SHALL be a fixed text (`cli/the_loop/prompts/watchdog/`) with the idle
+  minutes, the node, the command that resumes it, the work item's ref and the three
+  ways out the Stop gate names. It SHALL carry no ticket text and no comment text.
+  WHEN the turn ended with `exit-met` THEN the nudge SHALL tell the session to claim
+  the node instead. WHEN the session's last default was taken while it could not be
+  told THEN the nudge SHALL also carry that default, quoted in a fence as the
+  session's own earlier words (see § Ask deadlines).
+- WHEN the nudges are spent AND the session is still idle one threshold later THEN the
+  watcher SHALL record `session.stalled` and publish it once. See
+  [channels](channels.md) for the notice.
+- **The nudges and the one notice are a budget of the node visit, not of the idle
+  period.** A nudge starts a turn, so a session that answers each nudge with one empty
+  turn would otherwise be nudged forever. The budget SHALL reset only on one of three
+  records: the pointer moved, the dispatcher delivered an authorized person's comment
+  or review (`session.ask_answered`, or a `dispatch.succeeded` that names an actor), or
+  a `session.reply_sent` that names an `authorized_actor`. Only the inbound channel
+  pipeline writes that field, for a member it checked against the allow-list. A reply
+  made through `POST /api/v1/sessions/reply`, the MCP tool, the SDK or the CLI carries
+  no such field, because the service authenticates no caller and a session can call
+  the operation itself. Such a reply closes the open asks and resets nothing.
+- Each nudge SHALL be recorded before it is pasted, and that record has no `delivered`
+  field. WHEN the paste fails THEN a second `session.nudged` record SHALL follow, with
+  the same `stall_id` and `nudge` and with `delivered: false`. The two records are one
+  nudge of the budget.
+- **Only a turn start ends a stall.** WHEN a session that was nudged or notified starts
+  a turn THEN the watcher SHALL record `session.stall_ended` with how long the session
+  was idle. An inbound event that is refused before delivery starts no turn, so it does
+  not end the stall and does not reset the budget.
+- The watcher SHALL NOT nudge a session that is working or waiting, or one that has no
+  turn record. It SHALL send neither a nudge nor a notice to a session that is paused
+  or has no tmux target on record, and none when the recorded node is a human-owned,
+  code or terminal node.
+- WHEN the stalled session's node cannot be resolved (no node is on record, or the
+  graph does not have it) THEN the watcher SHALL send the notice with no nudge.
+- WHEN the turn of a work item's own session ended `inconclusive` with no node on
+  record AND the session is idle past the threshold THEN the watcher SHALL send the
+  notice once per budget window, with no nudge. That notice SHALL say that the-loop
+  cannot tell which step the session is at, and SHALL NOT say that work is owed.
+- WHEN a nudge finds the session's tmux session gone THEN that one attempt SHALL be
+  recorded as any failed nudge is, so it counts toward the budget, and the notice
+  SHALL follow in the same cycle.
+- A pull request's own session SHALL be judged on its own turn records. The watcher
+  SHALL send it no nudge, because the node facts it reads are the outer loop's. The
+  Stop gate cannot place such a session on a node, so its turns record no node.
+  - WHEN such a turn ended `inconclusive` THEN the session SHALL never become a stall,
+    and no notice is owed. This holds for a pull request's own session only.
+  - WHEN such a turn ended for another reason (for example `open-ask`) and the session
+    is then idle past the threshold THEN the watcher SHALL send the notice, and still
+    no nudge.
+
+  The ask deadlines and the end of a stall apply to it as to any session. **Known
+  limit:** the node of a pull request's inner loop is not judged. A pull request's own
+  session whose stop ended `inconclusive` with inner-loop work owed is not nudged, and
+  no person is told.
+- IF `routing.watchdog.enabled` is `false` THEN the watcher SHALL send no nudge and no
+  notice. The Stop gate, the turn records, the end of a stall and the ask deadlines
+  below SHALL still work.
+
+#### Ask deadlines
+
+- WHEN an open ask's deadline passes (`the-loop ask --default … --after …`) THEN the
+  watcher SHALL tell the session to proceed with its default, record
+  `session.ask_default_taken` and publish it. The message quotes the default inside a
+  fence, as the session's own earlier words, and says that it is not an approval. No
+  gate reads the record, so a default never answers a human gate.
+- The ask SHALL close exactly once. The record is written before the session is told,
+  and has no `delivered` field. WHEN the session cannot be told THEN the record SHALL
+  still be written, with `delivered: false`: on the record itself for a session that is
+  paused or has no tmux target, and on a second record for a paste that failed.
+- WHEN the session could not be told THEN the published note SHALL say that the default
+  applies and that the session has not been told. It SHALL NOT say that the session
+  went ahead. The next nudge the watcher pastes into that session SHALL carry the
+  "proceed with your default" text, once, and its record names the ask in
+  `default_of`. A `session.reply_sent` or `session.ask_answered` record before that
+  nudge cancels it.
+- The default SHALL hold no character that does not print, except line breaks and
+  tabs. `the-loop ask` drops the C0 and C1 control characters, DEL and the Unicode
+  format characters (the bidirectional overrides and the zero-width characters among
+  them) before it records the default, and a space that is not the ASCII one becomes a
+  space. The watcher applies the same rule again to the text it pastes, so an ask
+  recorded before this rule existed is covered. An escape sequence in a default could
+  otherwise end the paste early. The declared wait's condition and the status lines
+  use the same rule.
+- A session MAY have several asks open at once, and at most one of them with a
+  deadline. `the-loop ask --after` SHALL be refused while another ask with a deadline
+  is open for the work item, and at a step where a default was already taken with
+  nobody answering. An ask without `--after` is never refused for either reason. Each
+  ask has its own id and its own reminder. A default being taken SHALL close the one
+  ask it names.
+- WHEN an authorized person's comment or review is delivered THEN the dispatcher SHALL
+  record `session.ask_answered` for the work item and for each of its pull requests
+  that the delivery belongs to and that has an open ask: the session's own work item,
+  the conversation that received the event, and the issue or pull request the person
+  wrote on. The record SHALL close **every** open ask of that ref and cancel their
+  defaults. So an ask made with `--work-item` naming a pull request is closed by an
+  answer on that pull request, and by one on its work item when both are in the same
+  delivery. A person spoke, and a default taken over their words is the worse mistake.
+- A comment the dispatcher refuses writes nothing, so an unauthorized reply never
+  stops a default. An answer that arrives after the default was taken is delivered as
+  any comment is.
+- WHEN an ask with no deadline has been open for `routing.asks.reminderSeconds` THEN
+  the watcher SHALL record `session.ask_reminded` and publish it, once per ask.
+- A default without a readable deadline SHALL never be taken.
+- WHEN the question reached nobody (the comment was not posted and no channel took it)
+  THEN the ask SHALL be recorded without a deadline, its default SHALL never be taken,
+  and the command's output SHALL say so.
+- **One default per step.** WHEN a default was taken for a work item and neither the
+  pointer has moved nor an authorized person's comment, review or channel reply has
+  reached the session since (the records that reset the nudge budget) THEN
+  `the-loop ask` SHALL refuse another ask that carries `--after`,
+  and SHALL tell the session to ask without `--after` and wait for a person. An ask
+  without `--after` SHALL always be accepted. Without this a session could go on with
+  no person for as long as it kept asking.
+- An ask recorded without an `ask_id` (asked by a version before this one) SHALL stay
+  visible as an open question. It SHALL excuse no stop, its default SHALL never be
+  taken and it SHALL get no reminder.
+- `the-loop ask` SHALL refuse a `--default` longer than 600 characters and an `--after`
+  longer than 7 days.
+
+#### The declared wait
+
+- A session that waits on something that is not a person SHALL say so with
+  [`the-loop wait`](../cli/commands/wait.md)
+  `--work-item <ref> --for <condition> --until <duration>`, which records
+  `session.wait_declared`.
+- A declared wait SHALL cover **one stop**: the stop that ends the turn it was made
+  in. A later turn that still waits declares again.
+- the-loop SHALL refuse a wait longer than `routing.watchdog.maxWaitSeconds`, a wait
+  on a human-owned node, an empty condition or one over 200 characters, and a ref that
+  is not the session's own. A refusal records nothing.
+- The condition SHALL be recorded as one line of printable words: every run of
+  whitespace and control characters becomes one space, because the status surfaces
+  print it inside a line of a terminal.
+- WHEN the wait ends THEN the session SHALL be idle from that moment.
+
+#### Restarts
+
+- The watcher SHALL keep no state of its own. Each tick it derives every session's
+  state from the event log, and an act is owed only while the log holds no record of
+  it. A restarted service therefore resumes every stall and every deadline, and
+  repeats no nudge, notice, default or reminder.
+
 ## Design
 
 [`docs/specs/issue-32/design.md`](../specs/issue-32/design.md) ·
@@ -422,6 +672,7 @@ belongs to does not.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-551 | **A session never goes idle unnoticed** (2026-11-20): harness hooks record each turn's start and end; one watcher in the control-plane service derives every session's state from the event log, nudges a stalled session up to `routing.watchdog.maxNudges` times per node visit, then publishes `session.stalled` once; `the-loop wait` declares a wait that covers one stop; an ask's default is taken at its deadline and an ask with no deadline is reminded once. A session with no turn record is `not watched` | [spec](../specs/issue-551/), [decision-155](../decisions/decision-155.md), [process-graph](process-graph.md), [channels](channels.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/551) |
 | issue-533 | **Opt-in session credentials, never on argv** (2026-11-17): `env.sessionCredentials` lets an operator hand sessions named credentials, each from its own daemon-side source (`from`, for a narrower token) and optionally scoped to `repositories`. The value reaches the pane through a `0600` file a fixed `sh` loader reads, deletes and `exec`s past, so it is on no argv and in no tmux environment. The drift check treats an inherited name as expected, so a rotation reads `stale`. The service masks every value in session text, the event log masks it too, and `status`/`sessions list` show who holds what by fingerprint | [spec](../specs/issue-533/), [config](../config/cli/index.md#env-sessioncredentials), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/533) |
 | issue-482 | **A spawned session receives no secret** (2026-10-13, with [issue-485](https://github.com/MadaraUchiha-314/the-loop/issues/485)): `env.file` is the daemon's environment, not a session's. A pane gets the-loop's three identifiers plus the non-secret names `env.sessionPassthrough` lists (a credential name is refused); every other `env.file` name and every credential name is stripped with `env -u` and kept out of the tmux client's environment, so neither `ps` nor a tmux server a spawn started shows a token — before this, `-e GH_TOKEN=…` sat in the server's process name for days. Session-side verbs in a daemon-spawned session never fall back in-process, and `ask` got a service route (`POST /api/v1/sessions/ask`). `status` and `sessions restart` compare a pane against the boundary, so a pane an earlier version handed a token reads as stale until it is relaunched | [spec](../specs/issue-482/), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/482) |
 | issue-451 | **A default model per harness** (2026-10-02): `harnesses[].defaultModel` is the model a work item's session is launched on when it has none of its own — `do`, `contribute`, `review`, an unticked gate. `Dispatcher._resolved_choice` falls back to `modelchoice.default_model`, so the argv, record, spawn event and hooks carry it; the gate names it on the checklist and in the confirmation; `models check` probes it | [spec](../specs/issue-451/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/451) |
@@ -484,15 +735,16 @@ instructions instead (`$CODEX_HOME/AGENTS.md` or its existing `AGENTS.override.m
 Codex reads both global and project instructions. Explicit project-scope
 installation still writes into the requested project. The CLI wheel and source
 distribution both include these resources; a consuming repository need not
-contain them. The Stop hook is installed in `$CODEX_HOME/hooks.json`, so its
-definition and trust review are stable across worktrees. The gate is identified
+contain them. The Stop hook and the turn-start hook (issue-551) are installed in
+`$CODEX_HOME/hooks.json`, so their definitions and trust review are stable across
+worktrees. The gate is identified
 by its script, so a daemon running from another interpreter or install path
 replaces it rather than adding a second gate. It acts only when `THE_LOOP_WORK_ITEM`
 is set. It returns Codex's `decision: block` with continuation feedback when the
 current graph node has gate debt, and valid empty JSON when the turn may end.
 The same attempt cap protects every harness.
 
-**Review and trust the Stop hook once with Codex `/hooks` before unattended
+**Review and trust both hooks once with Codex `/hooks` before unattended
 execution.** No hook-trust bypass flag is added. Explicit hook/feature disablement
 remains authoritative. `routing.harnessPlugins.enabled: false` opts out of the
 instruction/hook setup; workspace trust has its separate opt-out. Sandbox and

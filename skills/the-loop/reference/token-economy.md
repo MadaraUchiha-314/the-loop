@@ -121,9 +121,10 @@ resets are fixed in `reference/context.md`.
 Every daemon-spawned session is a resident tmux-hosted TUI (issue-32; the only runner
 since issue-156): each event is **forwarded into the existing session** — no re-spawn, no
 cold re-prime — so context amortizes across a work item's whole event stream. The flip
-side is a window that only grows: manage context **inside** the session — compaction and
-clears at phase boundaries per `reference/context.md` — rather than letting one giant
-mega-session re-send the whole growing conversation every turn.
+side is a window that only grows: manage context **inside** the session — compaction,
+and a fresh subagent for the next node's work, per `reference/context.md` — rather than
+letting one giant mega-session re-send the whole growing conversation every turn. The
+session never ends its turn to shrink the window: nothing starts another session.
 
 ### 11. Measure it — the prerequisite
 

@@ -1,6 +1,11 @@
 {
   "version": 1,
   "hooks": {
+    "beforeSubmitPrompt": [
+      {
+        "command": "python3 \"${CLAUDE_PLUGIN_ROOT:-.}/hooks/the-loop-turn-start.py\" cursor"
+      }
+    ],
     "stop": [
       {
         "command": "python3 \"${CLAUDE_PLUGIN_ROOT:-.}/hooks/the-loop-gate.py\" cursor"

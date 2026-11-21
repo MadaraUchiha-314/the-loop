@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stall, wait and ask messages</title>
+<!-- issue-551 design mock-up. Self-contained: no external fonts, scripts or images.
+     It imitates the layout of Slack messages only; it uses no Slack assets. -->
+<style>
+  :root {
+    --bg: #ffffff; --panel: #f8f8f8; --ink: #1d1c1d; --quiet: #616061; --rule: #e2e2e2;
+    --link: #1264a3; --accent: #007a5a; --danger: #e01e5a; --code: #f4f4f4; --mention: #e8f5fa;
+    --chip: #f0f0f0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1a1d21; --panel: #222529; --ink: #d1d2d3; --quiet: #9a9b9e; --rule: #35373b;
+      --link: #1d9bd1; --accent: #2bac76; --danger: #e8456f; --code: #2c2d30; --mention: #1d3a4a;
+      --chip: #2c2d30; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.46 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  main { max-width: 1120px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .lead { color: var(--quiet); margin: 0 0 24px; max-width: 760px; }
+  section.case { margin: 0 0 32px; }
+  section.case > h2 { font-size: 17px; margin: 0 0 4px; }
+  section.case > p.note { color: var(--quiet); margin: 0 0 12px; font-size: 14px; }
+  .pane { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); border: 1px solid var(--rule);
+    border-radius: 8px; overflow: hidden; }
+  .pane.single { grid-template-columns: minmax(0, 1fr); }
+  .col { padding: 12px 16px; min-width: 0; }
+  .col + .col { border-left: 1px solid var(--rule); background: var(--panel); }
+  .colhead { font-size: 13px; font-weight: 700; color: var(--quiet); margin: 0 0 8px;
+    text-transform: uppercase; letter-spacing: .04em; }
+  .msg { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 8px; padding: 6px 0; }
+  .avatar { width: 36px; height: 36px; border-radius: 6px; background: var(--accent); color: #fff;
+    display: grid; place-items: center; font-weight: 700; font-size: 13px; }
+  .avatar.human { background: #7c3085; }
+  .who { font-weight: 900; }
+  .who .app { font-size: 10px; font-weight: 700; background: var(--chip); color: var(--quiet);
+    padding: 0 4px; border-radius: 3px; margin-left: 4px; vertical-align: 1px; }
+  .time { color: var(--quiet); font-size: 12px; margin-left: 6px; font-weight: 400; }
+  .body p { margin: 2px 0; }
+  .mention { background: var(--mention); color: var(--link); border-radius: 3px; padding: 0 2px; }
+  a { color: var(--link); text-decoration: none; }
+  code { background: var(--code); border: 1px solid var(--rule); border-radius: 3px; padding: 0 3px;
+    font-size: 12px; color: var(--danger); }
+  .recap { color: var(--quiet); font-size: 13px; border-left: 3px solid var(--rule); padding-left: 8px;
+    margin: 2px 0 4px; }
+  .buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  .btn { border: 1px solid var(--rule); border-radius: 4px; padding: 3px 12px; font-weight: 700;
+    font-size: 13px; background: var(--bg); color: var(--ink); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .reactions { display: flex; gap: 6px; margin-top: 6px; }
+  .reaction { border: 1px solid var(--link); background: var(--mention); border-radius: 12px; padding: 0 8px;
+    font-size: 12px; }
+  .threadlink { font-size: 13px; color: var(--link); font-weight: 700; margin-top: 4px; }
+  .context { color: var(--quiet); font-size: 13px; margin-top: 6px; }
+  table { border-collapse: collapse; margin: 6px 0; font-size: 13px; display: block; overflow-x: auto; }
+  th, td { border: 1px solid var(--rule); padding: 3px 8px; text-align: left; white-space: nowrap; }
+  th { background: var(--code); }
+  h4 { margin: 8px 0 2px; font-size: 15px; }
+  ul.tasks { list-style: none; padding-left: 4px; margin: 4px 0; }
+  .part { color: var(--quiet); font-size: 12px; }
+  .none { color: var(--quiet); font-style: italic; font-size: 14px; padding: 12px 0; }
+  .legend { font-size: 13px; color: var(--quiet); margin-top: 8px; }
+  @media (max-width: 720px) {
+    .pane { grid-template-columns: minmax(0, 1fr); }
+    .col + .col { border-left: 0; border-top: 1px solid var(--rule); }
+  }
+</style>
+</head>
+<body>
+<main>
+<h1>Stall, wait and ask messages</h1>
+<p class="lead">What a person sees for issue-551. Left: the work item's Slack conversation (short form, issue-549 shape). Right: the same event on GitHub. Wording is the contract; the layout imitates Slack and GitHub only loosely.</p>
+
+<section class="case">
+<h2>1. Stall notice (R4.4, R7.4)</h2>
+<p class="note">Posted once, after the nudges did not restart the session. Nothing is posted for a stall that a nudge fixed.</p>
+<div class="pane">
+<div class="col"><p class="colhead">Slack</p>
+<div class="msg"><div class="avatar">tl</div><div><span class="who">the-loop<span class="app">APP</span></span><span class="time">17:09</span>
+<div class="body"><p>🛑 <b>#551 is idle</b> at <code>self-review</code>. The session stopped 22 min ago with work still to do, and 2 nudges did not restart it.</p>
+<p><span class="mention">@rohith</span> reply here or comment on the work item to wake it, or attach: <code>tmux attach -t loop-…-551</code></p></div>
+<div class="reactions"><span class="reaction">🛑 1</span></div></div></div>
+</div>
+<div class="col"><p class="colhead">GitHub comment on the work item</p>
+<div class="body"><p>🤖 <b>the-loop</b> — <b>the session is idle</b></p>
+<p>The session for this work item stopped at <code>self-review</code> 22 minutes ago with work still to do. the-loop nudged it twice and it did not resume.</p>
+<p>Any comment from an authorized user wakes it. To look first: <code>the-loop sessions attach --work-item … --read-only</code>.</p>
+<p class="context">🤖 the-loop, autonomous comment</p></div>
+</div></div>
+</section>
+
+<section class="case">
+<h2>2. The stall ended (R4.5, R7.5)</h2>
+<p class="note">The same message and comment, edited in place. No new message.</p>
+<div class="pane">
+<div class="col"><p class="colhead">Slack</p>
+<div class="msg"><div class="avatar">tl</div><div><span class="who">the-loop<span class="app">APP</span></span><span class="time">17:09 (edited)</span>
+<div class="body"><p>✅ <s>#551 is idle at <code>self-review</code></s> — working again since 17:23, after 36 min idle.</p></div>
+<div class="reactions"><span class="reaction">⚙️ 1</span></div></div></div>
+</div>
+<div class="col"><p class="colhead">GitHub comment, edited</p>
+<div class="body"><p>🤖 <b>the-loop</b> — <b>the session was idle, and is working again</b></p>
+<p>Idle at <code>self-review</code> from 16:47 to 17:23 (36 minutes).</p>
+<p class="context">🤖 the-loop, autonomous comment</p></div>
+</div></div>
+</section>
+
+<section class="case">
+<h2>3. A question with a default and a deadline (R6.1)</h2>
+<p class="note">The default and the time it is taken are stated by the-loop, below the session's question. The button exists today (issue-393).</p>
+<div class="pane">
+<div class="col"><p class="colhead">Slack</p>
+<div class="msg"><div class="avatar">tl</div><div><span class="who">the-loop<span class="app">APP</span></span><span class="time">08:17</span>
+<div class="body"><p>⏳ <b>#549 has a question</b>: move the Slack-client screenshots (T5) to after merge?</p>
+<p><span class="mention">@rohith</span> if nobody answers by <b>08:47</b> (30 min), the session goes ahead with: <i>“Move T5 to after merge.”</i></p></div>
+<div class="buttons"><span class="btn primary">Move T5 to after merge.</span><span class="btn">Open on GitHub</span></div></div></div>
+</div>
+<div class="col"><p class="colhead">GitHub comment</p>
+<div class="body"><p><i>(the session's question, unchanged)</i></p>
+<p><b>Default:</b> “Move T5 to after merge.”<br><b>Taken at:</b> 2026-11-20 08:47 UTC (in 30 minutes) unless an authorized user answers first. Any answer after that still reaches the session.</p>
+<p class="context">🤖 the-loop, autonomous comment</p></div>
+</div></div>
+</section>
+
+<section class="case">
+<h2>4. The default was taken (R6.2)</h2>
+<p class="note">A reply on the question's own thread. The Slack question message is edited to show the outcome, as an answered gate is.</p>
+<div class="pane">
+<div class="col"><p class="colhead">Slack</p>
+<div class="msg"><div class="avatar">tl</div><div><span class="who">the-loop<span class="app">APP</span></span><span class="time">08:17 (edited)</span>
+<div class="body"><p>⚙️ <s>#549 has a question</s> — no answer by 08:47, so the session went ahead with: <i>“Move T5 to after merge.”</i> Reply to overrule.</p></div></div></div>
+</div>
+<div class="col"><p class="colhead">GitHub comment</p>
+<div class="body"><p>🤖 <b>the-loop</b> — <b>default taken</b></p>
+<p>Nobody answered <a href="#">the question above</a> by 08:47 UTC, so the session is going ahead with its stated default: “Move T5 to after merge.”</p>
+<p>This is not an approval of anything. An answer now still reaches the session.</p>
+<p class="context">🤖 the-loop, autonomous comment</p></div>
+</div></div>
+</section>
+
+<section class="case">
+<h2>5. Reminder for a question with no default (R6.7)</h2>
+<p class="note">One reminder, after the reminder interval. Never repeated.</p>
+<div class="pane">
+<div class="col"><p class="colhead">Slack (thread reply under the question)</p>
+<div class="msg"><div class="avatar">tl</div><div><span class="who">the-loop<span class="app">APP</span></span><span class="time">10:17</span>
+<div class="body"><p>⏳ <span class="mention">@rohith</span> #549 has been waiting on this question for 2 h. The session does nothing until someone answers.</p></div></div></div>
+</div>
+<div class="col"><p class="colhead">GitHub comment</p>
+<div class="body"><p>🤖 <b>the-loop</b> — <b>still waiting</b></p>
+<p>The session has waited 2 hours for an answer to <a href="#">this question</a>. It has no default, so the work item does not move until an authorized user answers.</p>
+<p class="context">🤖 the-loop, autonomous comment</p></div>
+</div></div>
+</section>
+
+<section class="case">
+<h2>6. Status surfaces (R7.1–R7.3)</h2>
+<p class="note">The line <code>the-loop check</code> adds, and the rows of the attention list (CLI and control-plane UI use the same rows).</p>
+<div class="pane single"><div class="col">
+<table>
+<tr><th>State</th><th><code>the-loop check</code> line</th><th>Attention row</th></tr>
+<tr><td>working</td><td>session: working (turn running since 17:23)</td><td>none</td></tr>
+<tr><td>idle, within the threshold</td><td>session: idle at self-review since 16:47 (4 min)</td><td>none</td></tr>
+<tr><td>stalled</td><td>session: STALLED at self-review since 16:47 (22 min, 2 nudges)</td><td>stalled · self-review · idle 22 min</td></tr>
+<tr><td>declared wait</td><td>session: waiting for “CI on #552” until 17:40</td><td>waiting · “CI on #552” · until 17:40 (informational)</td></tr>
+<tr><td>open ask with a default</td><td>session: asked 08:17; default “Move T5 to after merge.” at 08:47</td><td>awaiting input · default at 08:47</td></tr>
+<tr><td>open ask, no default</td><td>session: asked 08:17; waiting for an answer</td><td>awaiting input (as today)</td></tr>
+</table>
+</div></div>
+</section>
+</main>
+</body>
+</html>

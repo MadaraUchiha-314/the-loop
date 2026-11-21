@@ -53,9 +53,19 @@ RECAP_AFTER_S = 12 * 60 * 60
 #: How many changes the recap line names; older ones are counted, not named.
 RECAP_MAX_CHANGES = 6
 
+#: The watcher's two messages that need a person: the stall notice
+#: and the reminder for a question with no default. Each names its own wait:
+#: the stall, the ask.
+_WATCHER_WAITS = {"session.stalled": "stall_id", "session.ask_reminded": "ask_id"}
+
 #: Awaiting messages (R7.1): the only messages that mention anyone (R7.4).
 MENTION_EVENTS = frozenset(
-    {"session.awaiting_input", "decision-pending", *APPROVAL_EVENTS}
+    {
+        "session.awaiting_input",
+        "decision-pending",
+        *APPROVAL_EVENTS,
+        *_WATCHER_WAITS,
+    }
 )
 
 #: Gate outcomes the recap names (the outcomes a human approval gate emits).
@@ -90,6 +100,8 @@ def wait_key(event: Any) -> str:
     if event_type not in MENTION_EVENTS:
         return ""
     detail = getattr(event, "detail", None) or {}
+    if event_type in _WATCHER_WAITS:
+        return f"{event_type}:{detail.get(_WATCHER_WAITS[event_type]) or ''}"
     node = str(detail.get("node") or detail.get("phase") or "")
     if event_type in ("session.awaiting_input", "decision-pending"):
         text = str(getattr(event, "text", "") or "")

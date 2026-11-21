@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from ..graph.bootstrap import build_runtime
 from ..graph import runtime as graph_runtime
@@ -196,6 +196,7 @@ def check(
     pr: Optional[int] = None,
     pr_repo: str = "",
     spec_dir: str = "",
+    config: Optional[dict] = None,
 ) -> Dict[str, Any]:
     """`the-loop check` for one work item: the status report as a dict.
 
@@ -226,6 +227,10 @@ def check(
     findings against a directory that is not the work item's. A found state file
     always wins, and `--recompute` over a spec directory that is present still
     evaluates its artifacts.
+
+    **A work item with a live session on this machine also carries `session`**:
+    the state :mod:`sessionstate` derives from the event log.
+    ``config`` is the operator's CLI config; without one it is read best-effort.
     """
     named = work_item
     work_item = work_item_id(work_item)
@@ -238,6 +243,63 @@ def check(
             "nodes": [],
             "repoResolved": False,
         }
+    report = _check_report(repo, named, work_item, recompute, pr, pr_repo, spec_dir)
+    session = _session_view(repo, named, work_item, config)
+    if session is not None:
+        report["session"] = session
+    return report
+
+
+def _session_view(
+    repo: str, named: str, work_item: str, config: Optional[dict]
+) -> Optional[Dict[str, Any]]:
+    """The contract's `session` object for the work item's live session on this
+    machine, else ``None``.
+
+    The session is the registered one whose ref ``named`` is, or — for a bare
+    id, which names no repository — the one working that id in this checkout.
+    A read of the registry and the event log: nothing is written or emitted,
+    and a state that cannot be read is no state, never a failed check.
+    """
+    try:
+        from ..graph.bootstrap import load_cli_config_best_effort
+        from ..graph.refs import identity_key
+        from ..sessions import SessionRegistry
+        from ..state import layout_from_config
+        from . import sessionsurface
+
+        config = config or load_cli_config_best_effort()
+        registry_dir = (
+            str((config.get("routing") or {}).get("registryDir") or "")
+            or layout_from_config(config).local_dir
+        )
+        wanted = identity_key(named.strip())
+        here = Path(repo).resolve()
+        for session in SessionRegistry(registry_dir).list_sessions():
+            ref = session.work_item.ref
+            if not session.is_live:
+                continue
+            if identity_key(ref) == wanted or (
+                work_item_id(ref) == work_item
+                and session.cwd
+                and Path(session.cwd).resolve() == here
+            ):
+                # A record of the registry's top level: a work item's own.
+                return sessionsurface.Reader(config, pull_requests=()).view(ref)
+    except Exception as exc:  # noqa: BLE001 — the session line is a decoration
+        logger.debug("could not read the session's state: %s", exc)
+    return None
+
+
+def _check_report(
+    repo: str,
+    named: str,
+    work_item: str,
+    recompute: bool,
+    pr: Optional[int],
+    pr_repo: str,
+    spec_dir: str,
+) -> Dict[str, Any]:
     runtime = _runtime(repo, pr, pr_repo, work_item, spec_dir=spec_dir)
     report = runtime.status(work_item, recompute=recompute).as_dict()
     if report["stateFound"] or pr is not None or named.strip() == work_item:
@@ -252,6 +314,59 @@ def check(
     return archive.archived_report(work_item, named.strip(), stamp, report["statePath"])
 
 
+def _node_facts(node: Any) -> Dict[str, Any]:
+    return {"actor": node.actor, "command": node.command, "terminal": node.terminal}
+
+
+def stop_report(
+    repo: str, work_item: str, spec_dir: str = ""
+) -> Tuple[Dict[str, Any], Dict[str, Dict[str, Any]]]:
+    """What the stop check judges: the recomputed report of the outer
+    loop, and every node's ``actor``, ``command`` and ``terminal`` by node id.
+
+    The report is the one ``the-loop check --recompute`` gives. The node facts
+    come from the graph definition, never from work-item state, which the
+    session being judged can write. Raises ``ValueError`` for a ``repo`` that is
+    not a directory.
+    """
+    work_item = work_item_id(work_item)
+    runtime = _runtime(repo, work_item=work_item, spec_dir=spec_dir)
+    report = runtime.status(work_item, recompute=True).as_dict()
+    return report, {node.id: _node_facts(node) for node in runtime.graph.ordered()}
+
+
+def pointer(repo: str, work_item: str, spec_dir: str = "") -> Dict[str, Any]:
+    """The node work-item state places the outer loop at: ``node``
+    and that node's ``actor``, ``command`` and ``terminal``. ``{}`` when the
+    work item was never entered or the pointer names no node of its graph.
+
+    A position, never a verdict: no exit chain runs.
+    """
+    from ..graph.state import WorkItemState
+
+    work_item = work_item_id(work_item)
+    runtime = _runtime(repo, work_item=work_item, spec_dir=spec_dir)
+    state_dir = runtime.state_dir(runtime.work_item(work_item))
+    node = runtime.graph.nodes.get(
+        WorkItemState.load(state_dir, work_item).current_node
+    )
+    return {"node": node.id, **_node_facts(node)} if node is not None else {}
+
+
+def node_facts(
+    repo: str, work_item: str, node: str, spec_dir: str = ""
+) -> Dict[str, Any]:
+    """One node's ``actor``, ``command`` and ``terminal`` from the definition of
+    the work item's outer loop; ``{}`` for a node it does not have.
+
+    What the watcher's nudge names. Like :func:`stop_report`'s facts it reads
+    the graph definition only: no exit chain runs and no state is believed.
+    """
+    work_item = work_item_id(work_item)
+    found = _runtime(repo, work_item=work_item, spec_dir=spec_dir).graph.nodes.get(node)
+    return _node_facts(found) if found is not None else {}
+
+
 def complete(
     repo: str,
     work_item: str,
@@ -264,9 +379,17 @@ def complete(
 ) -> Dict[str, Any]:
     """A completion claim for the current (or named) node — issue-148 semantics."""
     work_item = work_item_id(work_item)
-    return _runtime(repo, pr, pr_repo, work_item, spec_dir=spec_dir).complete(
-        work_item, ref=ref, node=node, actor=actor
-    )
+    runtime = _runtime(repo, pr, pr_repo, work_item, spec_dir=spec_dir)
+    if pr is not None:
+        # The answer carries the entered node's assignment, and an
+        # inner loop's names its pull request — the keys the daemon's delivery
+        # sets for the same renderer (`GraphLink`).
+        runtime.config = {
+            **runtime.config,
+            "assignmentPr": pr,
+            "assignmentPrRepo": pr_repo,
+        }
+    return runtime.complete(work_item, ref=ref, node=node, actor=actor)
 
 
 def advance(

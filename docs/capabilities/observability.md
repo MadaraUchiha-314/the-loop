@@ -37,6 +37,14 @@ for humans, coding agents and any dashboarding built on top.
   single source of truth for event types (a unit test fails on drift). The type names
   and their order live there; each description is the string catalog's
   `eventlog.event-type.<type>` entry in `cli/the_loop/strings/en.json` (issue-540).
+- **The log is also the state of a session** (issue-551). Nine event types record a
+  session's turns and what the watcher did: `session.turn_started`,
+  `session.turn_ended` (with its `reason`), `session.wait_declared`, `session.nudged`,
+  `session.stalled`, `session.stall_ended`, `session.ask_answered`,
+  `session.ask_default_taken` and `session.ask_reminded`. The Stop gate, the watcher
+  and the status surfaces derive a session's state from these records and store
+  nothing else. See
+  [interactive-sessions](interactive-sessions.md#session-states-and-the-watcher-issue-551).
 - Writes SHALL be append-only and multi-process safe; a broken log SHALL never break
   ingress; emission SHALL be a no-op in library/test use until a CLI entry point
   configures it; `eventLog.enabled: false` in the **CLI config** SHALL disable it
@@ -54,6 +62,7 @@ for humans, coding agents and any dashboarding built on top.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-551 | Nine `session.*` types for a session's turns, waits, stalls and ask deadlines (2026-11-20); the session's state is derived from them | [spec](../specs/issue-551/), [decision-155](../decisions/decision-155.md), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/551) |
 | issue-540 | Event-type descriptions moved to the string catalog (`eventlog.event-type.<type>` in `strings/en.json`); names and order stay in `EVENT_TYPES` | [spec](../specs/issue-540/), [prompts-and-strings](prompts-and-strings.md) |
 | issue-496 | The gateway (2026-10-19): the `gateway.*` and `subject.*` families, `config.reload-failed`, `gateway_event_id` on `dispatch.*`, `eventlog.context` and `eventlog.correlate` | [spec](../specs/issue-496/), [gateway](gateway.md) |
 | issue-409 | Three `channel.*` rows for delivery that did **not** happen — `undelivered` (`warning`: an event every asked channel refused, now queued; names the type, the work item, the channels and the queue depth), `delivered_late` (a queued event a later attempt landed, with its attempts and how long it waited) and `undelivered_dropped` (`warning`: the queue was full and its oldest entry went). `session.awaiting_input` gains `channels_posted`. Ids and counts only, the rule unchanged: the queued message text lives in the outbox, never in the log. Before this, delivering to nobody was one `debug` line with `posted: 0` | [spec](../specs/issue-409/), [channels](channels.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/409) |

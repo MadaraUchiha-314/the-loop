@@ -192,7 +192,7 @@ def test_thread_reply_is_mirrored_and_delivered(tmp_path, monkeypatch):
     monkeypatch.setattr(
         core_sessions,
         "reply_session",
-        lambda ref, text, actor="", comment=True, config=None: (
+        lambda ref, text, actor="", comment=True, config=None, **vouched: (
             deliveries.append({"ref": ref, "actor": actor, "comment": comment})
             or {"delivered": True}
         ),
@@ -294,7 +294,7 @@ def test_socket_event_reaches_the_same_pipeline(tmp_path, monkeypatch):
     monkeypatch.setattr(
         core_sessions,
         "reply_session",
-        lambda ref, text, actor="", comment=True, config=None: (
+        lambda ref, text, actor="", comment=True, config=None, **vouched: (
             deliveries.append(actor) or {"delivered": True}
         ),
     )
@@ -936,7 +936,7 @@ def test_an_accepted_reply_is_acknowledged_on_the_reply_itself(tmp_path, monkeyp
     monkeypatch.setattr(
         core_sessions,
         "reply_session",
-        lambda ref, text, actor="", comment=True, config=None: (
+        lambda ref, text, actor="", comment=True, config=None, **vouched: (
             deliveries.append(actor) or {"delivered": True}
         ),
     )
@@ -978,7 +978,9 @@ def test_a_socket_message_and_a_button_press_are_acknowledged(tmp_path, monkeypa
     monkeypatch.setattr(
         core_sessions,
         "reply_session",
-        lambda ref, text, actor="", comment=True, config=None: {"delivered": True},
+        lambda ref, text, actor="", comment=True, config=None, **vouched: {
+            "delivered": True
+        },
     )
     monkeypatch.setattr(inbound, "_at_human_gate", lambda ref, cfg: False)
 
@@ -1051,7 +1053,7 @@ def test_a_slack_that_refuses_the_reaction_never_fails_the_delivery(
     monkeypatch.setattr(
         core_sessions,
         "reply_session",
-        lambda ref, text, actor="", comment=True, config=None: (
+        lambda ref, text, actor="", comment=True, config=None, **vouched: (
             deliveries.append(actor) or {"delivered": True}
         ),
     )
@@ -1134,7 +1136,7 @@ def test_a_slash_command_start_records_what_a_thread_keyword_records(
     monkeypatch.setattr(
         core_sessions,
         "reply_session",
-        lambda ref, text, actor="", comment=True, config=None: (
+        lambda ref, text, actor="", comment=True, config=None, **vouched: (
             deliveries.append(actor) or {"delivered": True}
         ),
     )
@@ -1303,7 +1305,7 @@ def test_a_socket_listener_catches_up_after_downtime(tmp_path, monkeypatch):
     monkeypatch.setattr(
         core_sessions,
         "reply_session",
-        lambda ref, text, actor="", comment=True, config=None: (
+        lambda ref, text, actor="", comment=True, config=None, **vouched: (
             deliveries.append(actor) or {"delivered": True}
         ),
     )
@@ -1440,7 +1442,7 @@ def test_an_execute_press_records_what_a_typed_execute_records(tmp_path, monkeyp
     monkeypatch.setattr(
         core_sessions,
         "reply_session",
-        lambda ref, text, actor="", comment=True, config=None: (
+        lambda ref, text, actor="", comment=True, config=None, **vouched: (
             deliveries.append(text) or {"delivered": True}
         ),
     )

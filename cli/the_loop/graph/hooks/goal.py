@@ -194,7 +194,7 @@ def _already_requested(ctx: HookContext) -> bool:
     )
 
 
-@hook("post-goal-request")
+@hook("post-goal-request", reads_event=True)
 def post_goal_request(ctx: HookContext) -> HookResult:
     """Ask the thread for a goal (entry hook) — unless one is already there.
 
@@ -238,7 +238,7 @@ def _confirmation(goal: Dict[str, Any]) -> str:
     return mark_self_authored("\n".join(lines))
 
 
-@hook("classify-goal")
+@hook("classify-goal", reads_event=True)
 def classify_goal(ctx: HookContext) -> HookResult:
     """Read the authorized goal; freeze it and release the gate — or wait.
 

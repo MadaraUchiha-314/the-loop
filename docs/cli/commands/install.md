@@ -83,7 +83,7 @@ A binary that offers `plugin marketplace` but no working `plugin install` counts
 surface**, and takes the fallback — running an install that cannot work would report
 `failed` for what is really an absent feature.
 
-### `codex` — bundled instructions and Stop hook
+### `codex` — bundled instructions and hooks
 
 Install the official Codex CLI first, then run:
 
@@ -93,12 +93,15 @@ the-loop install codex --scope project --project-dir .
 
 The installer preserves existing `AGENTS.md` or `AGENTS.override.md` and adds a
 managed block pointing to the bundled operating skill and command procedures.
-It merges the native Stop hook into `.codex/hooks.json` for project scope, or
-`$CODEX_HOME/hooks.json` for user scope (`~/.codex` when unset). The user instruction
+It merges two native hooks into `.codex/hooks.json` for project scope, or
+`$CODEX_HOME/hooks.json` for user scope (`~/.codex` when unset): the Stop hook, and the
+turn-start hook on `UserPromptSubmit`
+([issue-551](https://github.com/MadaraUchiha-314/the-loop/issues/551)). Without the
+turn-start hook a session has no turn records and the idle watcher leaves it alone. The user instruction
 block is installed in that same Codex home. Repeating setup leaves matching
 definitions unchanged; a missing Codex binary is reported as a failed step.
 
-**Review and trust the new hook through Codex `/hooks` before unattended use.**
+**Review and trust the new hooks through Codex `/hooks` before unattended use.**
 The installer preserves the operator's sandbox and approval policy; it does not
 grant hook trust.
 

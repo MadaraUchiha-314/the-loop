@@ -272,16 +272,52 @@ package — there are no install extras (owner decision, PR #162).
   The route SHALL be fail-closed: no registered session or no live pane is 404 —
   a reply never spawns, respawns or resumes anything — a paused record or
   endpoint is 400, and the claimed `actor` is recorded for audit, never trusted
-  as auth.
-- `GET /attention` SHALL report the wait as kind `awaiting-input`: open while the
-  work item's newest `session.awaiting_input` is newer than its newest
-  `session.reply_sent` — the same rule the dashboard's `awaitingInput` model
-  applies, so the two surfaces cannot disagree. An answer given on the **ticket**
-  instead emits no `reply_sent`, so the row stays lit — a known, documented gap
-  (the poller cannot know which forwarded comment answered the question). A work
+  as auth. For the same reason a reply through the route closes the open asks and
+  resets neither the watcher's nudge budget nor the one default per step (issue-551).
+- `GET /attention` SHALL report the wait as kind `awaiting-input`. A work item can have
+  several asks open. A `session.reply_sent` or a `session.ask_answered` (an authorized
+  person's comment or review, delivered) closes all of them, and a
+  `session.ask_default_taken` closes the one it names (issue-551). The dashboard's
+  `awaitingInput` model applies the same rule, so the two surfaces cannot disagree. A
+  work item gets **one** row: the ask whose default is due first, else the most recent,
+  with `(+N more)` when others are open. WHEN that ask has a deadline THEN the row SHALL
+  also carry `default` and `defaultAt`. The question and the default are a session's
+  own words, so the row shows each as one line of printable characters, the question
+  cut to 80. A work
   item whose portable record carries an `ended` section (issue-329) SHALL report
   neither `awaiting-input` nor `armed-without-session`: nobody is waiting for the
   answer. The dashboard applies the same rule to the same record.
+- `GET /attention` SHALL report two more kinds, for a live session only (issue-551).
+  `stalled` is a session idle past `routing.watchdog.idleSeconds`: the row names the
+  node, the idle time and the nudges sent, and carries the time the idle period began
+  as `at`. It appears at the idle threshold, which is before the stall notice goes out.
+  `declared-wait` is informational: the condition and the time the wait ends. Neither
+  row is stored. Each leaves the list when the state does, with no person's action. A
+  pull request's own session counts as live once it has a terminal of its own.
+- `POST /sessions/ask`, `/sessions/wait`, `/sessions/stop-check` and
+  `/sessions/turn-start` SHALL be served by a manager as by a worker (issue-551): the
+  manager resolves the instance that manages the ref, runs the operation itself for its
+  own, and forwards it to the member otherwise. The ask body's `default` is at most 600
+  characters, and a `defaultAfterSeconds` over 604800 (7 days) is refused with 400.
+- The check report (`POST /graph/check`, the `check_work_item` MCP tool) SHALL carry a
+  `session` object WHEN a live session on this machine works the item (issue-551):
+  `state` (`working`, `waiting`, `asked`, `idle`, `stalled` or `not-watched`), `node`,
+  `since`, `detail` and `summary`. `GET /sessions` SHALL carry the same object per
+  session.
+- Three operations SHALL serve the session's own hooks and verbs (issue-551):
+  `POST /api/v1/sessions/stop-check` (the Stop gate's verdict),
+  `POST /api/v1/sessions/turn-start` (the turn's start) and
+  `POST /api/v1/sessions/wait` (a declared wait). `POST /api/v1/sessions/ask` SHALL
+  accept an optional `defaultAfterSeconds`. Each of the three new operations SHALL
+  answer only for a ref that has a live registered session, and 404 otherwise. That
+  binds a call to a session and authenticates nobody: what it does not guarantee is in
+  [process-graph](process-graph.md#the-stop-gate-issue-429-issue-551). The rules are in
+  [process-graph](process-graph.md#the-stop-gate-issue-429-issue-551) and
+  [interactive-sessions](interactive-sessions.md#session-states-and-the-watcher-issue-551).
+- The service SHALL run the watcher for as long as it runs, whichever ingress it
+  hosts ([decision-155](../decisions/decision-155.md)). A process SHALL run at most one
+  watcher. A second service started in the same process gets none while the first
+  one's watcher runs, and a watcher is started for it when that one stops.
 - A session's **transcript** SHALL be served by `GET /api/v1/sessions/transcript`
   (issue-209): the harness runs as a CLI in tmux, so the record of a session's
   turns and tool calls is the harness's own file — for Claude Code,
@@ -525,6 +561,7 @@ package — there are no install extras (owner decision, PR #162).
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-551 | The service decides a stop and watches sessions (2026-11-20): `POST /sessions/stop-check`, `/sessions/turn-start` and `/sessions/wait`; `defaultAfterSeconds` on `/sessions/ask`; a `session` object on the check report and on each listed session; attention kinds `stalled` and `declared-wait`; an ask now closes on an authorized answer or its default as well as on a reply; the watcher runs in the service | [spec](../specs/issue-551/), [decision-155](../decisions/decision-155.md), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/551) |
 | issue-496 | The gateway (2026-10-19): the `gateway-client` hosted ingress, `GET /api/v1/gateway` on the instance API and in `the-loop.v1.yaml`, the gateway's own contract `the-loop-gateway.v1.yaml` | [spec](../specs/issue-496/), [gateway](gateway.md) |
 | issue-462 | `GET /pull-requests/checks` (`listPullRequestChecks`) and the MCP tool `pull_request_checks` list a pull request's checks with failed jobs' log tails, over `core.github_ops.pull_request_checks`; read-only, so a manager runs it on the member it targets, like `pr status` | [spec](../specs/issue-462/), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/462) |
 | issue-465 | `POST /pull-requests/ready` (`markPullRequestReady`) and the MCP tool `mark_pull_request_ready` take a registered work item's draft pull request out of draft, over `core.github_ops.mark_ready`; a manager runs it on the member that manages the work item | [spec](../specs/issue-465/), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/465) |

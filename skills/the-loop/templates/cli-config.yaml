@@ -202,6 +202,14 @@ routing:
   #   autofix: true             # deliver only FAILED checks, with a healing section; false = every
   #                             # CI event raw, as before
   #   maxAttempts: 3            # failing commits per check before the session is told to escalate
+  # watchdog:                   # (issue-551) an idle session is nudged, then a person is told once
+  #   enabled: true             # false = no nudge and no stall notice; the Stop gate is unaffected
+  #   idleSeconds: 600          # idle time, with work owed, before a nudge
+  #   maxNudges: 2              # nudges per node visit before the notice; 0 = straight to the notice
+  #   maxWaitSeconds: 3600      # the longest `the-loop wait`, and the longest background work is believed
+  # asks:                       # (issue-551) the deadline of a `the-loop ask`
+  #   minDefaultWaitSeconds: 1800  # the shortest time before `--default ... --after ...` is taken
+  #   reminderSeconds: 7200     # one reminder for a question with no default; 0 = none
   # Execution control (issue-106): the label is necessary, NOT sufficient.
   # An authorized user starts/stops/pauses/resumes a work item by commenting
   # one of these keywords (or with `the-loop sessions start|stop|pause|
@@ -688,7 +696,8 @@ channels:
     # channel: ""                            # where the bot posts: #name or a C… id
     #                                        # (a name needs channels:read/groups:read
     #                                        #  and is resolved once; an id needs neither)
-    # subscribe: [session.awaiting_input]    # what this channel RECEIVES; add the notify
+    # subscribe: [session.awaiting_input, session.stalled]  # what this channel RECEIVES
+    #                                        # (the default: the two events that need a person); add the notify
     #                                        # events (phase-approval-pending, work-item-complete, …),
     #                                        # the lifecycle (phase.started, phase.completed,
     #                                        # work-item.closed — issue-378)

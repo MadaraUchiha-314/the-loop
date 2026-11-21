@@ -23,15 +23,68 @@ One verb, three effects — in this order:
    the comment's URL, who asked. This is what makes the waiting session
    *observable*: [`GET /api/v1/attention`](/capabilities/control-plane) reports
    the work item as `awaiting-input`, and the dashboard's question card lights up.
-3. **Leaves the answering to the reply route**: an operator answers either on the
-   ticket (the poller forwards it, as ever) or straight into the session's pane
-   via `POST /api/v1/sessions/reply`, which emits the `session.reply_sent` that
-   closes the wait.
+3. **Leaves the answering to a person**: an operator answers either on the
+   ticket (the daemon forwards it, and records `session.ask_answered` when the author
+   is authorized) or straight into the session's pane via
+   `POST /api/v1/sessions/reply`, which emits `session.reply_sent`. Either record
+   closes every open ask of the work item. An authorized comment on the work item or on
+   any of its pull requests counts, wherever the question was asked. A reply through
+   the route closes the asks and does nothing else: it does not let the session ask
+   with `--after` again at the same step, because the route cannot show who called it.
 
 If the post fails, the exit code is 1 and the failure is printed — but the wait is
 **still recorded** (`comment_posted: false`, level `warning`): the agent is
 waiting whether or not GitHub was reachable, and the reply route can still carry
 the answer.
+
+## Asking without blocking
+
+Give the question a default and a deadline when a person's view is worth having but not
+worth waiting for
+([issue-551](https://github.com/MadaraUchiha-314/the-loop/issues/551)):
+
+```bash
+the-loop ask --work-item github:OWNER/REPO#N --question "Rename the flag to --until?" \
+    --default "Yes, rename it" --after 30m
+```
+
+- The posted question states the default and the time it is taken. The command prints
+  the same time, and tells the session to carry on with work that does not depend on
+  the answer.
+- **An authorized answer before the deadline wins.** It is delivered as usual and the
+  default is not taken. It closes every open ask of the work item, not only the latest.
+  A reply from someone who is not authorized changes nothing.
+- **At the deadline** the daemon tells the session to proceed with its default, posts
+  "default taken" where the question was asked, and closes the ask
+  (`session.ask_default_taken`). This is not an approval: no human gate accepts a
+  default as its answer. If the session cannot be told just then (it is paused, or its
+  terminal did not take the message), the ask still closes, and "default taken" says
+  that the default applies and that the session has not been told. The next nudge the
+  daemon sends that session tells it.
+- **An answer after the deadline** still reaches the session, as a comment, so it can
+  correct course.
+- **The minimum wait** is the operator's
+  [`routing.asks.minDefaultWaitSeconds`](/config/cli/routing-options#asks-mindefaultwaitseconds)
+  (default 30 minutes). A shorter `--after` is raised to it, and both the output and
+  the question say so.
+
+- **One default per step.** After a default was taken with nobody answering, another ask
+  with `--after` is refused until the work item moves to its next step or an authorized
+  person answers. Ask again without `--after` and wait for a person.
+- **One question with a deadline at a time.** While an ask with `--after` is still
+  open for the work item, another ask with `--after` is refused. An ask without
+  `--after` is accepted.
+- **A question that reached nobody has no default.** If the comment could not be posted
+  and no channel took the question, the ask is recorded without a deadline and the
+  output says the default will not be taken.
+
+A session can have several asks open at once. Each keeps its own deadline, and
+[`check`](/cli/commands/check) shows the one due first.
+
+A question asked without `--after` waits for a person, however long that takes. It gets
+**one reminder** where it was asked, after
+[`routing.asks.reminderSeconds`](/config/cli/routing-options#asks-reminderseconds)
+(default 2 hours), and no more.
 
 ## Flags
 
@@ -40,13 +93,20 @@ the answer.
 | `--work-item` | required | The ref the question goes to: `github:…`, or `jira:<site>/<KEY>-<n>`, where the Jira ledger records it on the ticket with the visible self-marker. |
 | `--question` | — | The question text (markdown). |
 | `--question-file` | — | Read the question from a file; `-` reads stdin. Exactly one of the two. |
+| `--default` | — | The answer to take if nobody objects, in at most 600 characters. Control characters and other characters that do not print are dropped from it; line breaks and tabs are kept. A channel that takes button presses offers it as a one-tap reply. |
+| `--after` | — | How long to wait before the `--default` answer is taken: `45s`, `30m` or `2h`. It needs `--default`. A wait under `routing.asks.minDefaultWaitSeconds` is raised to it, and the output says so. A wait over 7 days (`168h`) is refused. The question states the default and the time; an authorized answer before that time cancels it. |
 
 ## Notes
 
-- Runs **in-process**, not through the control-plane service — deliberately, and
-  unlike the other session verbs: this is the escalation path, the one verb that
-  must keep working when no service is running (or in a cloud session that has
-  no daemon at all).
-- An empty question or malformed ref exits 2 and posts/records nothing.
+- Runs through the [control-plane service](/cli/service) when one answers, because
+  the service holds the credentials
+  ([issue-482](https://github.com/MadaraUchiha-314/the-loop/issues/482)). With no
+  service it runs in-process, with a note: this is the escalation path, and it must keep
+  working in a cloud session that has no daemon. A session the daemon spawned holds no
+  credential, so there it exits 2 without a service.
+- An empty question or malformed ref exits 2 and posts/records nothing. So does
+  `--after` without `--default`, an `--after` that is not a duration or is longer than
+  7 days, and a `--default` longer than 600 characters. The default is posted on the
+  thread and pasted back into the session, so it has to be a sentence or two.
 - The stamp is idempotent: a question that already carries the marker is not
   double-stamped.

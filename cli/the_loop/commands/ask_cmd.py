@@ -36,6 +36,7 @@ from .sessions_cmd import _cli_config, _render
 from .. import eventlog, strings
 from ..client.routing import harness_routed, service_error
 from ..core import sessions as core_sessions
+from ..durations import parse_duration
 
 
 @register
@@ -69,8 +70,21 @@ class AskCommand(Command):
             dest="default_answer",
             help=strings.t("cli.ask.default.help"),
         )
+        parser.add_argument(
+            "--after",
+            default="",
+            help=strings.t("cli.ask.after.help"),
+        )
 
     def run(self, args: argparse.Namespace) -> int:
+        # Refused here, before anything is read or sent. The operator's minimum
+        # is the service's to apply: it holds the config.
+        try:
+            after = parse_duration(args.after) if args.after else None
+            core_sessions.check_default(args.default_answer, after)
+        except ValueError as exc:
+            print(strings.t("cli.ask.run.error", exc=exc), file=sys.stderr)
+            return 2
         eventlog.configure_from_file("ask")
         if args.question_file:
             try:
@@ -97,6 +111,7 @@ class AskCommand(Command):
                         "question": question,
                         "summary": args.summary,
                         "default": args.default_answer,
+                        "defaultAfterSeconds": after,
                         "actor": actor,
                     },
                 ),
@@ -107,6 +122,7 @@ class AskCommand(Command):
                     summary=args.summary,
                     default_answer=args.default_answer,
                     actor=actor,
+                    default_after_seconds=after,
                 ),
             )
         except Exception as exc:  # noqa: BLE001 — mapped, or re-raised below

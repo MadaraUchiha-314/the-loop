@@ -19,9 +19,12 @@ Load `.the-loop/harness-config.yaml`; read every custom instruction doc it regis
 config, issue-352);
 apply any per-task `overrides` from the spec front-matter.
 
-**Start clean.** Entering implementation crosses a phase boundary: clear the context
-window (the fixed rule of `reference/context.md`) so execution runs against the locked
-spec files read from disk, not the drafting conversation (plan-mode style).
+**Start clean.** Entering implementation crosses a phase boundary. In an interactive
+session, clear the context window (the fixed rule of `reference/context.md`), so
+execution runs against the locked spec files read from disk, not the drafting
+conversation (plan-mode style). A daemon-driven session does not clear and does not end
+its turn here: it compacts or hands the work to fresh subagents, and continues in the
+same turn.
 
 ## Steps
 

@@ -128,6 +128,17 @@ _EVENT_NAMES: Tuple[str, ...] = (
     "session.announce_failed",
     "session.awaiting_input",
     "session.reply_sent",
+    # -- turns, waits, stalls and ask deadlines (source: the session's
+    #    hooks and verbs, the dispatcher, and the control-plane service's watcher)
+    "session.turn_started",
+    "session.turn_ended",
+    "session.wait_declared",
+    "session.nudged",
+    "session.stalled",
+    "session.stall_ended",
+    "session.ask_default_taken",
+    "session.ask_reminded",
+    "session.ask_answered",
     # -- channels (source: ask | channels | poll | gh-webhook) ----------------
     "channel.posted",
     "channel.post_failed",
@@ -354,12 +365,16 @@ class EventLog:
         self._lock = threading.Lock()
         self._warned = False
 
-    def emit(self, event: str, level: str = "info", **fields) -> None:
+    def emit(self, event: str, level: str = "info", **fields) -> bool:
         """Append one event record. Unknown ``event`` types are still logged
         (forward compatibility), but instrumentation should register them in
-        :data:`EVENT_TYPES`."""
+        :data:`EVENT_TYPES`.
+
+        ``True`` when the record was appended; ``False`` when the log is
+        disabled or the write failed. A caller whose next act must never
+        happen without its record checks this before it acts."""
         if not self.enabled:
-            return
+            return False
         record = {
             "ts": _utcnow(),
             "source": self.source,
@@ -393,6 +408,8 @@ class EventLog:
             if not self._warned:  # warn once — never break ingress over o11y
                 self._warned = True
                 logger.warning("cannot write event log %s: %s", self.path, exc)
+            return False
+        return True
 
 
 # -- delivery correlation (issue-496, R10.2) -------------------------------------
@@ -508,10 +525,21 @@ def load_config(config_path: Optional[Union[str, Path]] = None) -> dict:
     return data.get("eventLog") or {}
 
 
-def emit(event: str, level: str = "info", **fields) -> None:
-    """Emit through the configured log; silently a no-op when unconfigured."""
-    if _log is not None:
-        _log.emit(event, level=level, **fields)
+def current_path() -> Optional[Path]:
+    """The file this process's records go to; ``None`` when no log is configured.
+
+    For a reader that must see what this process just wrote (the
+    dispatcher asks whether the work item has an open ask)."""
+    return _log.path if _log is not None and _log.enabled else None
+
+
+def emit(event: str, level: str = "info", **fields) -> bool:
+    """Emit through the configured log; silently a no-op when unconfigured.
+
+    ``True`` only when the record was appended (:meth:`EventLog.emit`)."""
+    if _log is None:
+        return False
+    return _log.emit(event, level=level, **fields)
 
 
 def reset() -> None:

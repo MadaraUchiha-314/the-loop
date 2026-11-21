@@ -355,6 +355,85 @@ class ManagerFacade:
             body={"ref": ref, "text": text, "actor": actor, "comment": comment},
         )
 
+    def ask_session(
+        self,
+        ref: str,
+        question: str,
+        summary: str = "",
+        default_answer: str = "",
+        actor: str = "",
+        instance: str = "",
+        default_after_seconds: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        member = self.fleet.by_ref(ref, instance)
+        if self.fleet.is_local(member):
+            return _stamp(
+                self.core.ask_session(
+                    ref,
+                    question,
+                    summary=summary,
+                    default_answer=default_answer,
+                    actor=actor,
+                    default_after_seconds=default_after_seconds,
+                ),
+                self.own_name,
+            )
+        body: Dict[str, Any] = {
+            "ref": ref,
+            "question": question,
+            "summary": summary,
+            "default": default_answer,
+            "actor": actor,
+        }
+        if default_after_seconds is not None:
+            body["defaultAfterSeconds"] = default_after_seconds
+        return self._proxy(member, "POST", "/api/v1/sessions/ask", body=body)
+
+    def wait_session(
+        self, ref: str, condition: str, seconds: int, instance: str = ""
+    ) -> Dict[str, Any]:
+        member = self.fleet.by_ref(ref, instance)
+        if self.fleet.is_local(member):
+            return _stamp(
+                self.core.wait_session(ref, condition, seconds), self.own_name
+            )
+        return self._proxy(
+            member,
+            "POST",
+            "/api/v1/sessions/wait",
+            body={"ref": ref, "condition": condition, "seconds": seconds},
+        )
+
+    def stop_check_session(
+        self,
+        ref: str,
+        background_work: bool = False,
+        gave_up: bool = False,
+        instance: str = "",
+    ) -> Dict[str, Any]:
+        member = self.fleet.by_ref(ref, instance)
+        if self.fleet.is_local(member):
+            return _stamp(
+                self.core.stop_check_session(
+                    ref, background_work=background_work, gave_up=gave_up
+                ),
+                self.own_name,
+            )
+        return self._proxy(
+            member,
+            "POST",
+            "/api/v1/sessions/stop-check",
+            body={"ref": ref, "backgroundWork": background_work, "gaveUp": gave_up},
+        )
+
+    def turn_start_session(self, ref: str, instance: str = "") -> Dict[str, Any]:
+        member = self.fleet.by_ref(ref, instance)
+        if self.fleet.is_local(member):
+            return _stamp(self.core.turn_start_session(ref), self.own_name)
+        return self._proxy(
+            member, "POST", "/api/v1/sessions/turn-start", body={"ref": ref}
+        )
+
     def register_session(
         self,
         ref: str,
