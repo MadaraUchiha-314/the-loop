@@ -16,8 +16,8 @@ This pull request closes that in three layers:
 - **Tell the truth.** A comment no longer marks a node "blocked". A question can carry
   a default taken at a deadline. `check` shows working, waiting, idle and stalled.
 
-**What I need from you:** the security sign-off and two decisions, asked
-[here](https://github.com/MadaraUchiha-314/the-loop/pull/552#issuecomment-7053645871).
+**What I need from you:** the security sign-off and two decisions. See
+[the sign-off question on the pull request](https://github.com/MadaraUchiha-314/the-loop/pull/552#issuecomment-7053645871).
 
 ## Review effort
 
