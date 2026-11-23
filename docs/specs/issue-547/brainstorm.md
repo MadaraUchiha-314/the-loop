@@ -177,6 +177,47 @@ Candidate routing rules for Q1, from most explicit to most automatic:
 Rule 1 can be the floor that the others build on. Rule 2 is a strong default for the
 implementation-time pain that started this issue.
 
+### Routing across transports (Slack, the gateway, future ones)
+
+The author asked this on [PR #548](https://github.com/MadaraUchiha-314/the-loop/pull/548#issuecomment-7091825285).
+Routing is already two steps, and Option C changes only the second:
+
+1. **Which work item?** This belongs to the gateway or the local ingress, and it does
+   not change. A GitHub comment resolves through its issue or linked PR. A Slack message
+   resolves through the thread or room **binding** of its work item (one thread per work
+   item, issue-312, or a declared room). The gateway stores the event on that subject. It
+   judges no person and sees no session (decision-145).
+2. **Which session inside the work item?** This step is new. It runs on the instance,
+   after the authorized-actor guard. The key is **(work item, person)**, and the person
+   comes from `routing.authorizedUsers`, which maps one person to their `github` and
+   `slack` ids ("identity in one place", [channels](../../capabilities/channels.md)). So a
+   person's GitHub comment and their Slack reply reach the **same** side session.
+
+All three Q1 rules run on the instance, so they work the same on every transport: the
+control grammar, the work item's phase and a classifier all live there.
+
+The gaps are on the **way back**, and they are mostly Slack's:
+
+- **Where a side session replies.** Slack has one thread per work item and no nested
+  threads. If side sessions reply in that thread, the reader sees the conversations mixed
+  again, even though the agents stay isolated. There are two choices:
+  - Reply in the shared thread with an @mention. This is cheap, but readers see the mix.
+  - Open one thread per (work item, person). The binding then grows a person
+    dimension: `thread → (work item, person)`. This adds to the binding record, and the
+    gateway still routes on the work item alone.
+
+  Lean: the shared thread with @mentions for v1 (Q7).
+- **Reply where the question was asked.** A side session asked on Slack answers on
+  Slack. The event's origin says which transport it came from, so the side session's
+  reply needs a `--reply-to <origin>` and not "always the ticket".
+- **An unmapped person** (a Slack member with no `slack` id in `authorizedUsers`) is
+  dropped today, before routing, so nothing new leaks. Anything the router cannot place
+  goes to the **main** session, as it does today.
+
+**The contract for any future transport:** it resolves the work item and passes an
+authenticated actor id that maps to a person in `authorizedUsers`. A transport that
+cannot name the person gets no side session, and its events go to the main session.
+
 ## Open questions
 
 These go to the author on the brainstorm PR. Q1–Q3 need a human. Q4–Q6 are things I
@@ -199,8 +240,15 @@ will check before requirements.
    artifact feedback still go straight to the main session, which is the one drafting the
    file? My leaning is yes: artifact iteration lives on the PR, and the drafting session
    needs it.
+7. **Q7: Slack reply placement.** Should side sessions reply in the work item's one
+   Slack thread with an @mention (v1 lean), or should each person get their own Slack
+   thread, with a binding keyed by (work item, person)? See *Routing across transports*.
 
 ## Leaning / working hypothesis
+
+The author also leans towards Option C
+([PR #548](https://github.com/MadaraUchiha-314/the-loop/pull/548#issuecomment-7091825285)).
+Q1–Q3 are still open.
 
 Option C, with the routing floor from rule 1 (an explicit keyword) and rule 2 (by phase)
 as the default during implementation and verification. The side session has no write
