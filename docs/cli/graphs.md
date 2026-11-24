@@ -65,7 +65,7 @@ It is compiled by **the same code** as the shipped loops, and held to the same r
 | Rule | Why |
 |---|---|
 | Every hook is a shipped one or an `x-` hook a module in [`routing.graph.hooks.modules`](/cli/hooks) registers | A gate the graph names either runs or fails the load — never silently absent |
-| Every `phase` is one of the-loop's: `phase-selection`, `brainstorming`, `requirements-definition`, `design`, `test-planning`, `tasks-breakdown`, `implementation`, `verification`, `needs-review`, `complete`, `cleanup` | The `loop:<phase>` labels are one vocabulary for every repository, so dashboards keep working |
+| Every `phase` is one of the-loop's: `phase-selection`, `context-gathering`, `brainstorming`, `requirements-definition`, `design`, `test-planning`, `tasks-breakdown`, `implementation`, `verification`, `needs-review`, `complete`, `cleanup` | The `loop:<phase>` labels are one vocabulary for every repository, so dashboards keep working |
 | A node's `command:` is `do-task` (the-loop's own, `/the-loop:do-task`) or `plugin:command` (another plugin's, `/plugin:command`) | The session is told exactly one slash command, never free text |
 | Edges, skippable nodes, skip sets, `produces` entries — every structural rule | A mistake fails at load, not three nodes into a work item |
 | A top-level `name:`, if present, equals the name you declare | One name, recorded in `work-item-state.json` |

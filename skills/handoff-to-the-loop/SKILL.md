@@ -50,6 +50,11 @@ Draft only the artifacts the conversation actually settled, as a prefix of the s
 chain: `brainstorm.md` → `requirements.md` (or `bugfix.md` for a defect) → `design.md`
 → `testing-plan.md`. Never invent a later artifact to fill the chain.
 
+**`current-state.md` comes before the chain, and any stage may carry it** (issue-553).
+Carry it only when `/the-loop:gather-context` wrote one in this conversation or in the
+draft folder. It describes how the system works today; never draft one from a chat that
+did not read the code.
+
 - **Sources:** this conversation, plus any `docs/specs/draft-*/` files when a repository
   is checked out. Read those before drafting, and build on them.
 - **Templates:** use the-loop's templates when the plugin is installed
@@ -58,6 +63,7 @@ chain: `brainstorm.md` → `requirements.md` (or `bugfix.md` for a defect) → `
 
   | Artifact | Sections |
   |---|---|
+  | `current-state.md` | The short version · Scope · How it works today · Questions and answers · Unknowns · Review comments — front matter carries `gatheredAt`, the commit read |
   | `brainstorm.md` | The short version · Problem / opportunity · Context & constraints · Ideas & options · Sketches & notes · Open questions · Working hypothesis |
   | `requirements.md` | The short version · Introduction · Requirements (user story + EARS acceptance criteria each) · Non-functional requirements · Security considerations · Out of scope · Open questions · Review comments |
   | `design.md` | The short version · Interfaces · Architecture (one mermaid diagram at least) · Technology choices · UI/UX design · Security design · Testing strategy · Open questions · Review comments — no code-level detail |
@@ -96,14 +102,15 @@ answer marked, and wait for the reply.
 
 | # | Question | Options (preselect one) |
 |---|---|---|
-| 1 | **How far did we get?** | *Still exploring* · *Brainstorm settled* · *Requirements settled* · *Design settled* |
+| 1 | **How far did we get?** | *Still exploring* · *Context settled* · *Brainstorm settled* · *Requirements settled* · *Design settled* |
 | 2 | **Where should it go?** (multi-select) | *GitHub issue*, always selected: new, or an existing issue to attach to · *Jira copy*, offered only when the-loop CLI is present · *Spec-chain artifact*, offered only where an artifact tool exists · *Spec-chain doc*, offered only where the Claude Docs connector exists (pick at most one of the two) |
 | 3 | **Details** | `OWNER/REPO`, or the existing issue's number or URL; with Jira: project key, issue type (*Story* · *Bug* · *Task*), optional epic key |
 | 4 | **What next?** | *Run now* · *Continue in this session* (checkout only) · *Queue it* · *Just file it* |
 
 The stage decides the artifacts carried (§ Stage table). If the drafts do not fit the
 stage picked, say so and ask again; for example, *design settled* needs a
-`requirements.md` and a `design.md`.
+`requirements.md` and a `design.md`, and *context settled* needs a `current-state.md`
+and nothing later.
 
 **Validate free text as it is entered, and ask again on a bad value:**
 
@@ -202,7 +209,7 @@ handoff can extract the bytes the record hashed:
 </script>
 ```
 
-- `name` is one of `brainstorm.md`, `requirements.md`, `bugfix.md`, `design.md`,
+- `name` is one of `current-state.md`, `brainstorm.md`, `requirements.md`, `bugfix.md`, `design.md`,
   `testing-plan.md`. `md` is the file's text exactly as hashed, JSON-escaped, with every
   `</` written as `<\/` so the text cannot close the script tag.
 - The record's `spec-artifact` line is `<artifact URL> sha256:<hex>`, where the hash is
@@ -262,14 +269,22 @@ replies `the-loop execute`.
 | Stage picked | Artifacts carried | Issue label | `enter` | First approval asked |
 |---|---|---|---|---|
 | Still exploring | none, or a partial `brainstorm.md` | `loop:brainstorming` | `brainstorming` | Brainstorm |
+| Context settled | `current-state.md` only | `loop:context-gathering` | `context-approval` | Current state |
 | Brainstorm settled | `brainstorm.md` | `loop:brainstorming` | `brainstorm-approval` | Brainstorm |
 | Requirements settled | `requirements.md` or `bugfix.md` (+ `brainstorm.md`) | `loop:requirements-definition` | `requirements-approval` | Requirements |
 | Design settled, with a testing plan | + `design.md`, `testing-plan.md` | `loop:test-planning` | `design-approval` | Design and testing plan |
 | Design settled, no testing plan | + `design.md` | `loop:design` | `test-planning` | Design and testing plan |
 
-The record's `stage` values are `exploring`, `brainstorm-settled`,
+The record's `stage` values are `exploring`, `context-settled`, `brainstorm-settled`,
 `requirements-settled` and `design-settled`. `enter` must be exactly the table's value
 for the stage and artifacts, or the record is ignored.
+
+**Every stage may also carry `current-state.md`**, first in chain order. It never
+changes the stage or `enter`. Under *context settled* the `context-approval` gate locks
+it, and the phase-selection checklist arrives with the `context-approval` row ticked.
+Under a later stage it is an earlier artifact: the import locks it when the developer
+approved it in chat, and the walk enters neither context node. If the file fails its
+check, the walk starts at `context-gathering`.
 
 ## Approved in chat
 
@@ -286,9 +301,9 @@ with `carried-by: ticket`, one `<details>` block per carried file.
 
 | Key | Required | Value |
 |---|---|---|
-| `stage` | yes | `exploring` · `brainstorm-settled` · `requirements-settled` · `design-settled` |
+| `stage` | yes | `exploring` · `context-settled` · `brainstorm-settled` · `requirements-settled` · `design-settled` |
 | `enter` | yes | the stage table's starting step |
-| `artifacts` | yes | `<name> sha256:<64 hex>` per file, comma-separated, chain order; empty for an exploring handoff with no file |
+| `artifacts` | yes | `<name> sha256:<64 hex>` per file, comma-separated, chain order (`current-state.md` first when carried); empty for an exploring handoff with no file |
 | `carried-by` | yes | `branch the-loop/<id>-<slug> · PR #<n>`, `ticket`, or `artifact` |
 | `spec-artifact` | with an artifact | `<https URL> sha256:<64 hex>` |
 | `spec-doc` | with a doc | `<https URL>` — never beside `spec-artifact` |

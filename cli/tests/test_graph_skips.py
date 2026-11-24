@@ -915,7 +915,10 @@ def test_the_shipped_loop_starts_at_phase_selection():
     # issue-517: through `import-handoff`, which an item without a handoff
     # routes around on `skipped`.
     assert graph.next_node("phase-selection", "selected") == "import-handoff"
-    assert graph.next_node("import-handoff", "skipped") == "brainstorming"
+    # issue-553: then the opt-in context pair, which an item that did not select
+    # it routes around on `skipped`.
+    assert graph.next_node("import-handoff", "skipped") == "context-gathering"
+    assert graph.next_node("context-gathering", "skipped") == "brainstorming"
 
 
 # -- M7: the CLI verb — audited, bounded, never retroactive ----------------------
@@ -1283,7 +1286,9 @@ def test_the_shipped_outer_loop_offers_the_design_critic_round():
 def test_only_the_outer_loop_offers_an_opt_in_phase():
     """R3.6 — a work item's design is reviewed once, at the outer level."""
     assert [n.id for n in load_graph().ordered() if n.opt_in] == [
-        "design-critic-review"
+        "context-gathering",  # issue-553
+        "context-approval",
+        "design-critic-review",
     ]
     for name in (PDLC_PR_LOOP, PDLC_CONTRIBUTION_LOOP):
         assert [n.id for n in load_graph(name=name).ordered() if n.opt_in] == []

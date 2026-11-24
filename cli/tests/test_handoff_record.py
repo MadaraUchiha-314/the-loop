@@ -290,6 +290,118 @@ def test_stage_entry_rows(stage, names, node):
     assert node in ALLOWED_ENTRY
 
 
+# -- current-state.md and the stage `context-settled` (issue-553) ---------------
+
+CURRENT_STATE_TEXT = "# Current state\n\n## Scope\n\nThe CLI.\n"
+SHA_C = sha256_text(CURRENT_STATE_TEXT)
+
+
+def test_current_state_is_first_in_chain_order():
+    """
+    Feature: a handoff carries the description of today's system
+      Scenario: current-state.md is the first carried artifact
+        Given the closed list of carried artifact names
+        Then current-state.md comes before brainstorm.md
+
+    Requirement: docs/specs/issue-553/requirements.md R6.3
+    """
+    assert CHAIN[0] == "current-state.md"
+    assert CHAIN.index("current-state.md") < CHAIN.index("brainstorm.md")
+
+
+def test_context_settled_enters_at_the_context_gate():
+    """
+    Feature: a handoff carries the description of today's system
+      Scenario: A handoff at context settled enters at the context gate
+        Given a record at context settled carrying only current-state.md
+        When the record is rendered and parsed
+        Then it round-trips, and its starting step is context-approval
+
+    Requirement: docs/specs/issue-553/requirements.md R6.4
+    """
+    assert stage_entry("context-settled", ("current-state.md",)) == "context-approval"
+    assert "context-approval" in ALLOWED_ENTRY
+    record = _record(
+        stage="context-settled",
+        enter="context-approval",
+        artifacts=(HandoffArtifact("current-state.md", SHA_C),),
+        approved_in_chat=(),
+    )
+    parsed = parse(render(record)[0])
+    assert parsed is not None
+    assert parsed.stage == "context-settled" and parsed.enter == "context-approval"
+    assert [a.name for a in parsed.artifacts] == ["current-state.md"]
+
+
+@pytest.mark.parametrize(
+    "names",
+    [
+        (),  # nothing carried: there is no context to approve
+        ("brainstorm.md",),
+        ("current-state.md", "brainstorm.md"),  # something later was written
+        ("current-state.md", "requirements.md"),
+    ],
+)
+def test_context_settled_carries_the_file_and_nothing_later(names):
+    """Requirement: docs/specs/issue-553/requirements.md R6.4 — "nothing later"."""
+    shas = {"current-state.md": SHA_C, "brainstorm.md": SHA_B, "requirements.md": SHA_R}
+    record = _record(
+        stage="context-settled",
+        enter="context-approval",
+        artifacts=tuple(HandoffArtifact(n, shas[n]) for n in names),
+        approved_in_chat=(),
+    )
+    # `render` refuses a record that would not parse back, with the reason.
+    with pytest.raises(ValueError, match="does not fit"):
+        render(record)
+
+
+def test_a_later_stage_may_carry_current_state_and_keeps_its_own_entry():
+    """
+    Feature: a handoff carries the description of today's system
+      Scenario: a later stage also carries current-state.md
+        Given a record at requirements settled that also carries current-state.md
+        When it is parsed
+        Then it is accepted, and its starting step is still requirements-approval
+        And the developer may have approved current-state.md in the chat
+
+    Requirement: docs/specs/issue-553/requirements.md R6.5
+    """
+    record = _record(
+        artifacts=(
+            HandoffArtifact("current-state.md", SHA_C),
+            HandoffArtifact("brainstorm.md", SHA_B),
+            HandoffArtifact("requirements.md", SHA_R),
+        ),
+        approved_in_chat=("current-state.md", "brainstorm.md"),
+    )
+    parsed = parse(render(record)[0])
+    assert parsed is not None
+    assert parsed.enter == "requirements-approval"
+    assert parsed.approved_in_chat == ("current-state.md", "brainstorm.md")
+
+
+def test_context_settled_cannot_approve_its_own_file_in_chat():
+    """Abuse case: only the gate approves the furthest artifact — here, the
+    one the stage hands to `context-approval`."""
+    record = _record(
+        stage="context-settled",
+        enter="context-approval",
+        artifacts=(HandoffArtifact("current-state.md", SHA_C),),
+        approved_in_chat=("current-state.md",),
+    )
+    with pytest.raises(ValueError, match="furthest"):
+        render(record)
+
+
+def test_a_stage_this_reader_does_not_know_is_rejected():
+    """Requirement: docs/specs/issue-553/requirements.md, fail closed — what an
+    older reader does with `context-settled`, shown with a name no reader has."""
+    body = _swap(_body(), "stage", "context-approved")
+    parsed, reason = parse_with_reason(body)
+    assert parsed is None and "unknown stage" in reason
+
+
 def test_stage_entry_rejects_an_unknown_stage():
     with pytest.raises(ValueError):
         stage_entry("implemented", ())
@@ -297,6 +409,7 @@ def test_stage_entry_rejects_an_unknown_stage():
 
 def test_chain_is_the_closed_set():
     assert set(CHAIN) == {
+        "current-state.md",  # issue-553
         "brainstorm.md",
         "requirements.md",
         "bugfix.md",

@@ -52,10 +52,14 @@ confirmation:     > yes, file it
   `<!-- the-loop:handoff-part v1 n/N -->`. A part counts only when the record's author
   wrote it after the record.
 - **`enter`** must be the starting step for the stage and the carried artifacts:
-  `brainstorming`, `brainstorm-approval`, `requirements-approval`, `test-planning` or
-  `design-approval`, never later.
-- **Artifact names** are a closed set (`brainstorm.md`, `requirements.md`, `bugfix.md`,
-  `design.md`, `testing-plan.md`). No path comes from the record.
+  `brainstorming`, `context-approval`, `brainstorm-approval`, `requirements-approval`,
+  `test-planning` or `design-approval`, never later.
+- **`stage`** is `exploring`, `context-settled`, `brainstorm-settled`,
+  `requirements-settled` or `design-settled`. `context-settled` (issue-553) carries
+  `current-state.md` and nothing later, and enters at `context-approval`.
+- **Artifact names** are a closed set (`current-state.md`, `brainstorm.md`,
+  `requirements.md`, `bugfix.md`, `design.md`, `testing-plan.md`), listed in that order.
+  Every stage may carry `current-state.md`. No path comes from the record.
 - **`approved-in-chat`** may name only carried artifacts, and never the furthest one.
 - **Who may post one.** The poller admits a record only from a login in
   `routing.authorizedUsers`, and never from a comment with no author. The self-marker

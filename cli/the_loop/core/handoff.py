@@ -84,8 +84,12 @@ _STAMP_RESERVE = 256
 _MIN_CHUNK = 1024
 
 # The closed set of artifact names, in chain order. requirements.md and
-# bugfix.md are the same rung and mutually exclusive.
+# bugfix.md are the same rung and mutually exclusive. ``current-state.md``
+# (issue-553) comes first: it describes the system before any spec is written,
+# and every stage may carry it.
+CURRENT_STATE = "current-state.md"
 CHAIN: Tuple[str, ...] = (
+    CURRENT_STATE,
     "brainstorm.md",
     "requirements.md",
     "bugfix.md",
@@ -93,21 +97,24 @@ CHAIN: Tuple[str, ...] = (
     "testing-plan.md",
 )
 _RANK: Dict[str, int] = {
-    "brainstorm.md": 0,
-    "requirements.md": 1,
-    "bugfix.md": 1,
-    "design.md": 2,
-    "testing-plan.md": 3,
+    CURRENT_STATE: 0,
+    "brainstorm.md": 1,
+    "requirements.md": 2,
+    "bugfix.md": 2,
+    "design.md": 3,
+    "testing-plan.md": 4,
 }
 
 STAGES: Tuple[str, ...] = (
     "exploring",
+    "context-settled",
     "brainstorm-settled",
     "requirements-settled",
     "design-settled",
 )
 ALLOWED_ENTRY = frozenset(
     {
+        "context-approval",
         "brainstorming",
         "brainstorm-approval",
         "requirements-approval",
@@ -286,6 +293,8 @@ def stage_entry(stage: str, artifact_names: Iterable[str]) -> str:
     """
     if stage == "exploring":
         return "brainstorming"
+    if stage == "context-settled":
+        return "context-approval"
     if stage == "brainstorm-settled":
         return "brainstorm-approval"
     if stage == "requirements-settled":
@@ -327,6 +336,11 @@ def is_valid_branch(name: str) -> bool:
 def _stage_fits(stage: str, names: Sequence[str]) -> bool:
     """Whether the carried artifacts are the ones ``stage`` carries (R6 table)."""
     have = set(names)
+    if stage == "context-settled":
+        # issue-553: the description of today's system and nothing later.
+        return have == {CURRENT_STATE}
+    # Every other stage may carry it too; it never decides which stage fits.
+    have = have - {CURRENT_STATE}
     spec = bool(have & {"requirements.md", "bugfix.md"})
     later = bool(have & {"design.md", "testing-plan.md"})
     if stage == "exploring":

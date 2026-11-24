@@ -924,6 +924,44 @@ class Runtime:
                     nodes=unskipped,
                 )
                 logger.info("%s: handoff import un-skipped %s", item.ref, unskipped)
+            # issue-553: a demotion whose producing node is opt-in. Such a node
+            # has no declared skip to remove, so the demotion records the one
+            # thing that turns it on. Guarded three ways, because it is the only
+            # selection no human ticked: the compiled graph marks the node
+            # opt-in, the same result demoted that very node, and the pointer
+            # has not walked past it. Like every demotion it only adds work.
+            refused = {
+                str(e.get("node") or ""): str(e.get("artifact") or "")
+                for e in result.data.get("handoffDemoted") or ()
+                if isinstance(e, Mapping)
+            }
+            selected = []
+            for node_id in result.data.get("handoffSelect") or ():
+                node = self.graph.nodes.get(str(node_id))
+                rec = state.nodes.get(str(node_id))
+                if (
+                    node is None
+                    or not node.opt_in
+                    or str(node_id) not in refused
+                    or (rec and rec.entered_at)
+                    or str(node_id) in state.opt_ins
+                ):
+                    continue
+                state.opt_ins[str(node_id)] = {
+                    "via": "handoff-demotion",
+                    "artifact": refused[str(node_id)],
+                    "at": utc_now(),
+                }
+                selected.append(str(node_id))
+            if selected:
+                changed = True
+                eventlog.emit(
+                    "graph.opt_ins_selected",
+                    work_item=item.ref,
+                    via="handoff-demotion",
+                    nodes=selected,
+                )
+                logger.info("%s: handoff import selected opt-in %s", item.ref, selected)
         return changed
 
     def _handoff_landing(

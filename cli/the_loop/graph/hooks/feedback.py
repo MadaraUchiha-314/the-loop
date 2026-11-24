@@ -95,7 +95,14 @@ def classify_feedback(ctx: HookContext) -> HookResult:
     # report must too (critic finding on PR #495). Otherwise a present artifact
     # is classified exactly as before.
     subject = str(ctx.params.get("whenPresent") or "")
-    if subject and subject in ctx.skipped_artifacts:
+    # ...unless this gate was itself ENTERED (issue-553, critic finding on PR
+    # #554). A handoff lands on a gate whose authoring node it skipped —
+    # *brainstorm settled* on `brainstorm-approval`, *context settled* on
+    # `context-approval` — and there the subject is exactly what the developer
+    # handed over for approval. Reading it as absent left the gate with no
+    # outcome it has an edge for: it could never be approved.
+    entered = ctx.node_id in ctx.visited
+    if subject and subject in ctx.skipped_artifacts and not entered:
         return HookResult.skipped(
             name, f"{subject}'s phase was declared skipped; nothing to approve"
         )

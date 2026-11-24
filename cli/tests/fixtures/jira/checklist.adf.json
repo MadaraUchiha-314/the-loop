@@ -464,6 +464,32 @@
           "content": [
             {
               "type": "text",
+              "text": "context-gathering — the agent records how the affected part of the system works today in current-state.md, before any spec is written"
+            }
+          ]
+        },
+        {
+          "type": "taskItem",
+          "attrs": {
+            "localId": "the-loop-task-19",
+            "state": "TODO"
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "context-approval — the author answers the agent's questions, asks their own, and approves current-state.md before the brainstorm or requirements start"
+            }
+          ]
+        },
+        {
+          "type": "taskItem",
+          "attrs": {
+            "localId": "the-loop-task-20",
+            "state": "TODO"
+          },
+          "content": [
+            {
+              "type": "text",
               "text": "design-critic-review — a different model/harness reviews the completed design.md against the requirements, before the testing plan and the task DAG are derived from it (the design is locked later, at design-approval — issue-281)"
             }
           ]
@@ -601,7 +627,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-19",
+            "localId": "the-loop-task-21",
             "state": "DONE"
           },
           "content": [
@@ -745,7 +771,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-20",
+            "localId": "the-loop-task-22",
             "state": "TODO"
           },
           "content": [
@@ -780,7 +806,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-21",
+            "localId": "the-loop-task-23",
             "state": "DONE"
           },
           "content": [
@@ -885,7 +911,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-22",
+            "localId": "the-loop-task-24",
             "state": "DONE"
           },
           "content": [
@@ -937,7 +963,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-23",
+            "localId": "the-loop-task-25",
             "state": "TODO"
           },
           "content": [
@@ -959,7 +985,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-24",
+            "localId": "the-loop-task-26",
             "state": "TODO"
           },
           "content": [
@@ -1129,7 +1155,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-25",
+            "localId": "the-loop-task-27",
             "state": "TODO"
           },
           "content": [
@@ -1164,7 +1190,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-26",
+            "localId": "the-loop-task-28",
             "state": "DONE"
           },
           "content": [
@@ -1199,7 +1225,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-27",
+            "localId": "the-loop-task-29",
             "state": "TODO"
           },
           "content": [
@@ -1488,7 +1514,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-28",
+            "localId": "the-loop-task-30",
             "state": "DONE"
           },
           "content": [
@@ -1506,7 +1532,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-29",
+            "localId": "the-loop-task-31",
             "state": "TODO"
           },
           "content": [
@@ -1620,7 +1646,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-30",
+            "localId": "the-loop-task-32",
             "state": "TODO"
           },
           "content": [
@@ -1642,7 +1668,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-31",
+            "localId": "the-loop-task-33",
             "state": "DONE"
           },
           "content": [
@@ -1743,7 +1769,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-32",
+            "localId": "the-loop-task-34",
             "state": "TODO"
           },
           "content": [
@@ -1761,7 +1787,7 @@
         {
           "type": "taskItem",
           "attrs": {
-            "localId": "the-loop-task-33",
+            "localId": "the-loop-task-35",
             "state": "TODO"
           },
           "content": [

@@ -86,6 +86,7 @@ class Demotion:
     the first), and the artifacts that verified, in chain order."""
 
     unskip: List[str] = field(default_factory=list)
+    select: List[str] = field(default_factory=list)
     demoted: List[Dict[str, str]] = field(default_factory=list)
     verified: List[str] = field(default_factory=list)
 
@@ -210,6 +211,12 @@ def demotion(ctx: HookContext, graph: Graph, record: HandoffRecord) -> Demotion:
         node, name, reason = failure
         found.demoted.append({"node": node.id, "artifact": name, "reason": reason})
         start = node.id
+        if node.opt_in:
+            # issue-553: an opt-in producer holds no declared skip to remove —
+            # it is simply not selected — so un-skipping cannot reach it. The
+            # one switch it has is a selection; ask the runtime to record one.
+            # Only ever for the producer of the file that failed.
+            found.select = [node.id]
     else:
         start = ""
     if not found.verified:
@@ -313,6 +320,7 @@ def import_handoff(ctx: HookContext) -> HookResult:
         "handoff": True,
         "verified": list(found.verified),
         "handoffUnskip": list(found.unskip),
+        "handoffSelect": list(found.select),
         "handoffDemoted": [dict(d) for d in found.demoted],
         "locked": locked,
         "handoffLocked": locked_sha,

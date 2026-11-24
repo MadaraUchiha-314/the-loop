@@ -95,6 +95,10 @@ not-started → brainstorming (optional) → requirements-definition → design 
   → tasks-breakdown → implementation → verification → needs-review → complete
 ```
 
+An opt-in `context-gathering` phase can come first: tick it at `phase-selection` and the
+agent records how the affected code works today in `current-state.md`, for its author to
+approve, before any spec is written.
+
 ## The artifact chain
 
 A work item is a chain of documents, each **derived from the one before it**. An
@@ -106,6 +110,7 @@ shape alone. They live in `docs/specs/<id>/`, in the
 
 | Artifact | What it settles |
 |----------|-----------------|
+| `current-state.md` *(opt-in)* | How the affected part of the system works **today**, with questions and answers. It describes; it proposes nothing. Every later phase reads it first |
 | `brainstorm.md` *(optional)* | A scratchpad for a fuzzy idea: problem, options, open questions. Skip it when the work is already clear |
 | `requirements.md` (or `bugfix.md`) | User stories and **EARS** acceptance criteria, plus a threat-model-lite **Security considerations** section |
 | `design.md` | Architecture, components, data models, error handling, and a **Security design** section answering every abuse case above |

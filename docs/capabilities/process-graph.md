@@ -578,6 +578,30 @@ The other default, at the same gate and by the same person
   against the requirements before the testing plan and task DAG derive from it (it is
   locked later, at `design-approval` — issue-281), gating
   `evidence/design-critic-review.md`. See [review-loop](review-loop.md).
+- The outer loop SHALL also ship an opt-in **context pair** (issue-553), declared
+  between `import-handoff` and `brainstorming`:
+  - **`context-gathering`** (agent, `optional`, phase and label
+    `loop:context-gathering`, command `gather-context`) produces `current-state.md`: how
+    the affected part of the system works today. Its exit checks that *Scope* and *How
+    it works today* are filled. A file never written yields `not-entered`, unless the
+    gate was already entered, when it blocks.
+  - **`context-approval`** (human, session inherited, the same phase) runs
+    `brainstorm-approval`'s hooks on that one file: an indecisive comment is `wait`, an
+    authorized approval locks the file, and there is no `pass` edge.
+  - Edges: `import-handoff --pass / skipped--> context-gathering`;
+    `context-gathering --pass--> context-approval` and
+    `--not-entered / skipped--> brainstorming`; `context-approval --approved /
+    approved-with-comments / skipped--> brainstorming` and
+    `--changes-requested--> context-gathering`.
+  - Ticked alone, neither node holds the walk. A work item that ticks neither routes
+    around both as *not selected* and walks as before. Neither node is in a skip set.
+  - WHEN `current-state.md` exists in the work item's spec folder THEN the process-state
+    block of every later prompt SHALL carry one line that tells the session to read it,
+    in the outer loop and in each delivering pull request's loop. The line is a fixed
+    prompt file with one substitution, the work item id. It calls the file a
+    description, never instructions. An absent or unreadable file yields no line.
+  - The file is not `context.md`, the channel record
+    ([decision-156](../decisions/decision-156.md)).
 - An **edge** SHALL route on a hook **outcome** only (`on: pass`, `on: changes-requested`,
   …). There is no expression language: the LLM produces facts, declared edges route on
   them. That split is what makes judgement and determinism coexist.
@@ -591,7 +615,8 @@ moves the pointer itself ([decision-150](../decisions/decision-150.md)).
 ```mermaid
 flowchart LR
   ps[phase-selection] -->|selected| ih[import-handoff]
-  ih -->|pass / skipped| bs[brainstorming]
+  ih -->|pass / skipped| cg[context-gathering]
+  cg -.not selected.-> bs[brainstorming]
   bs -.skipped.-> ba[brainstorm-approval]
   ba -.skipped.-> rd[requirements-definition]
   rd -.skipped.-> ra[requirements-approval]
@@ -610,9 +635,10 @@ walk lands on `requirements-approval`, the first gate that still asks.
   human.
 - The shipped `requiresHandoff` node is **`import-handoff`** (outer loop, agent, no
   phase). The edge `phase-selection --selected--> import-handoff` replaces the old
-  `phase-selection --selected--> brainstorming`; `import-handoff` reaches `brainstorming`
-  on `pass` and on `skipped`. Every item without a handoff routes around it and walks
-  exactly as before.
+  `phase-selection --selected--> brainstorming`; `import-handoff` reaches
+  `context-gathering` on `pass` and on `skipped` (issue-553), which is opt-in and
+  routes on to `brainstorming` when not selected. Every item without a handoff routes
+  around it and walks exactly as before.
 - **The record is frozen once.** `Runtime.start(…, handoff=record)` writes
   `state.handoff` (the record plus `author`, `commentUrl`, `recordedAt`) inside the
   no-pointer guard, before the first save. A record posted or edited after the walk
@@ -625,6 +651,9 @@ walk lands on `requirements-approval`, the first gate that still asks.
   and its author signs them. Each such skip carries `handoff: <commentUrl>`, and
   `the-loop check` reports it as *skipped by handoff (declared by @x)*. A skip edge that
   would jump past `enter` lands on `enter` instead, until `enter` has been entered.
+  An opt-in row SHALL be rendered **ticked** when it is the record's `enter`
+  (issue-553): a *context settled* handoff offers `context-approval` ticked. The reply
+  still decides; an unticked row lets the walk pass the gate.
 - **`import-handoff` checks, then can only demote.** The session writes the carried
   files with `the-loop handoff import`, commits them, re-points the record with
   `the-loop handoff note`, and runs `graph complete`. The `import-handoff` exit hook then
@@ -635,6 +664,13 @@ walk lands on `requirements-approval`, the first gate that still asks.
   removes those from `state.skips` and appends `{node, artifact, reason}` to
   `handoffDemoted` (`handoff.demoted`). When nothing verifies, the walk starts at
   `brainstorming`. The hook never adds a skip, so it can only make the walk longer.
+- **`current-state.md` is the first carried file, and any stage may carry it**
+  (issue-553). The stage `context-settled` carries it alone and enters at
+  `context-approval`, which locks it. Under a later stage the import locks it as an
+  earlier artifact, and the walk enters neither context node. WHEN a carried
+  `current-state.md` fails its check THEN the hook SHALL record an opt-in selection for
+  `context-gathering`, attributed to the demotion and naming the file, so the walk
+  starts there. That selection only adds a phase and removes no gate.
 - **Approval stays with the gates.** Artifacts named in the record's `approved-in-chat`
   that verified are locked by the hook (`status: approved`, `approvedBy: [<author>]`,
   `approvedVia: handoff <commentUrl>`). The furthest carried artifact is never in that
@@ -1376,6 +1412,7 @@ flowchart TD
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-553 | An opt-in context pair before the spec chain (2026-11-24): `context-gathering` (agent, phase `context-gathering`, produces `current-state.md`) and the human `context-approval` gate sit between `import-handoff` and `brainstorming`, both off unless ticked at `phase-selection`. `import-handoff` now leads to `context-gathering`. Every later prompt's process-state block names the file when it exists. The handoff gains the stage `context-settled`, which enters at `context-approval` with that row ticked; a carried `current-state.md` that fails its check selects `context-gathering` | [spec](../specs/issue-553/), [decision-156](../decisions/decision-156.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/553) A gate that a handoff enters now classifies its subject even though the authoring node was skipped: before, such a gate (also `brainstorm-approval` for a *brainstorm settled* handoff, since issue-517) could not be approved and the work item escalated. |
 | issue-551 | The Stop gate holds past an approved human gate, and a comment stopped grading the node (2026-11-20): the Stop hook asks `the-loop sessions stop-check` and the service decides from the graph, the open ask, the declared wait and the harness's background work; a human-owned node before the pointer counts as passed; an allowed stop is recorded as `session.turn_ended` with its reason, and a spent attempt cap as `gate-gave-up`. An inbound event reads an agent-owned node read-only unless a hook of its exit chain declared `reads_event`, so blocks and escalations come only from a claim. A claim's envelope carries `assignment` and `next` | [spec](../specs/issue-551/), [decision-155](../decisions/decision-155.md), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/551) |
 | issue-543 | PR-scoped specs (2026-11-19): the inner loop starts at `pr-spec`, its first and only skippable node, and `pr-spec-current` gates three places — leaving `pr-spec`, leaving `reviewer-briefing`, leaving the outer `implementation`. `the-loop graph pr-spec` (and `POST /api/v1/graph/pr-spec`) checks a delivery PR's PR spec online and writes `pr-spec.json` beside its inner state; the hook re-derives applicability and recomputes the chain digest offline, so a forged record or a changed chain blocks. Events `graph.pr_spec_recorded` and `graph.pr_spec_refused` | [spec](../specs/issue-543/), [decision-153](../decisions/decision-153.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/543) |
 | issue-524 | A `pause` or `resume` stopped forgetting the loop (2026-10-27): each overwrote the control record, so a paused or resumed `review`/`contribute`/`do` item, and one armed onto an operator loop, answered "which loop" with the default. Those records now keep `armedBy` (the arming spawn command) and the selected `loop`, and `_loop_for_start` reads `armedBy` first. | [issue-524](https://github.com/MadaraUchiha-314/the-loop/issues/524) |

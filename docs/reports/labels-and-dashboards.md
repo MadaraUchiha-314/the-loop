@@ -49,6 +49,7 @@ not-started → brainstorming → requirements-definition → design → test-pl
 | Label | Set by | Means |
 |---|---|---|
 | `loop:not-started` | `init` (default) | Ticket exists, loop hasn't begun. |
+| `loop:context-gathering` | `/the-loop:gather-context` | Opt-in, before the spec chain (issue-553) — `current-state.md` being written, or waiting for its author at `context-approval`. Not in the progression above unless ticked at `phase-selection`. |
 | `loop:brainstorming` | `/the-loop:brainstorm` | Optional Phase 0 — free-form `brainstorm.md`. |
 | `loop:requirements-definition` | `/the-loop:create-ticket` | Requirements being iterated/locked. |
 | `loop:design` | `/the-loop:create-design` | Design being iterated/locked. |
@@ -129,6 +130,7 @@ progression (the `loop:needs-review` gate flagged in alert-yellow since it's the
 ```bash
 # Phase labels — cool ramp, not-started → complete
 gh label create "loop:not-started"             -c ededed -d "the-loop: ticket exists, loop not started"        -f
+gh label create "loop:context-gathering"       -c d4e5f7 -d "the-loop: opt-in — current-state.md"             -f
 gh label create "loop:brainstorming"           -c c5def5 -d "the-loop: Phase 0 — brainstorm.md"               -f
 gh label create "loop:requirements-definition" -c bfdadc -d "the-loop: requirements being locked"             -f
 gh label create "loop:design"                  -c 5319e7 -d "the-loop: design being locked"                    -f

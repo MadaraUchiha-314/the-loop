@@ -37,6 +37,7 @@ expect:
   nodes:
     - phase-selection
     - import-handoff~
+    - context-gathering~
     - brainstorming~
     - requirements-definition
     - requirements-approval

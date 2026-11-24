@@ -110,6 +110,7 @@ LOOP_FOR_CONTROL_COMMAND: Dict[str, str] = {
 #: shipped loops' phases, so a new shipped phase lands here in the same change.
 PHASE_VOCABULARY = (
     "phase-selection",
+    "context-gathering",
     "brainstorming",
     "requirements-definition",
     "design",
