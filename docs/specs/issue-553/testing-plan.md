@@ -109,7 +109,7 @@ committed.
 
 ## Verification results
 
-_Not yet executed._
+*Not yet executed.*
 
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
