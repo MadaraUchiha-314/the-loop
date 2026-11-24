@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-553",
-  "currentNode": "requirements-approval",
+  "currentNode": "design",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -45,8 +45,16 @@
     },
     "requirements-approval": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "approved",
       "enteredAt": "2026-11-24T06:56:09+00:00",
+      "exitedAt": "2026-11-24T07:01:54+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "design": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-11-24T07:01:54+00:00",
       "exitedAt": "",
       "lastBlock": "",
       "forced": false
@@ -267,11 +275,7 @@
     }
   },
   "forced": [],
-  "parked": {
-    "node": "requirements-approval",
-    "reason": "awaiting a human",
-    "since": "2026-11-24T06:56:09+00:00"
-  },
+  "parked": null,
   "completions": {
     "brainstorming": {
       "at": "2026-11-24T06:38:37+00:00",
@@ -333,6 +337,6 @@
     }
   ],
   "loop": "pdlc-work-item-loop",
-  "phase": "requirements-definition",
+  "phase": "design",
   "claudeDoc": true
 }
