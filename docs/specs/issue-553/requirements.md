@@ -314,6 +314,6 @@ them:
 
 approved
 
-🗣️ _the-loop — reply from `rr` (`slack:U0C2WD4UTV3`) on the **slack** channel, recorded here so the loop reads it from the work item._
+🗣️ *the-loop — reply from `rr` (`slack:U0C2WD4UTV3`) on the **slack** channel, recorded here so the loop reads it from the work item.*
 
 <!-- the-loop:event {"actor":{"github":"MadaraUchiha-314","slack":"U0C2WD4UTV3"},"source":"slack","ts":"2026-11-24T07:01:38Z","type":"gate.feedback"} -->
