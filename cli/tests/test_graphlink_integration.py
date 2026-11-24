@@ -517,7 +517,8 @@ def test_a_symlinked_or_unreadable_entry_is_not_advertised(tmp_path, checkout, g
     (spec / "current-state.md").unlink()
     (spec / "current-state.md").mkdir()
     link = _dispatcher(tmp_path).graphlink
-    assert link.context(REF, str(checkout)).current_state is False
+    ctx = link.context(REF, str(checkout))
+    assert ctx is not None and ctx.current_state is False
 
 
 def test_abuse_the_files_content_never_enters_the_prompt(tmp_path, checkout, github):
