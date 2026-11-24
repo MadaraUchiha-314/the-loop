@@ -100,7 +100,7 @@ also states an opinion: the phase belongs before `brainstorming`.
   into a file that the channel rule then keeps appending to, so "approved" stops
   meaning anything.
 - **N2: the new phase takes `context.md`; the channel record moves to
-  `channel-context.md`.** This is the name the ticket asks for. _Cost:_ a rename
+  `channel-context.md`.** This is the name the ticket asks for. *Cost:* a rename
   across the skill, two reference files, the template, a prompt, `records.py`, the
   Slack guide and decision-133, plus a migration step in `/the-loop:upgrade-the-loop`
   for a consuming repository that already has a channel `context.md`.
@@ -108,7 +108,7 @@ also states an opinion: the phase belongs before `brainstorming`.
   ticket's own title leads with "understanding of current state". The name says what
   the file holds: what *is*, as opposed to the spec chain's what *will be*. Nothing is
   renamed and nothing is migrated. The phase is still called `context-gathering`.
-  _Cost:_ the file is not the name you asked for, and two files now carry kinds of
+  *Cost:* the file is not the name you asked for, and two files now carry kinds of
   context.
 
 ### Q2. How do the questions and answers flow?
@@ -123,7 +123,7 @@ mode nobody is at the terminal.
   answer the agent's questions and ask your own ("how does X reach Y today?") as review
   comments. The agent folds each answer into the file as an attributed entry, and
   answers each of your questions in the file. You approve when you are satisfied.
-  _Pro:_ no new mechanism; the whole exchange sits on one reviewable surface.
+  *Pro:* no new mechanism; the whole exchange sits on one reviewable surface.
 - **F2: ask before writing.** The agent posts `the-loop ask` questions on the ticket
   before it drafts anything. ~~Rejected as the default~~: it asks things the code could
   have answered, and the exchange is split between the ticket and the file.
