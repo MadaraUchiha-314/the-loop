@@ -9,4 +9,4 @@ workItem: issue-553
 
 | PR | Repository | Scope / tasks | Status |
 |----|------------|---------------|--------|
-| [#554](https://github.com/MadaraUchiha-314/the-loop/pull/554) | this one | The outer loop's spec chain, starting with `brainstorm.md` | open |
+| [#554](https://github.com/MadaraUchiha-314/the-loop/pull/554) | this one | The whole work item: the spec chain, tasks 1–11, verification and review records | open, briefing posted |

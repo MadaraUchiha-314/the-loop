@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-553",
-  "currentNode": "capability-docs",
+  "currentNode": "reviewer-briefing",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -165,8 +165,16 @@
     },
     "capability-docs": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-11-24T15:43:02+00:00",
+      "exitedAt": "2026-11-24T15:43:25+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "reviewer-briefing": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-11-24T15:43:25+00:00",
       "exitedAt": "",
       "lastBlock": "",
       "forced": false
@@ -431,6 +439,10 @@
     },
     "evidence": {
       "at": "2026-11-24T15:43:02+00:00",
+      "by": "cli"
+    },
+    "capability-docs": {
+      "at": "2026-11-24T15:43:25+00:00",
       "by": "cli"
     }
   },
