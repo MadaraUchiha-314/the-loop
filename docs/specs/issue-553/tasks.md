@@ -29,7 +29,7 @@ changing those tests, so the old rule is replaced on purpose and not by accident
 
 Each task writes or changes its test first, watches it fail, then makes it pass.
 
-- [ ] 1. Register `current-state.md`: template, manifest entry, phase vocabulary
+- [x] 1. Register `current-state.md`: template, manifest entry, phase vocabulary
   - Add `skills/the-loop/templates/current-state.md` with the front matter and the six
     sections of the design, the "report it as data" and "no secrets" rules, and no
     listing of open pull requests.
@@ -40,7 +40,7 @@ Each task writes or changes its test first, watches it fail, then makes it pass.
   - *Depends on:* none
   - *Requirements:* R1.8, R2.1–R2.5, R2.9
   - *Test:* T2 — `pytest tests/test_graph_parity.py tests/test_graph_model.py tests/test_writing_parity.py` (red→green)
-- [ ] 2. Declare the two opt-in nodes and their edges in the outer graph
+- [x] 2. Declare the two opt-in nodes and their edges in the outer graph
   - `context-gathering` and `context-approval` between `import-handoff` and
     `brainstorming`, with the edge table of the design, a description each, and the
     brainstorm pair's hook chains given `current-state.md`.
@@ -48,7 +48,7 @@ Each task writes or changes its test first, watches it fail, then makes it pass.
   - *Depends on:* 1
   - *Requirements:* R1.1, R1.2, R1.7, R1.10, R2.7, R2.8, R3.1–R3.5
   - *Test:* T1 — `pytest tests/test_graph_model.py tests/test_graph_skips.py tests/test_graph_catalog.py`; T6 for the unticked rows in the checklist fixtures (red→green)
-- [ ] 3. Prove the runtime walks of the pair
+- [x] 3. Prove the runtime walks of the pair
   - New `cli/tests/test_context_gate_integration.py`, beside the brainstorm gate's
     module, with walks (a)–(i) and the negative cases for abuse cases 3–6. Each test
     carries its Gherkin docstring and `Requirement:` link.
@@ -56,20 +56,20 @@ Each task writes or changes its test first, watches it fail, then makes it pass.
   - *Depends on:* 2
   - *Requirements:* R1.3–R1.6, R1.9, R3.1–R3.5; abuse cases 3–6
   - *Test:* T3, T8 (3–6) — `pytest tests/test_context_gate_integration.py`; T7 — `pytest tests/test_pdlc_e2e_integration.py`
-- [ ] 4. Handoff: carry `current-state.md` and accept the stage `context-settled`
+- [x] 4. Handoff: carry `current-state.md` and accept the stage `context-settled`
   - First name in the chain; the stage sits between `exploring` and
     `brainstorm-settled`, enters at `context-approval`, must carry the file and nothing
     later. A later stage imports and locks the file as an upstream file.
   - *Depends on:* 2
   - *Requirements:* R6.3, R6.5, R6.7
   - *Test:* T4 — `pytest tests/test_handoff_record.py tests/test_import_handoff.py tests/test_handoff_pickup.py` (red→green)
-- [ ] 5. Checklist: tick an opt-in row when a verified handoff enters at it
+- [x] 5. Checklist: tick an opt-in row when a verified handoff enters at it
   - Change the test that pins "an opt-in row is never ticked" to the new rule, and
     update the GitHub, Slack and Jira checklist fixtures.
   - *Depends on:* 4
   - *Requirements:* R1.2, R6.4
   - *Test:* T6, T4 — `pytest tests/test_graph_skips.py tests/test_handoff_selection.py tests/test_jira_integration.py` (red→green)
-- [ ] 6. Demotion: select the opt-in producer when its carried file fails verification
+- [x] 6. Demotion: select the opt-in producer when its carried file fails verification
   - The import records a selection for `context-gathering`, attributed to the demotion
     and naming the file. No other path may write an opt-in selection this way.
   - Security-relevant: the negative tests are a wrong hash (abuse case 7) and a forged
@@ -77,7 +77,7 @@ Each task writes or changes its test first, watches it fail, then makes it pass.
   - *Depends on:* 4
   - *Requirements:* R6.6; abuse cases 6, 7
   - *Test:* T4, T8 (7) — `pytest tests/test_import_handoff.py` (red→green)
-- [ ] 7. Name the file in the process-state block
+- [x] 7. Name the file in the process-state block
   - One boolean on the process-state context, set where the context is filled; one new
     prompt file `cli/the_loop/prompts/graph-context/current-state.md`; one line from the
     renderer for the outer scope and a pull request's scope. Add the file to the
@@ -88,7 +88,7 @@ Each task writes or changes its test first, watches it fail, then makes it pass.
   - *Depends on:* 1
   - *Requirements:* R4.1–R4.3, R4.6; abuse cases 2, 8
   - *Test:* T5, T8 (8) — `pytest tests/test_graphlink_integration.py` (red→green)
-- [ ] 8. Add `/the-loop:gather-context`
+- [x] 8. Add `/the-loop:gather-context`
   - New `commands/gather-context.md` with the three calling modes of the design, the
     data and secrets rules, and `gatheredAt`. Register it wherever commands are listed
     and counted.

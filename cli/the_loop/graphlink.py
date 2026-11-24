@@ -389,6 +389,10 @@ class GraphContext:
     #: The explainer experiments frozen at selection (``slides``,
     #: ``flashcards``) — named in the prompt of the two explainer nodes only.
     explainer_experiments: Tuple[str, ...] = ()
+    #: Whether ``current-state.md`` exists in the work item's spec folder
+    #: (issue-553) — one boolean, read where this context is filled. The prompt
+    #: then names the file by its fixed name; no byte of the file is read.
+    current_state: bool = False
 
     @property
     def at_human_gate(self) -> bool:
@@ -432,6 +436,22 @@ def _is_review(loop: str) -> bool:
     from .graph.model import PDLC_REVIEW_LOOP
 
     return loop == PDLC_REVIEW_LOOP
+
+
+def _has_current_state(spec_dir: Any) -> bool:
+    """Whether the work item's spec folder holds a ``current-state.md`` (issue-553).
+
+    Existence only — the file is never opened here. Fails closed: no folder, a
+    symlink (which could point outside the repository) or an unreadable entry
+    is "no", and the prompt then says nothing about the file.
+    """
+    if not spec_dir:
+        return False
+    try:
+        path = Path(spec_dir) / "current-state.md"
+        return path.is_file() and not path.is_symlink()
+    except (OSError, TypeError, ValueError):
+        return False
 
 
 def _line(name: str, /, **slots: object) -> str:
@@ -599,6 +619,10 @@ def render_graph_context(
         claim_suffix += f" --pr-repo {pr_repo}"
     if pr_number is not None:
         lines.append(_line("iterate-pr"))
+        if ctx.current_state:
+            # issue-553: the session that writes the code is the one that most
+            # needs the description of today's system. Fixed text and the id.
+            lines.append(_line("current-state", item_id=item_id))
     elif _is_contribution(ctx.loop):
         # A contribution has no outer loop to place (issue-199), so it is not
         # told where to put one: its single artifact and its results belong on
@@ -616,6 +640,10 @@ def render_graph_context(
         lines.append(_line("iterate-review"))
     else:
         lines.append(_line("iterate-outer", surface=_surface_line(ctx.surface)))
+        if ctx.current_state:
+            # issue-553: fixed text and the id the header already carries. The
+            # file's own content never enters the prompt.
+            lines.append(_line("current-state", item_id=item_id))
         if ctx.claude_artifact:
             # Fixed text and one boolean (issue-471): no payload enters it. A
             # handed-off artifact's URL (issue-517) is checked before it is named.
@@ -1542,6 +1570,7 @@ class GraphLink:
             explainer_experiments=tuple(
                 explainer_experiments(getattr(state, "explainer_experiments", None))
             ),
+            current_state=_has_current_state(getattr(item, "spec_dir", None)),
         )
 
     @staticmethod

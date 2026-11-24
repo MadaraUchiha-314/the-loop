@@ -1,5 +1,6 @@
-Once an artifact of the chain exists (`brainstorm.md`, `requirements.md` /
-`bugfix.md`, `design.md`, `testing-plan.md`, `tasks.md`, `context.md`), iterate
+Once an artifact of the chain exists (`current-state.md`, `brainstorm.md`,
+`requirements.md` / `bugfix.md`, `design.md`, `testing-plan.md`, `tasks.md`,
+`context.md`), iterate
 on it ONLY through pull-request review: commit and push it, open or update the
 PR that carries it, and take feedback as review comments and replies on that
 PR. Do not re-paste artifact contents into new ticket comments, and do not
