@@ -521,6 +521,22 @@ def test_a_symlinked_or_unreadable_entry_is_not_advertised(tmp_path, checkout, g
     assert ctx is not None and ctx.current_state is False
 
 
+def test_a_file_the_daemon_cannot_read_is_not_advertised(tmp_path, checkout, github):
+    """Fail closed (critic finding, PR #554): a session is not told to read a
+    file this process cannot read."""
+    import os
+
+    path = _current_state(checkout)
+    path.chmod(0)
+    try:
+        if os.access(path, os.R_OK):
+            pytest.skip("this user reads any file (root)")
+        for block in _blocks(tmp_path, checkout):
+            assert "current-state" not in block
+    finally:
+        path.chmod(0o644)
+
+
 def test_abuse_the_files_content_never_enters_the_prompt(tmp_path, checkout, github):
     """
     Feature: a context-gathering phase before the spec chain

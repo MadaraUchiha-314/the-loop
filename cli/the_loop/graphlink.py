@@ -43,6 +43,7 @@ Spec: docs/specs/issue-113/design.md.
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Sequence, Tuple
@@ -449,7 +450,7 @@ def _has_current_state(spec_dir: Any) -> bool:
         return False
     try:
         path = Path(spec_dir) / "current-state.md"
-        return path.is_file() and not path.is_symlink()
+        return path.is_file() and not path.is_symlink() and os.access(path, os.R_OK)
     except (OSError, TypeError, ValueError):
         return False
 
