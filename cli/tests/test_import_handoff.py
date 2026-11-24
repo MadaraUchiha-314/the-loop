@@ -705,3 +705,80 @@ def test_abuse_a_selection_from_another_hook_is_ignored(repo):
     item = WorkItem(ref="github:octo/repo#1", id=WORK_ITEM, spec_dir=_spec(repo))
     Runtime(repo)._record_handoff_import(state, item, outcome)
     assert state.opt_ins == {}
+
+
+# -- a gate entered by a handoff can be answered (critic finding, PR #554) -------
+
+_DRAFT = "---\nstatus: draft\napprovedBy: []\n---\n\n"
+
+
+@pytest.mark.parametrize(
+    "name, text, stage, gate, skips, onward",
+    [
+        (
+            "current-state.md",
+            CURRENT_STATE,
+            "context-settled",
+            "context-approval",
+            (),
+            "brainstorming",
+        ),
+        (
+            "brainstorm.md",
+            BRAINSTORM,
+            "brainstorm-settled",
+            "brainstorm-approval",
+            ("brainstorming",),
+            "requirements-definition",
+        ),
+    ],
+)
+def test_a_gate_entered_by_a_handoff_waits_and_then_obeys_its_author(
+    repo, name, text, stage, gate, skips, onward
+):
+    """
+    Feature: a handoff lands on a gate whose authoring node it skipped
+      Scenario: the gate behaves as a gate
+        Given a verified handoff that enters at an approval gate
+        When the gate is evaluated with no feedback, then with a question
+        Then it waits, and the carried file stays a draft
+        When someone who is not authorized replies "approved"
+        Then it still waits
+        When the developer approves
+        Then the file is locked and the walk moves on
+
+    The authoring node was skipped, so the gate used to read its subject as
+    absent and could never be approved (found by the critic on PR #554; the
+    same defect held for *brainstorm settled* since issue-517).
+
+    Requirement: docs/specs/issue-553/requirements.md R6.4, R3.2, R3.3;
+      abuse case 3
+    """
+    files = {name: _DRAFT + text}
+    _write(repo, files)
+    record = _record(files, stage=stage, enter=gate)
+    if stage == "context-settled":
+        _context_state(repo, record)
+    else:
+        _state(repo, record, skips=skips)
+    assert _walk(repo).current_node == gate
+
+    runtime = Runtime(repo, config={"authorizedUsers": ["dev"]})
+
+    def reply(body, author="dev"):
+        return {"comments": [{"author": author, "body": body}]}
+
+    for event in (None, reply("why this scope?"), reply("approved", author="x")):
+        report = runtime.advance(WORK_ITEM, event=event)
+        assert report.status == "wait", report
+        after = WorkItemState.load(_spec(repo), WORK_ITEM)
+        assert after.current_node == gate
+    front, _ = split_front_matter((_spec(repo) / name).read_text())
+    assert front["status"] == "draft"
+
+    report = runtime.advance(WORK_ITEM, event=reply("approved"))
+    assert report.outcome == "approved"
+    after = WorkItemState.load(_spec(repo), WORK_ITEM)
+    assert after.current_node == onward
+    front, _ = split_front_matter((_spec(repo) / name).read_text())
+    assert front["status"] == "approved" and front["approvedBy"] == ["dev"]
