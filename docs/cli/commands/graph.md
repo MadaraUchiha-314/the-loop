@@ -80,6 +80,9 @@ full process.
 - [ ] requirements-definition   ← unticked: this phase will be skipped
 - [x] design
 …
+- [ ] context-gathering           ← OPT-IN (issue-553): record how the system
+- [ ] context-approval               works today in current-state.md, and have
+                                     its author approve it, before any spec.
 - [ ] design-critic-review        ← an OPT-IN phase: unticked (the default) = it
                                      does not run. Tick it to add it.
 
@@ -103,8 +106,11 @@ the-loop execute
 shipped graph marks `optIn` — is listed unticked under its own heading, and ticking it
 *adds* work. Leaving it alone, or never naming it, means it does not run; `the-loop check`
 then reports it as *not selected*, which is a different fact from *skipped by declaration*
-and is never a pass. The outer loop ships one: `design-critic-review`, a different model
-reading the locked `design.md` before the testing plan and task DAG derive from it.
+and is never a pass. The outer loop ships three: `design-critic-review`, a different model
+reading the locked `design.md` before the testing plan and task DAG derive from it, and
+the pair `context-gathering` and `context-approval` (issue-553), which record how the
+affected part of the system works today in `current-state.md` and have its author
+approve it before any spec is written.
 
 **The reply is the signature.** Tick the boxes in place on the-loop's own comment if you
 like — that is the natural way to answer — but the tick state is only a *proposal* until
@@ -173,8 +179,17 @@ graph v1, start: phase-selection
   phase-selection  [required, human]
       --selected--> import-handoff
   import-handoff  [skippable]
-      --pass--> brainstorming
+      --pass--> context-gathering
+      --skipped--> context-gathering
+  context-gathering  [opt-in]
+      --pass--> context-approval
+      --not-entered--> brainstorming
       --skipped--> brainstorming
+  context-approval  [opt-in, human]
+      --approved--> brainstorming
+      --approved-with-comments--> brainstorming
+      --skipped--> brainstorming
+      --changes-requested--> context-gathering
   brainstorming  [skippable]
       --pass--> brainstorm-approval
       --not-entered--> requirements-definition

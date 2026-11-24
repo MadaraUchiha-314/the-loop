@@ -149,7 +149,7 @@ you (`reference/workflow.md` § The artifact chain).
 
 ### 2. RULE: a generated artifact is iterated on a durable, reviewable surface
 
-Once an artifact of the chain exists — `brainstorm.md`, `requirements.md`/`bugfix.md`,
+Once an artifact of the chain exists — `current-state.md`, `brainstorm.md`, `requirements.md`/`bugfix.md`,
 `design.md`, `testing-plan.md`, `tasks.md`, and the living `context.md` beside them —
 iteration on it happens **only** through
 comments on a surface that outlives the session: the **pull request** that carries it, or

@@ -55,6 +55,7 @@ pause and think between phases, or a fuzzy idea needs to be brainstormed before 
 worth writing requirements for:
 
 ```text
+/the-loop:gather-context <title>    # optional — how the affected code works today
 /the-loop:brainstorm <title>        # optional — free-form scratchpad for a fuzzy idea
 /the-loop:new-requirement <title>   # draft requirements.md before a ticket exists
 /the-loop:create-ticket <path>      # create the ticket from requirements.md
@@ -73,6 +74,7 @@ Each phase writes to `docs/specs/<id>/` in your repo:
 
 ```text
 docs/specs/<id>/
+  current-state.md    # opt-in — how the affected code works today
   brainstorm.md       # optional root artifact
   requirements.md      # or bugfix.md for bug work
   design.md             # + design/ for UI/UX artifacts, when user-facing

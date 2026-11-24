@@ -117,8 +117,8 @@ to the plugin's install directory.)
 4. **Create phase labels/tags** in the ticketing system for the process graph's phases
    — one per phase the shipped work-item loop declares, named `loop:<phase>` (the fixed
    vocabulary, issue-352): `loop:not-started`, `loop:phase-selection`,
-   `loop:brainstorming`, `loop:requirements-definition`, `loop:design`,
-   `loop:test-planning`, `loop:tasks-breakdown`, `loop:implementation`,
+   `loop:context-gathering`, `loop:brainstorming`, `loop:requirements-definition`,
+   `loop:design`, `loop:test-planning`, `loop:tasks-breakdown`, `loop:implementation`,
    `loop:verification`, `loop:needs-review`, `loop:complete`, `loop:cleanup`. The graph
    is the source (`the-loop graph show --format json` lists each node's `phase`); the
    config declares no phase list. On GitHub create issue labels; on Jira create

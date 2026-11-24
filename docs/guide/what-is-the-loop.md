@@ -77,6 +77,10 @@ not-started → brainstorming (optional) → requirements-definition → design
   → complete
 ```
 
+An opt-in `context-gathering` phase can come first: tick it at `phase-selection` and the
+agent records how the affected code works today in `current-state.md`, for its author to
+approve, before any spec is written.
+
 Full detail: [the process-graph capability](/capabilities/process-graph).
 
 ## The artifact chain
@@ -90,6 +94,7 @@ no gate (the brainstorm, the task DAG) advance on shape alone, with no human sto
 
 | Artifact | What it settles |
 |----------|-----------------|
+| `current-state.md` *(opt-in)* | How the affected part of the system works **today**, with questions and answers. It describes; it proposes nothing. Every later phase reads it first |
 | `brainstorm.md` *(optional)* | A free-form scratchpad for a fuzzy idea: problem, options, open questions. A well-defined work item starts at requirements |
 | `requirements.md` (or `bugfix.md` for bugs) | User stories and **EARS** acceptance criteria, plus a threat-model-lite **Security considerations** section |
 | `design.md` | Architecture, components, data models, error handling, and a **Security design** section enforcing every boundary the requirements raised |

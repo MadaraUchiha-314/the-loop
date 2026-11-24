@@ -95,7 +95,7 @@ Each task writes or changes its test first, watches it fail, then makes it pass.
   - *Depends on:* 1, 2
   - *Requirements:* R2.6, R6.1, R6.2
   - *Test:* T2 — `pytest tests/test_init_commands.py tests/test_quiz.py tests/test_graph_parity.py`; T11 — the manual run, at verification
-- [ ] 9. Update the instructions agents read
+- [x] 9. Update the instructions agents read
   - The `the-loop` skill and its workflow reference: the artifact chain, the phase
     list, "read first", the tab order, and the one section that states
     `current-state.md` against `context.md`.
@@ -105,7 +105,7 @@ Each task writes or changes its test first, watches it fail, then makes it pass.
   - *Depends on:* 4, 7, 8
   - *Requirements:* R3.6, R3.7, R4.4, R4.5, R5.1–R5.3, R6.2, R7.1; abuse case 1
   - *Test:* T9 — the `grep` checks, recorded in `evidence/documentation.md`; `pytest tests/test_writing_parity.py`
-- [ ] 10. Update the documents people read, and record the decision
+- [x] 10. Update the documents people read, and record the decision
   - `docs/capabilities/process-graph.md` and `spec-workflow.md`,
     `docs/reference/commands.md`, `docs/cli/graphs.md`,
     `docs/reports/labels-and-dashboards.md`, the README's phase list.
@@ -113,7 +113,7 @@ Each task writes or changes its test first, watches it fail, then makes it pass.
   - *Depends on:* 9
   - *Requirements:* R7.1–R7.4
   - *Test:* T9 — the `grep` checks; markdownlint through T10
-- [ ] 11. Run the whole check and fix what it finds
+- [x] 11. Run the whole check and fix what it finds
   - *Depends on:* 3, 5, 6, 10
   - *Requirements:* non-functional: compatibility
   - *Test:* T10 — `make check`
