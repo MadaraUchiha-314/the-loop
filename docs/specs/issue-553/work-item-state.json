@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-553",
-  "currentNode": "brainstorming",
+  "currentNode": "brainstorm-approval",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -21,8 +21,16 @@
     },
     "brainstorming": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-11-24T06:33:34+00:00",
+      "exitedAt": "2026-11-24T06:38:37+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "brainstorm-approval": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-11-24T06:38:37+00:00",
       "exitedAt": "",
       "lastBlock": "",
       "forced": false
@@ -243,8 +251,17 @@
     }
   },
   "forced": [],
-  "parked": null,
-  "completions": {},
+  "parked": {
+    "node": "brainstorm-approval",
+    "reason": "awaiting a human",
+    "since": "2026-11-24T06:38:37+00:00"
+  },
+  "completions": {
+    "brainstorming": {
+      "at": "2026-11-24T06:38:37+00:00",
+      "by": "cli"
+    }
+  },
   "skips": {
     "spec-explainer": {
       "via": "selection",
