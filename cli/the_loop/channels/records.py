@@ -28,8 +28,18 @@ __all__ = ["RECORD_TYPES", "Record", "records_from_comments", "render"]
 #: ``--type`` choices.
 RECORD_TYPES: Sequence[str] = ("context.added", "decision.recorded")
 
-_WHY_PREFIX = "_why:_ "
-_DISCUSSED_PREFIX = "_discussed at:_ "
+#: Each label as the-loop writes it now (asterisk emphasis, so a record copied
+#: into a spec file passes MD049 — issue-555) and as it wrote it before.
+_WHY_PREFIXES = ("*why:* ", "_why:_ ")
+_DISCUSSED_PREFIXES = ("*discussed at:* ", "_discussed at:_ ")
+
+
+def _after_prefix(line: str, prefixes: Sequence[str]) -> Optional[str]:
+    """What follows the first of ``prefixes`` that ``line`` opens with."""
+    for prefix in prefixes:
+        if line.startswith(prefix):
+            return line[len(prefix) :].strip()
+    return None
 
 
 @dataclass(frozen=True)
@@ -76,10 +86,10 @@ def _record_from_body(body: str) -> Optional[Record]:
             quoted.append("")
         elif not summary and line.startswith("🗣️ "):
             summary = line
-        elif line.startswith(_WHY_PREFIX):
-            why = line[len(_WHY_PREFIX) :].strip()
-        elif line.startswith(_DISCUSSED_PREFIX):
-            discussed_at = line[len(_DISCUSSED_PREFIX) :].strip().strip("<>")
+        elif _after_prefix(line, _WHY_PREFIXES) is not None:
+            why = _after_prefix(line, _WHY_PREFIXES) or ""
+        elif _after_prefix(line, _DISCUSSED_PREFIXES) is not None:
+            discussed_at = (_after_prefix(line, _DISCUSSED_PREFIXES) or "").strip("<>")
     return Record(
         type=envelope.type,
         url="",
