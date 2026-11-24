@@ -98,22 +98,32 @@ committed.
 
 ## Verification activities
 
-- [ ] T1, T2 — `cd cli && uv run python -m pytest -q tests/test_graph_model.py tests/test_graph_skips.py tests/test_graph_catalog.py tests/test_graph_parity.py tests/test_init_commands.py tests/test_quiz.py tests/test_writing_parity.py`
-- [ ] T3, T8 (3–6) — `cd cli && uv run python -m pytest -q tests/test_context_gate_integration.py`
-- [ ] T4, T8 (7) — `cd cli && uv run python -m pytest -q tests/test_handoff_record.py tests/test_import_handoff.py tests/test_handoff_selection.py tests/test_handoff_pickup.py`
-- [ ] T5, T8 (8) — `cd cli && uv run python -m pytest -q tests/test_graphlink_integration.py`
-- [ ] T6, T7 — `cd cli && uv run python -m pytest -q tests/test_jira_integration.py tests/test_pdlc_e2e_integration.py`
-- [ ] T9 — run the `grep` checks and record them in `evidence/documentation.md`
-- [ ] T10 — `make check`
-- [ ] T11 — run `/the-loop:gather-context` on a draft title, then lint the file it wrote
+- [x] T1, T2 — `cd cli && uv run python -m pytest -q tests/test_graph_model.py tests/test_graph_skips.py tests/test_graph_catalog.py tests/test_graph_parity.py tests/test_init_commands.py tests/test_quiz.py tests/test_writing_parity.py`
+- [x] T3, T8 (3–6) — `cd cli && uv run python -m pytest -q tests/test_context_gate_integration.py`
+- [x] T4, T8 (7) — `cd cli && uv run python -m pytest -q tests/test_handoff_record.py tests/test_import_handoff.py tests/test_handoff_selection.py tests/test_handoff_pickup.py`
+- [x] T5, T8 (8) — `cd cli && uv run python -m pytest -q tests/test_graphlink_integration.py`
+- [x] T6, T7 — `cd cli && uv run python -m pytest -q tests/test_jira_integration.py tests/test_pdlc_e2e_integration.py`
+- [x] T9 — run the `grep` checks and record them in `evidence/documentation.md`
+- [x] T10 — `make check`
+- [x] T11 — run `/the-loop:gather-context` on a draft title, then lint the file it wrote
 
 ## Verification results
 
-*Not yet executed.*
+Executed on 2026-11-24. Every planned activity ran and passed. Two notes: the T6
+command also ran `tests/test_jira_format.py`, which holds the Jira checklist snapshot;
+and T11 ran the command's steps by hand, because the installed plugin does not have the
+new slash command yet.
 
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
-| | | | |
+| T1, T2 | the seven graph, parity and command modules | 315 passed | [`integration.md`](evidence/integration.md) |
+| T3, T8 (3–6) | `tests/test_context_gate_integration.py` | 16 passed | [`integration.md`](evidence/integration.md) |
+| T4, T8 (7) | the four handoff modules | 192 passed | [`integration.md`](evidence/integration.md) |
+| T5, T8 (8) | `tests/test_graphlink_integration.py` | 17 passed | [`integration.md`](evidence/integration.md) |
+| T6, T7 | the Jira modules and `tests/test_pdlc_e2e_integration.py` | 74 passed | [`integration.md`](evidence/integration.md) |
+| T9 | `grep` checks over the skill, commands and docs | all present | [`documentation.md`](evidence/documentation.md) |
+| T10 | `make check` | exit 0; 7979 passed, 2 skipped | [`ci-parity.md`](evidence/ci-parity.md) |
+| T11 | the steps of `/the-loop:gather-context` on a draft title, then lint and the shape check | lint 0 errors; shape check passed | [`manual.md`](evidence/manual.md) |
 
 ## Review comments
 
