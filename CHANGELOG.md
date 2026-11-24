@@ -1,3 +1,9 @@
+## v20.19.0 (2026-11-24)
+
+### Feat
+
+- **issue-553**: spec chain — a context-gathering phase (#554)
+
 ## v20.18.0 (2026-11-21)
 
 ### Feat
