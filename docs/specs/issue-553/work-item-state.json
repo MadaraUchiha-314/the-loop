@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-553",
-  "currentNode": "security-review",
+  "currentNode": "evidence",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -141,8 +141,24 @@
     },
     "security-review": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-11-24T15:40:46+00:00",
+      "exitedAt": "2026-11-24T15:42:41+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "code-explainer": {
+      "attempts": 0,
+      "outcome": "skipped",
+      "enteredAt": "2026-11-24T15:42:41+00:00",
+      "exitedAt": "2026-11-24T15:42:41+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "evidence": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-11-24T15:42:41+00:00",
       "exitedAt": "",
       "lastBlock": "",
       "forced": false
@@ -399,6 +415,10 @@
     },
     "critic-review": {
       "at": "2026-11-24T15:40:46+00:00",
+      "by": "cli"
+    },
+    "security-review": {
+      "at": "2026-11-24T15:42:41+00:00",
       "by": "cli"
     }
   },
