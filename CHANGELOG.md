@@ -1,3 +1,9 @@
+## v20.19.1 (2026-11-24)
+
+### Fix
+
+- **issue-555**: channel records use asterisk emphasis so a recorded approval passes MD049 (#556)
+
 ## v20.19.0 (2026-11-24)
 
 ### Feat
