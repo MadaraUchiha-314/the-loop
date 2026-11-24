@@ -585,7 +585,7 @@ The other default, at the same gate and by the same person
     the affected part of the system works today. Its exit checks that *Scope* and *How
     it works today* are filled. A file never written yields `not-entered`, unless the
     gate was already entered, when it blocks.
-  - **`context-approval`** (human, session inherited, no phase) runs
+  - **`context-approval`** (human, session inherited, the same phase) runs
     `brainstorm-approval`'s hooks on that one file: an indecisive comment is `wait`, an
     authorized approval locks the file, and there is no `pass` edge.
   - Edges: `import-handoff --pass / skipped--> context-gathering`;

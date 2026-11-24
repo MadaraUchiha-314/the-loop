@@ -136,7 +136,7 @@ def test_the_pair_is_declared_opt_in_between_the_import_and_the_brainstorm():
         and brainstorming, both opt-in, each with a checklist description
       And context-gathering is an agent node with a phase of its own that
         produces current-state.md through /the-loop:gather-context
-      And context-approval is a human node with no phase and no pass edge
+      And context-approval is a human node in the same phase, with no pass edge
       And neither is in the spec-chain skip set
     Requirement: docs/specs/issue-553/requirements.md R1.1, R1.2, R1.7, R1.8, R1.10
     """
@@ -151,7 +151,8 @@ def test_the_pair_is_declared_opt_in_between_the_import_and_the_brainstorm():
     assert gather.actor == "agent" and gather.phase == "context-gathering"
     assert gather.produces == ("current-state.md",)
     assert gather.command == "gather-context"
-    assert gate.actor == "human" and not gate.phase
+    # The gate carries the phase too, so a handoff that enters at it is labelled.
+    assert gate.actor == "human" and gate.phase == "context-gathering"
 
     assert graph.next_node(GATHER, "pass") == GATE
     for outcome in ("not-entered", "skipped"):

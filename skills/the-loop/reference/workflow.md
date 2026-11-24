@@ -60,8 +60,8 @@ works today, and its author confirms it** (issue-553). Two nodes sit between
   *Scope*, *How it works today*, *Questions and answers*, *Unknowns*. Front matter
   carries `gatheredAt`, the commit that was read. The file describes; it proposes
   nothing.
-- **`context-approval`** is the human gate. It has no phase of its own, so the label
-  stays on `loop:context-gathering`. The author answers the agent's questions and asks
+- **`context-approval`** is the human gate. It is in the same phase, so the label
+  reads `loop:context-gathering` there too, also when a handoff enters at it. The author answers the agent's questions and asks
   their own; an indecisive comment keeps the gate waiting; their approval locks the
   file, and a request for changes returns it to `context-gathering`.
 

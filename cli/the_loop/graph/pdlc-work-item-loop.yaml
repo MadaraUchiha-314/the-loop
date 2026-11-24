@@ -188,8 +188,11 @@ nodes:
   # The gate on `current-state.md` (issue-553) — the same hooks as
   # `brainstorm-approval`, given one file name. An indecisive comment is `wait`;
   # deliberately no `pass` edge, so deleting the file never stands in for an
-  # approval. No phase: the label stays `loop:context-gathering` while it waits.
+  # approval. It declares the phase itself, unlike `brainstorm-approval`: a
+  # *context settled* handoff enters here without passing `context-gathering`,
+  # and the label must still read `loop:context-gathering` (R1.6).
   - id: context-approval
+    phase: context-gathering
     actor: human
     session: inherit
     optIn: true
