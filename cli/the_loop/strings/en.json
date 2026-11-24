@@ -1802,6 +1802,7 @@
   "graph.selection.explainer.heading": "🎓 Explain the change and quiz the author?",
   "graph.selection.explainer.row": "a spec explainer and quiz before code generation, an explainer of the change for the reviewer, and a code quiz before review is requested.",
   "graph.selection.handoff-stage.brainstorm-settled": "brainstorm settled",
+  "graph.selection.handoff-stage.context-settled": "context settled",
   "graph.selection.handoff-stage.design-settled": "design settled",
   "graph.selection.handoff-stage.exploring": "still exploring",
   "graph.selection.handoff-stage.requirements-settled": "requirements settled",

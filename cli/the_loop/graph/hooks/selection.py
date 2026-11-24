@@ -690,6 +690,7 @@ def _describe(ctx: HookContext, node_id: str) -> str:
 #: A handoff stage in the words the developer picked it in (issue-517, R6 table).
 HANDOFF_STAGE_WORDS = {
     "exploring": strings.t("graph.selection.handoff-stage.exploring"),
+    "context-settled": strings.t("graph.selection.handoff-stage.context-settled"),
     "brainstorm-settled": strings.t("graph.selection.handoff-stage.brainstorm-settled"),
     "requirements-settled": strings.t(
         "graph.selection.handoff-stage.requirements-settled"
@@ -821,9 +822,14 @@ def _checklist_body(ctx: HookContext) -> str:
             "#### " + strings.t("graph.selection.checklist.optional-heading"),
             "",
         ]
+        # One exception (issue-553): a handoff that starts AT an opt-in node
+        # offers that row ticked, or the walk would route around the very step
+        # the developer handed off at. Still a proposal — the reply freezes it.
+        entered = str(_handoff(ctx).get("enter") or "")
         for node in opt_in:
             about = _describe(ctx, node)
-            lines.append(f"- [ ] {node}" + (f" — {about}" if about else ""))
+            box = "x" if node == entered else " "
+            lines.append(f"- [{box}] {node}" + (f" — {about}" if about else ""))
         lines += [""]
     if protected:
         # Collapsed, unlike every other list here, because none of it is a choice.

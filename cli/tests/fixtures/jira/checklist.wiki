@@ -38,6 +38,8 @@ h3. 🧩 Phases — ticked ones run
 
 h4. ➕ Optional phases — off unless you tick them
 
+* (x) context-gathering — the agent records how the affected part of the system works today in current-state.md, before any spec is written
+* (x) context-approval — the author answers the agent's questions, asks their own, and approves current-state.md before the brainstorm or requirements start
 * (x) design-critic-review — a different model/harness reviews the completed design.md against the requirements, before the testing plan and the task DAG are derived from it (the design is locked later, at design-approval — issue-281)
 
 ⚠️ *Every phase of this loop is selectable — including the reviews, the security review and the approval gate.* Nothing but this question is mandatory.

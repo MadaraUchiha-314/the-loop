@@ -149,6 +149,59 @@ nodes:
     entry: [deliver-assignment]
     exit: [import-handoff]
 
+  # Understanding the system as it is, before any spec is written (issue-553).
+  # An opt-in pair shaped like the brainstorm pair below: the agent node writes
+  # `current-state.md` — how the affected code works today, with its questions —
+  # and the human node holds it open for any number of questions and locks it on
+  # the author's approval. Both are `optIn`, so the graph has them OFF: a work
+  # item that ticks neither row walks exactly as it did before, and one frozen
+  # before these nodes existed never enters them. Ticked alone, either node
+  # still leaves the walk moving — `context-gathering` passes into a gate that
+  # is not selected, and an unselected `context-gathering` routes past the gate
+  # on its `skipped` edge.
+  #
+  # A phase of its own, unlike `design-critic-review`: a work item can wait at
+  # this gate for days, and with no phase its label would still read
+  # `loop:phase-selection`. `set-phase-label` creates a missing label on first
+  # use, so a consuming repository needs no setup.
+  #
+  # Not `context.md` — that is the append-only record of what a channel told the
+  # loop (issue-389), and it has no node.
+  - id: context-gathering
+    phase: context-gathering
+    actor: agent
+    optional: true
+    optIn: true             # off unless selected — implies `skippable`
+    description: >-
+      the agent records how the affected part of the system works today in
+      current-state.md, before any spec is written
+    produces: [current-state.md]
+    command: gather-context
+    entry: [set-phase-label, deliver-assignment]
+    # `absentOutcome`, as for `brainstorming`: a file nobody wrote has nothing
+    # for `context-approval` to approve — unless that gate was already entered
+    # (changes-requested), when a missing file blocks.
+    exit:
+      - {hook: validate-artifacts, with: {sections: ["Scope", "How it works today"], absentOutcome: not-entered, gate: context-approval}}
+      - lint-artifacts
+
+  # The gate on `current-state.md` (issue-553) — the same hooks as
+  # `brainstorm-approval`, given one file name. An indecisive comment is `wait`;
+  # deliberately no `pass` edge, so deleting the file never stands in for an
+  # approval. No phase: the label stays `loop:context-gathering` while it waits.
+  - id: context-approval
+    actor: human
+    session: inherit
+    optIn: true
+    description: >-
+      the author answers the agent's questions, asks their own, and approves
+      current-state.md before the brainstorm or requirements start
+    entry: [set-phase-label, request-review, {hook: notify, with: {event: phase-approval-pending, artifact: current-state.md}}]
+    exit:
+      - {hook: classify-feedback, with: {whenPresent: current-state.md}}
+      - {hook: record-feedback, with: {into: current-state.md}}
+      - {hook: lock-artifacts, with: {artifacts: [current-state.md]}}
+
   - id: brainstorming
     phase: brainstorming
     actor: agent
@@ -617,8 +670,17 @@ edges:
   # issue-517: every selection passes through `import-handoff`, which an item
   # without a handoff routes around on `skipped`.
   - {from: phase-selection, to: import-handoff, on: selected}
-  - {from: import-handoff, to: brainstorming, on: pass}
-  - {from: import-handoff, to: brainstorming, on: skipped}
+  - {from: import-handoff, to: context-gathering, on: pass}
+  - {from: import-handoff, to: context-gathering, on: skipped}
+  # issue-553: the opt-in context pair. A written current-state.md waits for its
+  # author; one never written, or a node not selected, goes on to `brainstorming`.
+  - {from: context-gathering, to: context-approval, on: pass}
+  - {from: context-gathering, to: brainstorming, on: not-entered}
+  - {from: context-gathering, to: brainstorming, on: skipped}
+  - {from: context-approval, to: brainstorming, on: approved}
+  - {from: context-approval, to: brainstorming, on: approved-with-comments}
+  - {from: context-approval, to: brainstorming, on: skipped}
+  - {from: context-approval, to: context-gathering, on: changes-requested}
   # issue-494: a written brainstorm waits for its author's approval; one that was
   # never written (`not-entered`) or declared away (`skipped`) has nothing to
   # approve and goes straight on.

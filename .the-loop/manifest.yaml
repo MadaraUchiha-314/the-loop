@@ -115,6 +115,10 @@ deprecated:
 # (issue-124, decision-045). cli/tests/test_graph_parity.py holds this list and the
 # shipped graph to each other in both directions.
 workItemArtifacts:
+  - pathPattern: docs/specs/<id>/current-state.md
+    role: current-state
+    phase: context-gathering
+    optional: true            # how the affected part of the system works today, approved before the spec chain (issue-553); only present when the work item opted into context-gathering or a handoff carried it. Not context.md, the channel record below.
   - pathPattern: docs/specs/<id>/brainstorm.md
     role: spec-brainstorm
     phase: brainstorming

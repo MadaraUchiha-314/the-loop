@@ -557,6 +557,9 @@ the separate **CLI config** described above and nothing of this repository's. Se
 
 Granular commands (one step at a time; same flow `work-on` runs end-to-end):
 
+- `/the-loop:gather-context <title or id>` — *(optional, before the spec chain)* record
+  how the affected part of the system works today in `current-state.md`, through
+  questions and answers; approved at the opt-in `context-approval` gate.
 - `/the-loop:brainstorm <title>` — *(optional Phase 0)* draft a free-form `brainstorm.md`
   scratchpad (the root artifact) in `docs/specs/draft-<slug>/` for a fuzzy idea; iterate,
   then convert to requirements.

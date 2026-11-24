@@ -19,6 +19,7 @@ Run the same flow one step at a time:
 
 | Command | What it does |
 |---------|--------------|
+| `/the-loop:gather-context <title or id>` | *(Optional, before the spec chain)* Record how the affected part of the system works **today** in `current-state.md`, through questions and answers; its author approves it at `context-approval`. Not `context.md`, the channel record. |
 | `/the-loop:brainstorm <title>` | *(Optional Phase 0)* Draft a free-form `brainstorm.md` scratchpad (the root artifact) for a fuzzy idea; iterate, then convert to requirements. |
 | `/the-loop:new-requirement <title>` | Draft a `requirements.md` in a temporary `docs/specs/draft-<slug>/` folder **before a ticket exists** (converts a sibling `brainstorm.md` if present). |
 | `/the-loop:create-ticket <path>` | Create the ticket from a `requirements.md`; promote `draft-<slug>/` → `docs/specs/<id>/`. |

@@ -53,6 +53,10 @@ INJECTED = (
 #: What phase selection leaves for a requirements-settled handoff (C7): the
 #: nodes before `enter`, declared skipped by the replier.
 SETTLED_SKIPS = ("brainstorming", "brainstorm-approval", "requirements-definition")
+#: The opt-in context pair (issue-553) comes first in declaration order. A walk
+#: demoted to the beginning names them too; un-skipping removes a declared skip,
+#: and an unselected opt-in node holds none, so naming them changes nothing.
+FROM_THE_START = ("context-gathering", "context-approval") + SETTLED_SKIPS
 
 
 @pytest.fixture()
@@ -137,7 +141,7 @@ def test_the_shipped_graph_compiles_with_import_handoff():
       Scenario: the shipped graph places it after phase selection
         Given the shipped pdlc-work-item-loop
         Then phase-selection leads to import-handoff on selected
-        And import-handoff leads to brainstorming on pass and on skipped
+        And import-handoff leads to context-gathering on pass and on skipped
         And it is skippable and requiresHandoff
 
     Requirement: R7.1
@@ -147,8 +151,10 @@ def test_the_shipped_graph_compiles_with_import_handoff():
     assert node.skippable and node.requires_handoff
     assert node.exit == ("import-handoff",)
     assert graph.next_node("phase-selection", "selected") == "import-handoff"
-    assert graph.next_node("import-handoff", "pass") == "brainstorming"
-    assert graph.next_node("import-handoff", "skipped") == "brainstorming"
+    # issue-553: the opt-in context pair sits between the import and the
+    # brainstorm; unselected, it is routed around.
+    assert graph.next_node("import-handoff", "pass") == "context-gathering"
+    assert graph.next_node("import-handoff", "skipped") == "context-gathering"
 
 
 def test_import_handoff_is_not_a_checklist_row(repo):
@@ -194,7 +200,8 @@ def test_demotion_from_the_first_artifact_unskips_the_whole_prefix(repo):
     files = {"brainstorm.md": "# no sections\n", "requirements.md": REQUIREMENTS}
     _write(repo, files)
     result = _demote(repo, _record(files))
-    assert result.unskip == list(SETTLED_SKIPS)
+    assert result.unskip == list(FROM_THE_START)
+    assert result.select == []  # issue-553: no opt-in producer failed
     # Only the first failure is reported; what follows it is unverified.
     assert [d["artifact"] for d in result.demoted] == ["brainstorm.md"]
     assert result.verified == []
@@ -217,7 +224,8 @@ def test_no_verifiable_file_unskips_from_brainstorming(repo):
     files = {"requirements.md": REQUIREMENTS}
     record = _record(files)  # nothing written to the spec dir
     result = _demote(repo, record)
-    assert result.unskip == list(SETTLED_SKIPS)
+    assert result.unskip == list(FROM_THE_START)
+    assert result.select == []  # issue-553: no opt-in producer failed
     assert result.demoted == [
         {
             "node": "requirements-definition",
@@ -491,3 +499,209 @@ def test_a_symlinked_spec_folder_is_refused(repo, tmp_path):
     assert found.verified == []
     assert "symlink" in found.demoted[0]["reason"]
     assert (elsewhere / WORK_ITEM / "brainstorm.md").read_text() == BRAINSTORM
+
+
+# -- current-state.md: demotion reaches an opt-in producer (issue-553) -----------
+
+CURRENT_STATE = (
+    "# Current state\n\n## Scope\n\nThe handoff.\n\n"
+    "## How it works today\n\nA record names a stage.\n"
+)
+
+
+def _context_record(files, **kwargs) -> HandoffRecord:
+    return _record(files, stage="context-settled", enter="context-approval", **kwargs)
+
+
+def _context_state(repo: Path, record: HandoffRecord, skips=()) -> None:
+    """A context-settled item after its selection: the checklist offered
+    `context-approval` ticked and the replier kept it."""
+    _state(repo, record, skips=skips)
+    state = WorkItemState.load(_spec(repo), WORK_ITEM)
+    state.opt_ins["context-approval"] = {
+        "via": "selection",
+        "token": "context-approval",
+        "by": "@dev",
+    }
+    state.save(_spec(repo))
+
+
+def test_a_verified_current_state_walks_to_the_context_gate(repo):
+    """
+    Feature: a handoff carries the description of today's system
+      Scenario: A handoff at context settled enters at the context gate
+        Given a handoff at context settled whose current-state.md verifies
+        When import-handoff runs
+        Then nothing is demoted and nobody is selected on the item's behalf
+        And the walk waits at context-approval
+
+    Requirement: docs/specs/issue-553/requirements.md R6.3, R6.4
+    """
+    files = {"current-state.md": CURRENT_STATE}
+    _write(repo, files)
+    _context_state(repo, _context_record(files))
+    after = _walk(repo)
+    assert after.current_node == "context-approval"
+    assert after.handoff_demoted == []
+    assert set(after.opt_ins) == {"context-approval"}
+
+
+def test_a_current_state_with_a_wrong_hash_demotes_to_context_gathering(repo):
+    """
+    Feature: a handoff carries the description of today's system
+      Scenario: A carried current-state file that fails verification demotes the walk
+        Given a handoff at context settled pinning current-state.md to one sha256
+        And the committed current-state.md hashes to another
+        When import-handoff runs
+        Then the file is refused
+        And context-gathering is selected, attributed to the demotion and the file
+        And the walk starts at context-gathering, no later
+
+    Requirement: docs/specs/issue-553/requirements.md R6.6, abuse case 7
+    """
+    files = {"current-state.md": CURRENT_STATE}
+    _write(repo, {"current-state.md": CURRENT_STATE + "tampered\n"})
+    _context_state(repo, _context_record(files))
+    after = _walk(repo)
+    assert after.current_node == "context-gathering"
+    assert after.handoff_demoted == [
+        {
+            "node": "context-gathering",
+            "artifact": "current-state.md",
+            "reason": "current-state.md does not match the record's sha256",
+        }
+    ]
+    chosen = after.opt_ins["context-gathering"]
+    assert chosen["via"] == "handoff-demotion"
+    assert chosen["artifact"] == "current-state.md"
+    assert "by" not in chosen  # no person ticked it, and it does not say one did
+
+
+def test_a_missing_current_state_demotes_to_context_gathering(repo):
+    """Requirement: docs/specs/issue-553/requirements.md R6.6."""
+    files = {"current-state.md": CURRENT_STATE}
+    _context_state(repo, _context_record(files))  # nothing written
+    after = _walk(repo)
+    assert after.current_node == "context-gathering"
+    assert after.opt_ins["context-gathering"]["via"] == "handoff-demotion"
+
+
+def test_a_current_state_that_fails_its_shape_check_demotes(repo):
+    """The producing node's own section check judges the carried file."""
+    files = {"current-state.md": "# Current state\n\n## Scope\n\nThe CLI.\n"}
+    _write(repo, files)
+    _context_state(repo, _context_record(files))
+    after = _walk(repo)
+    assert after.current_node == "context-gathering"
+    assert after.handoff_demoted[0]["node"] == "context-gathering"
+
+
+def test_a_bad_current_state_under_a_later_stage_also_starts_at_gathering(repo):
+    """
+    Requirement: docs/specs/issue-553/requirements.md R6.6 — "no later than
+    context-gathering" holds whatever the stage; the later files are unverified
+    and their producing nodes are un-skipped with it.
+    """
+    files = {
+        "current-state.md": CURRENT_STATE,
+        "brainstorm.md": BRAINSTORM,
+        "requirements.md": REQUIREMENTS,
+    }
+    _write(repo, {**files, "current-state.md": CURRENT_STATE + "tampered\n"})
+    record = _record(files)
+    result = _demote(repo, record)
+    assert result.select == ["context-gathering"]
+    assert result.unskip == list(FROM_THE_START)
+    assert result.verified == []
+    _state(repo, record)
+    after = _walk(repo)
+    assert after.current_node == "context-gathering"
+    assert not set(SETTLED_SKIPS) & set(after.skips)
+
+
+def test_a_verified_current_state_under_a_later_stage_selects_nothing(repo):
+    """Requirement: docs/specs/issue-553/requirements.md R6.5."""
+    files = {
+        "current-state.md": CURRENT_STATE,
+        "brainstorm.md": BRAINSTORM,
+        "requirements.md": REQUIREMENTS,
+    }
+    _write(repo, files)
+    record = _record(files)
+    result = _demote(repo, record)
+    assert result.select == [] and result.unskip == [] and result.demoted == []
+    _state(repo, record)
+    after = _walk(repo)
+    assert after.current_node == "requirements-approval"
+    assert after.opt_ins == {}
+
+
+def test_a_failing_spec_file_never_selects_a_context_node(repo):
+    """A demotion selects only the opt-in producer of the file that failed."""
+    files = {"brainstorm.md": "# no sections\n", "requirements.md": REQUIREMENTS}
+    _write(repo, files)
+    _state(repo, _record(files))
+    after = _walk(repo)
+    assert after.current_node == "brainstorming"
+    assert after.opt_ins == {}
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        # A selection with no demotion of that node behind it.
+        {"handoffSelect": ["context-gathering"], "handoffDemoted": []},
+        # A demotion of one node cannot select another.
+        {
+            "handoffSelect": ["context-approval", "design-critic-review"],
+            "handoffDemoted": [
+                {"node": "context-gathering", "artifact": "current-state.md"}
+            ],
+        },
+        # A node that is not opt-in is never "selected".
+        {
+            "handoffSelect": ["implementation"],
+            "handoffDemoted": [{"node": "implementation", "artifact": "x.md"}],
+        },
+    ],
+)
+def test_abuse_a_forged_selection_in_a_hook_result_grants_nothing(repo, data):
+    """
+    Feature: a demotion's selection is the only one no person ticked
+      Scenario: a hook result asks for a selection it has no demotion for
+        Given an import-handoff result naming opt-in nodes to select
+        And no demotion of those same nodes in that result
+        When the runtime records the import
+        Then no opt-in selection is written
+
+    Requirement: docs/specs/issue-553/requirements.md, abuse case 6
+    """
+    from the_loop.graph.chain import ChainOutcome
+    from the_loop.graph.contract import HookResult
+
+    files = {"current-state.md": CURRENT_STATE}
+    record = _context_record(files)
+    state = WorkItemState(work_item=WORK_ITEM, handoff=record.as_dict())
+    outcome = ChainOutcome(status="pass", results=[HookResult.ok(NAME, **data)])
+    item = WorkItem(ref="github:octo/repo#1", id=WORK_ITEM, spec_dir=_spec(repo))
+    Runtime(repo)._record_handoff_import(state, item, outcome)
+    assert state.opt_ins == {}
+
+
+def test_abuse_a_selection_from_another_hook_is_ignored(repo):
+    """Only the `import-handoff` hook's own result is read."""
+    from the_loop.graph.chain import ChainOutcome
+    from the_loop.graph.contract import HookResult
+
+    data = {
+        "handoffSelect": ["context-gathering"],
+        "handoffDemoted": [
+            {"node": "context-gathering", "artifact": "current-state.md"}
+        ],
+    }
+    record = _context_record({"current-state.md": CURRENT_STATE})
+    state = WorkItemState(work_item=WORK_ITEM, handoff=record.as_dict())
+    outcome = ChainOutcome(status="pass", results=[HookResult.ok("other", **data)])
+    item = WorkItem(ref="github:octo/repo#1", id=WORK_ITEM, spec_dir=_spec(repo))
+    Runtime(repo)._record_handoff_import(state, item, outcome)
+    assert state.opt_ins == {}

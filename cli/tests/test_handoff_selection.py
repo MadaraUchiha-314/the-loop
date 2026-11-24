@@ -68,9 +68,16 @@ TESTING_PLAN = (
     "## Verification results\n\nPending.\n"
 )
 
+CURRENT_STATE = (
+    "# Current state\n\n## Scope\n\nThe handoff.\n\n"
+    "## How it works today\n\nA record names a stage.\n"
+)
+
 #: Each R6-table row: (stage, files carried, the node the walk lands on).
 ROWS = {
     "exploring": ({"brainstorm.md": BRAINSTORM}, "brainstorming"),
+    # issue-553: the stage before any spec file exists.
+    "context-settled": ({"current-state.md": CURRENT_STATE}, "context-approval"),
     "brainstorm-settled": ({"brainstorm.md": BRAINSTORM}, "brainstorm-approval"),
     "requirements-settled": (
         {"brainstorm.md": BRAINSTORM, "requirements.md": REQUIREMENTS},
@@ -255,13 +262,78 @@ def test_an_item_with_no_handoff_gets_todays_checklist_byte_for_byte():
       Scenario: an item with no handoff walks exactly as before
         Given a work item without a handoff record
         When the phase-selection checklist is rendered
-        Then it is byte-identical to the checklist captured before issue-517
+        Then it is byte-identical to the reviewed checklist of an item with none
+        And the two context rows are offered unticked
 
-    Requirement: R7.1, compatibility NFR
+    Requirement: R7.1, compatibility NFR; issue-553 R1.2, R6.7 — the snapshot
+    gained the two opt-in context rows, and nothing else.
     """
     body = selection._checklist_body(_ctx())
-    assert body == (FIXTURES / "checklist_no_handoff.txt").read_text(encoding="utf-8")
+    assert body == _golden("checklist_no_handoff.txt", body)
     assert "Handed off" not in body
+    assert "- [ ] context-gathering — " in body
+    assert "- [ ] context-approval — " in body
+
+
+# -- the context pair on a handed-off checklist (issue-553) ----------------------
+
+
+def _optional_rows(body: str) -> Dict[str, bool]:
+    """``{node: ticked}`` for the rows under *Optional phases*."""
+    section = body.split("#### ", 1)[1].split("###", 1)[0]
+    out: Dict[str, bool] = {}
+    for line in section.splitlines():
+        if line.startswith("- ["):
+            out[line[6:].split(" — ", 1)[0].strip()] = line[3] == "x"
+    return out
+
+
+def test_a_context_settled_handoff_offers_the_context_gate_ticked():
+    """
+    Feature: phase selection for a handed-off item
+      Scenario: A handoff at context settled enters at the context gate
+        Given a handoff record by @dev at context settled
+        When the phase-selection checklist is rendered
+        Then the context-approval row is ticked
+        And every other optional row is unticked
+        And it matches the reviewed golden file byte for byte
+
+    Requirement: docs/specs/issue-553/requirements.md R6.4 (T6)
+    """
+    files, _ = ROWS["context-settled"]
+    body = selection._checklist_body(_ctx(_record("context-settled", files)))
+    assert _optional_rows(body) == {
+        "context-gathering": False,
+        "context-approval": True,
+        "design-critic-review": False,
+    }
+    assert "Handed off by @dev at *context settled*" in body
+    assert body == _golden("checklist_context_settled.txt", body)
+
+
+@pytest.mark.parametrize("row", [r for r in ROWS if r != "context-settled"])
+def test_every_other_handoff_offers_the_context_rows_unticked(row):
+    """
+    Requirement: docs/specs/issue-553/requirements.md R6.7 — a handoff that does
+    not start at a context node offers both rows as any work item gets them.
+    """
+    files, _ = ROWS[row]
+    rows = _optional_rows(selection._checklist_body(_ctx(_record(row, files))))
+    assert rows["context-gathering"] is False
+    assert rows["context-approval"] is False
+
+
+def test_a_later_handoff_that_carries_current_state_still_offers_the_rows_unticked():
+    """Requirement: docs/specs/issue-553/requirements.md R6.5, R6.7."""
+    files = {"current-state.md": CURRENT_STATE, **ROWS["requirements-settled"][0]}
+    rows = _optional_rows(
+        selection._checklist_body(_ctx(_record("requirements-settled", files)))
+    )
+    assert rows == {
+        "context-gathering": False,
+        "context-approval": False,
+        "design-critic-review": False,
+    }
 
 
 # -- the walk (T2) --------------------------------------------------------------
@@ -357,6 +429,95 @@ def test_an_exploring_handoff_walks_to_brainstorming(repo, fake_github):
     """
     after = _assert_row_walk(repo, fake_github, "exploring")
     assert "brainstorming" not in after.skips
+
+
+def test_a_context_settled_handoff_walks_to_context_approval(repo, fake_github):
+    """
+    Feature: a handed-off item starts at the right step
+      Scenario: A handoff at context settled enters at the context gate
+        Given a handoff record at context settled carrying current-state.md
+        And the replier says the-loop execute with the boxes untouched
+        When the walk passes import-handoff
+        Then the current node is context-approval
+        And context-gathering was routed around, selected by nobody
+        And current-state.md is not locked: only the gate locks it
+
+    Requirement: docs/specs/issue-553/requirements.md R6.4
+    """
+    after = _assert_row_walk(repo, fake_github, "context-settled")
+    assert set(after.opt_ins) == {"context-approval"}
+    assert after.nodes["context-gathering"].outcome == "skipped"
+    text = (_spec(repo) / "current-state.md").read_text(encoding="utf-8")
+    assert "status: approved" not in text
+
+
+def test_a_context_settled_handoff_whose_row_is_unticked_passes_the_gate(
+    repo, fake_github
+):
+    """
+    Feature: a handed-off item starts at the right step
+      Scenario: the replier unticks the context gate
+        Given a handoff record at context settled
+        And the replier unticks context-approval before saying the-loop execute
+        When the walk passes import-handoff
+        Then neither context node is entered and the walk reaches brainstorming
+
+    Requirement: docs/specs/issue-553/requirements.md R6.4 — the handoff
+    proposes, the person decides.
+    """
+    files, _ = ROWS["context-settled"]
+    record = _record("context-settled", files)
+    runtime = _runtime(repo)
+    runtime.start(WORK_ITEM, ref=REF, handoff=record)
+    checklist = next(p for p in fake_github.posted if selection.SELECTION_MARKER in p)
+    assert "- [x] context-approval" in checklist
+    edited = checklist.replace("- [x] context-approval", "- [ ] context-approval")
+    # The boxes are edited in place on the-loop's own comment; the reply is
+    # what freezes them.
+    fake_github.comments = [{"author": "the-loop", "body": edited}]
+    reply = {"comments": [{"author": "@dev", "body": "the-loop execute"}]}
+    runtime.advance(WORK_ITEM, ref=REF, event=reply)
+    for name, text in files.items():
+        (_spec(repo) / name).write_text(text, encoding="utf-8")
+    runtime.advance(WORK_ITEM, ref=REF)
+    after = WorkItemState.load(_spec(repo), WORK_ITEM)
+    assert after.opt_ins == {}
+    assert after.current_node == "brainstorming"
+    for node in ("context-gathering", "context-approval"):
+        assert node not in after.nodes or after.nodes[node].outcome == "skipped"
+
+
+def test_a_later_handoff_carrying_current_state_enters_neither_context_node(
+    repo, fake_github
+):
+    """
+    Feature: a handed-off item starts at the right step
+      Scenario: a later stage also carries current-state.md
+        Given a handoff at requirements settled that also carries current-state.md
+        And the developer approved current-state.md in the chat
+        When the walk passes import-handoff
+        Then the current node is requirements-approval
+        And neither context node was entered
+        And current-state.md is locked as approved by the handoff
+
+    Requirement: docs/specs/issue-553/requirements.md R6.5
+    """
+    from dataclasses import replace
+
+    files = {"current-state.md": CURRENT_STATE, **ROWS["requirements-settled"][0]}
+    for name in files:
+        files[name] = "---\nstatus: draft\napprovedBy: []\n---\n\n" + files[name]
+    record = replace(
+        _record("requirements-settled", files),
+        approved_in_chat=("current-state.md",),
+    )
+    after = _walk(repo, fake_github, record, files)
+    assert after.current_node == "requirements-approval"
+    assert after.handoff_demoted == [] and after.opt_ins == {}
+    for node in ("context-gathering", "context-approval"):
+        assert node not in after.nodes or after.nodes[node].outcome == "skipped"
+    text = (_spec(repo) / "current-state.md").read_text(encoding="utf-8")
+    assert "status: approved" in text and "approvedVia" in text
 
 
 def test_a_brainstorm_settled_handoff_walks_to_brainstorm_approval(repo, fake_github):
