@@ -2,8 +2,8 @@
 type: brainstorm
 phase: brainstorming
 workItem: issue-553
-status: draft
-approvedBy: []
+status: approved
+approvedBy: ["MadaraUchiha-314"]
 collaborators: [product-manager, architect]
 overrides: {}
 ---
@@ -34,9 +34,11 @@ flowchart LR
     CG -. "read by every later phase" .-> R
 ```
 
-Three answers are needed before requirements. **What is the file called?** `context.md`
-is already taken (Q1). **How do the questions and answers flow** when nobody is at the
-terminal (Q2)? **What happens when the code moves on** after you approved the file (Q4)?
+The author has decided four points in review on pull request #554. The file is
+`current-state.md`, because `context.md` is already taken. The phase sits before
+`brainstorming`. It is two opt-in rows. The approved file is locked, with one staleness
+check when implementation begins. One answer is still needed before requirements: **how
+do the questions and answers flow** when nobody is at the terminal (Q2)?
 
 ## Problem / opportunity
 
@@ -104,7 +106,7 @@ also states an opinion: the phase belongs before `brainstorming`.
   across the skill, two reference files, the template, a prompt, `records.py`, the
   Slack guide and decision-133, plus a migration step in `/the-loop:upgrade-the-loop`
   for a consuming repository that already has a channel `context.md`.
-- **N3: the new file is `current-state.md`; `context.md` stays as it is** (lean). The
+- **N3: the new file is `current-state.md`; `context.md` stays as it is** (decided). The
   ticket's own title leads with "understanding of current state". The name says what
   the file holds: what *is*, as opposed to the spec chain's what *will be*. Nothing is
   renamed and nothing is migrated. The phase is still called `context-gathering`.
@@ -133,10 +135,10 @@ mode nobody is at the terminal.
 
 ### Q3. Where does the phase sit, and how is it switched on?
 
-- **Before `brainstorming`** (lean, and your opinion). The brainstorm's own
+- **Before `brainstorming`** (decided). The brainstorm's own
   *Context & constraints* section is where an ungrounded agent starts to guess. A phase
   placed after it would correct a document that is already approved.
-- **Two opt-in rows, `context-gathering` and `context-approval`** (lean), using
+- **Two opt-in rows, `context-gathering` and `context-approval`** (decided), using
   `optIn: true`. They appear in the *Optional phases* section with a one-line
   description, which is the right place for a phase most small work items will not
   want. Ticking only the first gives a file with no approval stop. Ticking only the
@@ -152,11 +154,11 @@ mode nobody is at the terminal.
 
 - **The file records the commit it was gathered at.** A reader can then see how old the
   picture is.
-- **Locked means locked** (lean). A fact learned later, in design or implementation,
+- **Locked means locked** (decided). A fact learned later, in design or implementation,
   goes into the artifact that found it. The alternative is an append-only *Addenda*
   section under the lock. I lean against it: it makes the file a second living record,
   which is the confusion Q1 tries to avoid.
-- **Staleness is checked once, not gated** (lean). When `implementation` begins, the
+- **Staleness is checked once, not gated** (decided). When `implementation` begins, the
   agent compares the recorded commit with the current base for the paths the file
   names. If they changed, it says so on the pull request and re-reads those paths. No
   new gate: the design gate has already been passed by then, and a fresh approval of
@@ -228,20 +230,25 @@ again.
 
 ## Open questions
 
-1. **Q1 — the name.** `current-state.md` (my lean, no rename), or `context.md` with the
-   channel record renamed to `channel-context.md`?
-2. **Q2 — the flow.** Is "the agent explores and drafts first, then you ask and answer
+1. **Q2 — the flow.** Is "the agent explores and drafts first, then you ask and answer
    at the gate on the pull request" the exchange you had in mind? Or do you want the
    agent to ask before it writes anything?
-3. **Q3 — one row or two.** Two opt-in rows like the brainstorm pair, or one row that
-   switches both on?
-4. **Q4 — after the lock.** Is "locked, with one staleness check when implementation
-   begins" enough? Or should the file accept later additions?
-5. **Handoff.** A work item handed off with a settled brainstorm skips everything
+2. **Handoff.** A work item handed off with a settled brainstorm skips everything
    before its entry node. Should context gathering stay skipped there (my lean: yes,
    unless the author ticks it), or should it be offered regardless?
-6. **Work in flight.** Listing open pull requests needs a read the-loop's GitHub verbs
+3. **Work in flight.** Listing open pull requests needs a read the-loop's GitHub verbs
    may not have today. Is that part in scope, or a follow-up?
+
+### Decided in review
+
+The author answered these on pull request #554.
+
+| Question | Decision |
+|---|---|
+| Q1 — the name | `current-state.md`. `context.md` keeps its issue-389 meaning. |
+| Q3 — where it sits | Before `brainstorming`. |
+| Q3 — one row or two | Two opt-in rows, `context-gathering` and `context-approval`. |
+| Q4 — after the lock | Locked, with one staleness check when implementation begins. |
 
 ## Leaning / working hypothesis
 
@@ -278,3 +285,11 @@ of what was considered.
 > comments (issue-109). Append-only and attributed: an approval never silently
 > discards a reviewer's suggestions, and the feedback travels with the document
 > it concerns rather than living in a side-channel tracker.
+
+### 2026-11-23 — approved
+
+**@MadaraUchiha-314** wrote:
+
+minor comments
+
+approved
